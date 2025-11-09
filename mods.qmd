@@ -12,7 +12,7 @@ editor: source
 library(tidyverse)
 library(nflfastR)
 library(nflreadr)
-# library(ggimage)
+library(ggimage)
 # library(ggrepel)
 library(patchwork)
 library(caret)
@@ -33,13 +33,13 @@ knitr::opts_chunk$set(
 
 theme_set(theme_minimal() + theme(legend.position = "bottom"))
 
-options(
-  ggplot2.continuous.colour = "viridis",
-  ggplot2.continuous.fill = "viridis"
-)
-
-scale_colour_discrete = scale_colour_viridis_d
-scale_fill_discrete = scale_fill_viridis_d
+# options(
+#   ggplot2.continuous.colour = "viridis",
+#   ggplot2.continuous.fill = "viridis"
+# )
+# 
+# scale_colour_discrete = scale_colour_viridis_d
+# scale_fill_discrete = scale_fill_viridis_d
 
 `%nin%` = Negate(`%in%`)
 
@@ -1119,6 +1119,10 @@ df_pred_total_spread_fin =
   relocate(total_adj_label, spread_band_adj_label, lower_spread_adj_label, upper_spread_adj_label, total_game_lower_adj, total_game_upper_adj, spread_lower_adj, spread_upper_adj, .after = spread_label)
 ```
 
+::: panel-tabset
+
+### **Boxplot**
+
 ```{r tots spreads plot}
 #| echo: false
 #| fig-width: 13
@@ -1186,3 +1190,64 @@ df_pred_total_spread_fin %>%
 
 ```
 
+### **Projected Team Scores**
+
+```{r team scores}
+df_pred_total_spread_fin %>% 
+  left_join(
+    df_schedule %>% 
+      filter(week == 10) %>% 
+      select(game_id, spread_line, total_line) %>% 
+      mutate(team_home = str_extract(game_id, "[A-Z]+$")),
+    by = "team_home"
+  ) %>% 
+  select(game, team_home, team_away, spread_game_adj, total_game_adj, spread_line, total_line) %>% 
+  pivot_longer(
+    c(team_home, team_away),
+    names_to = "home_away",
+    names_prefix = "team_",
+    values_to = "team"
+  ) %>% 
+  left_join(
+    teams_colors_logos %>% 
+      rename(team = team_abbr) %>% 
+      select(team, team_color, team_logo_espn), 
+    by = "team"
+  ) %>% 
+  group_by(game) %>% 
+  mutate(
+    team_points_mod = 
+      case_when(
+        home_away == "home" ~ round(total_game_adj / 2 + spread_game_adj / 2, 2),
+        home_away == "away" ~ round(total_game_adj / 2 - spread_game_adj / 2, 2),
+        .default = NA
+      ),
+    team_points_vegas = 
+      case_when(
+        home_away == "home" ~ total_line / 2 + spread_line / 2,
+        home_away == "away" ~ total_line / 2 - spread_line / 2,
+        .default = NA
+      ),
+    team_points_diff = team_points_mod - team_points_vegas,
+    team = fct_reorder(factor(team), game)
+  ) %>% 
+  ggplot(aes(x = team_points_diff, y = team, fill = team_color)) + 
+  geom_col(alpha = 0.85) +
+  geom_image(aes(image = team_logo_espn)) +
+  scale_x_continuous(breaks = seq(-3, 5, by = 1)) + 
+  scale_fill_identity() + 
+  labs(
+    title = "Model vs Vegas Projected Team Totals",
+    x = "\U0394 Team Total Points",
+    y = ""
+  ) +
+  theme_classic() + 
+  theme(
+    axis.text.y = element_blank(),
+    axis.ticks.y = element_blank(),
+    axis.line.y = element_blank(),
+    plot.title = element_text(hjust = 0.5)
+  )
+```
+
+:::
