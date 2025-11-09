@@ -4,7 +4,7 @@ format: html
 editor: source
 ---
 
-## **NFL Game Totals & Spreads Prediction**
+## **My Models vs Vegas**
 
 ```{r setup}
 #| include: false
@@ -1121,7 +1121,7 @@ df_pred_total_spread_fin =
 
 ::: panel-tabset
 
-### **Boxplot**
+### **NFL Game Totals & Spreads**
 
 ```{r tots spreads plot}
 #| echo: false
@@ -1193,6 +1193,8 @@ df_pred_total_spread_fin %>%
 ### **Projected Team Scores**
 
 ```{r team scores}
+#| echo: false
+
 df_pred_total_spread_fin %>% 
   left_join(
     df_schedule %>% 
