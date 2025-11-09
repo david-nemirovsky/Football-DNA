@@ -12,4 +12,4 @@ Welcome to my football analytics site!
 
 <br>
 
-<div align="center"> You can check out my NFL game totals and spreads predictions in the [Model](https://lmbeehives.github.io/products.html) tab.
+<div align="center"> You can check out my NFL game totals and spreads predictions in the [Game Totals & Spreads](https://davidnemirovsky.com/Football-DNA/mods) tab.

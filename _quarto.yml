@@ -1,21 +1,13 @@
-name: "Yay internet!"
-output_dir: "."
-navbar:
-  title: "Home"
-  right:
-    - text: "Game Totals & Spreads"
-      href: mods.qmd
-    # - text: "About Us"
-    #   href: about.html
-    # - icon: fa-envelope fa-lg
-    #   href: mailto:lyalya7@yahoo.com
-#    - icon: fa-github fa-lg
-#      href: http://github.com/david-nemirovsky/
-#    - icon: fa-linkedin fa-lg
-#      href: https://www.linkedin.com/in/david-nemirovsky/
-output:
-  html_document:
-#      theme: superhero
-      # css:
-      # - bootstrap.min.css  # Link to the Bootstrap CSS file
-      # - custom.css  # Link to your custom CSS file
+website:
+  title: "Football DNA"
+  navbar:
+    left:
+      - href: index.qmd
+        text: Home
+      - href: mods.qmd
+        text: "Game Totals & Spreads"
+
+format:
+  html:
+    theme: cosmo
+    toc: true
