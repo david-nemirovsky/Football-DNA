@@ -1,0 +1,15 @@
+---
+title: ""
+format: html
+editor: source
+---
+<div align = "center">
+![](/football_dna_logo.png){width=80%}
+
+Welcome to my football analytics site! 
+
+<div align = "left">
+
+<br>
+
+<div align="center"> You can check out my NFL game totals and spreads predictions in the [Model](https://lmbeehives.github.io/products.html) tab.

@@ -1,0 +1,112 @@
+---
+title: "mods"
+format: html
+editor: source
+---
+
+## **NFL Game Totals & Spreads Prediction**
+
+```{r setup, include = F}
+library(tidyverse)
+library(nflfastR)
+library(nflreadr)
+# library(ggimage)
+# library(ggrepel)
+library(patchwork)
+# library(caret)
+# library(vip)
+# library(plotly)
+# library(Rcpp)
+# library(RcppParallel)
+# library(rsample)
+# library(gbm)
+# library(e1071)
+# library(gtsummary)
+
+knitr::opts_chunk$set(
+  fig.width = 7,
+  fig.asp = .6,
+  out.width = "95%"
+)
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+
+options(
+  ggplot2.continuous.colour = "viridis",
+  ggplot2.continuous.fill = "viridis"
+)
+
+scale_colour_discrete = scale_colour_viridis_d
+scale_fill_discrete = scale_fill_viridis_d
+
+`%nin%` = Negate(`%in%`)
+
+set.seed(37564)
+
+teams_colors_logos = teams_colors_logos %>% filter(team_abbr %nin% c("OAK", "SD", "STL", "LAR"))
+```
+
+```{r load data and mods}
+# Load 2025 data
+szn_all = 
+  load_pbp(2025) %>%  
+  filter(season_type == "REG")
+
+roster_all_df = fast_scraper_roster(2025)
+
+szn2025_sched = 
+  read_csv("./schedule2025.csv") %>% 
+  pivot_longer(
+    2:19,
+    values_to = "team",
+    names_to = "week"
+  ) %>% 
+  mutate(
+    TEAM = str_remove(TEAM, "@"), 
+   team = str_remove(team, "@"),
+   TEAM = str_replace(TEAM, "LAR", "LA"), 
+   team = str_replace(team, "LAR", "LA"),
+   TEAM = str_replace(TEAM, "WSH", "WAS"), 
+   team = str_replace(team, "WSH", "WAS")
+  ) %>% 
+  rename(
+    team_opp = team,
+    team = TEAM
+  ) %>% 
+  mutate(week = as.integer(week))
+
+schedules_szn_all = 
+  fast_scraper_schedules() %>% 
+  filter(season == 2025)
+
+```
+
+```{r create datasets}
+teams_df = 
+  szn_all %>% 
+  tibble() %>% 
+  distinct(home_team) %>% 
+  rename(team = home_team) %>% 
+  arrange(team) %>% 
+  rowid_to_column("team_id")
+
+division_df = 
+  teams_df %>% 
+  mutate(
+    division = 
+      case_match(
+        team,
+        c("BUF", "MIA", "NE", "NYJ") ~ "AFC East",
+        c("PIT", "CIN", "BAL", "CLE") ~ "AFC North",
+        c("IND", "JAX", "TEN", "HOU") ~ "AFC South",
+        c("LAC", "KC", "DEN", "LV") ~ "AFC West",
+        c("NYG", "DAL", "WAS", "PHI") ~ "NFC East",
+        c("GB", "MIN", "CHI", "DET") ~ "NFC North",
+        c("NO", "ATL", "CAR", "TB") ~ "NFC South",
+        c("SF", "ARI", "SEA", "LA") ~ "NFC West"
+      ),
+    conf = str_extract(division, "^[A-Z]FC")
+  )
+
+```
+
