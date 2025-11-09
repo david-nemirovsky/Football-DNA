@@ -1,5 +1,5 @@
 ---
-title: "mods"
+title: ""
 format: html
 editor: source
 ---
@@ -1039,42 +1039,45 @@ df_pred_total_spread_adj =
   relocate(total_adjust, total_game_adj, .after = total_game) %>%
   relocate(spread_game, spread_adjust, spread_game_adj, spread_adj_label, .after = total_game_adj)
 
-set.seed(37564)
-boot_splits_total = bootstraps(df_total_team_train, times = 100)
-
-# 2. Predict for each bootstrap model
-boot_preds_total = map(boot_splits_total$splits, ~ {
-  train_data = analysis(.x)
-  
-  # Train SVM model
-  svm_model = train(
-    total_team ~ ., 
-    data = train_data,
-    method = "svmRadial",
-    trControl = trainControl(method = "none"),  # already tuned
-    tuneGrid = tibble(
-      sigma = mod_total_team_svm$bestTune[[1]],
-      C = mod_total_team_svm$bestTune[[2]]
-    )
-  )
-  
-  # Predict on the fixed test set
-  predict(svm_model, newdata = df_total_team_test)
-})
-
-# 3. Combine predictions into a matrix
-pred_matrix_total = do.call(cbind, boot_preds_total)
-
-# 4. Compute mean prediction and 95% prediction interval
-df_total_team_pred_bands = 
-  df_total_team_test %>%
-  drop_na(division_game) %>% 
-  select(week, team, team_opp) %>%
-  mutate(
-    pred_mean  = round(rowMeans(pred_matrix_total), 2), 
-    pred_lower = round(apply(pred_matrix_total, 1, quantile, probs = 0.1), 2),
-    pred_upper = round(apply(pred_matrix_total, 1, quantile, probs = 0.9), 2),
-  )
+# set.seed(37564)
+# boot_splits_total = bootstraps(df_total_team_train, times = 100)
+# 
+# # 2. Predict for each bootstrap model
+# boot_preds_total = map(boot_splits_total$splits, ~ {
+#   train_data = analysis(.x)
+#   
+#   # Train SVM model
+#   svm_model = train(
+#     total_team ~ ., 
+#     data = train_data,
+#     method = "svmRadial",
+#     trControl = trainControl(method = "none"),  # already tuned
+#     tuneGrid = tibble(
+#       sigma = mod_total_team_svm$bestTune[[1]],
+#       C = mod_total_team_svm$bestTune[[2]]
+#     )
+#   )
+#   
+#   # Predict on the fixed test set
+#   predict(svm_model, newdata = df_total_team_test)
+# })
+# 
+# # 3. Combine predictions into a matrix
+# pred_matrix_total = do.call(cbind, boot_preds_total)
+# 
+# # 4. Compute mean prediction and 95% prediction interval
+# df_total_team_pred_bands = 
+#   df_total_team_test %>%
+#   drop_na(division_game) %>% 
+#   select(week, team, team_opp) %>%
+#   mutate(
+#     pred_mean  = round(rowMeans(pred_matrix_total), 2), 
+#     pred_lower = round(apply(pred_matrix_total, 1, quantile, probs = 0.1), 2),
+#     pred_upper = round(apply(pred_matrix_total, 1, quantile, probs = 0.9), 2),
+#   )
+# 
+# saveRDS(df_total_team_pred_bands, "df_total_team_pred_bands.rds")
+df_total_team_pred_bands = readRDS("df_total_team_pred_bands.rds")
 
 df_spread_total_bands = 
   df_total_team_pred_bands %>% 
@@ -1117,7 +1120,8 @@ df_pred_total_spread_fin =
 ```
 
 ```{r tots spreads plot}
-#| fig-width: 12
+#| echo: false
+#| fig-width: 13
 #| fig-height: 10
 
 df_pred_total_spread_fin %>% 

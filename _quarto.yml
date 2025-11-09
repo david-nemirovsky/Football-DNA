@@ -4,7 +4,7 @@ navbar:
   title: "Home"
   right:
     - text: "Game Totals & Spreads"
-      href: mods.html
+      href: mods.qmd
     # - text: "About Us"
     #   href: about.html
     # - icon: fa-envelope fa-lg
