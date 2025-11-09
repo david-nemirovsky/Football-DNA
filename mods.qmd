@@ -1,10 +1,18 @@
 ---
 title: ""
-format: html
+format: 
+  html:
+    echo: false
+    message: false
+    warning: false
+    fig-width: 10
+    fig-height: 8
+    fig-align: center
+    dpi: 300
 editor: source
 ---
 
-## **My Models vs Vegas**
+## **My Model vs Vegas**
 
 ```{r setup}
 #| include: false
@@ -13,6 +21,7 @@ library(tidyverse)
 library(nflfastR)
 library(nflreadr)
 library(ggimage)
+# library(plotly)
 # library(ggrepel)
 library(patchwork)
 library(caret)
@@ -50,6 +59,8 @@ teams_colors_logos = teams_colors_logos %>% filter(team_abbr %nin% c("OAK", "SD"
 
 ```{r load data and mods}
 #| include: false
+
+week_n = ceiling(as.integer(Sys.Date() - as.Date("2025-09-07")) / 7) + 1
 
 # Load 2025 data
 df_szn_pbp = 
@@ -102,7 +113,7 @@ df_schedule =
   )
 
 df_weather = 
-  readxl::read_xlsx("weather_2025_raw.xlsx", sheet = "Week 10") %>% 
+  readxl::read_xlsx("weather_2025_raw.xlsx", sheet = glue::glue("Week {week_n}")) %>% 
   mutate(across(c(temp, wind), ~ as.integer(.)))
 
 mod_total_team_svm = readRDS("mod_total_team_svm.rds")
@@ -782,7 +793,7 @@ df_qb_cont =
 
 df_rest_days =
   df_schedule %>% 
-  filter(season == 2025 & week == 10) %>% 
+  filter(season == 2025 & week == week_n) %>% 
   select(home_team, away_team, home_rest, away_rest) %>% 
   pivot_longer(
     c(home_team, away_team),
@@ -814,7 +825,7 @@ df_travel =
 
 df_total_team_test_solo =
   df_schedule %>% 
-  filter(week == 10) %>% 
+  filter(week == week_n) %>% 
   select(game_id, week, home_team, away_team) %>% 
   pivot_longer(
     c(home_team, away_team),
@@ -1001,7 +1012,7 @@ df_pred_total_spread_adj =
   df_pred_total_spread %>% 
   left_join(
     df_schedule %>% 
-      filter(week == 10) %>% 
+      filter(week == week_n) %>% 
       select(home_team, away_team, ends_with("_field")) %>% 
       rename(
         team_home = home_team,
@@ -1124,14 +1135,10 @@ df_pred_total_spread_fin =
 ### **NFL Game Totals & Spreads**
 
 ```{r tots spreads plot}
-#| echo: false
-#| fig-width: 13
-#| fig-height: 10
-
 df_pred_total_spread_fin %>% 
   left_join(
     df_schedule %>% 
-      filter(week == 10) %>% 
+      filter(week == week_n) %>% 
       select(game_id, spread_line, total_line) %>% 
       mutate(
         team_home = str_extract(game_id, "[A-Z]+$"),
@@ -1160,21 +1167,21 @@ df_pred_total_spread_fin %>%
       )
   ) %>% 
   ggplot(aes(x = total_game_adj, y = reorder(game, total_game_adj))) +
-  geom_errorbarh(aes(xmin = total_game_lower_adj, xmax = total_game_upper_adj), height = 1) +
-  geom_point(size = 2.4) +
-  geom_point(aes(color = as.factor(ind_total_hit), x = total_line, y = reorder(game, total_game_adj)), size = 2.4) +
-  geom_text(aes(label = total_adj_label, x = total_game_adj), vjust = -1, size = 3.15) +
-  geom_text(aes(label = spread_band_adj_label, x = total_game_upper_adj + 0.1), hjust = 0, size = 3.15) +
-  geom_text(aes(label = game, x = total_game_lower_adj - 1.1), hjust = 0, size = 3.15) +
-  geom_text(aes(color = as.factor(ind_total_hit), label = total_line_label, x = total_line), vjust = -1, size = 3.15) +
-  geom_text(aes(color = as.factor(ind_spread_hit), label = spread_line_label, x = total_line), vjust = 2, size = 2.4) +
+  geom_errorbarh(aes(xmin = total_game_lower_adj, xmax = total_game_upper_adj), height = rel(0.8)) +
+  geom_point(size = rel(2)) +
+  geom_point(aes(color = as.factor(ind_total_hit), x = total_line, y = reorder(game, total_game_adj)), size = rel(2)) +
+  geom_text(aes(label = total_adj_label, x = total_game_adj), vjust = -1, size = rel(2)) +
+  geom_text(aes(label = spread_band_adj_label, x = total_game_upper_adj + 0.15), hjust = 0, size = rel(2)) +
+  geom_text(aes(label = game, x = total_game_lower_adj - 1.3), hjust = 0, size = rel(2)) +
+  geom_text(aes(color = as.factor(ind_total_hit), label = total_line_label, x = total_line), vjust = -1, size = rel(2)) +
+  geom_text(aes(color = as.factor(ind_spread_hit), label = spread_line_label, x = total_line), vjust = 2, size = rel(1.5)) +
   # scale_color_identity() + 
   scale_x_continuous(breaks = seq(0, 100, by = 1)) +
   scale_color_manual(values = c("coral3", "skyblue2")) + 
   labs(
     x = "Predicted Total",
     y = NULL,
-    title = "Week 10 Spreads & Totals (80% Confidence Bands)"
+    title = glue::glue("Week {week_n} Spreads & Totals (80% Confidence Bands)")
   ) +
   theme_minimal() +
   theme(
@@ -1185,7 +1192,7 @@ df_pred_total_spread_fin %>%
   ) +
   coord_cartesian(
     clip = "off",
-    xlim = c(35, 55)
+    xlim = c(36.5, 55.5)
   )
 
 ```
@@ -1193,12 +1200,10 @@ df_pred_total_spread_fin %>%
 ### **Projected Team Scores**
 
 ```{r team scores}
-#| echo: false
-
 df_pred_total_spread_fin %>% 
   left_join(
     df_schedule %>% 
-      filter(week == 10) %>% 
+      filter(week == week_n) %>% 
       select(game_id, spread_line, total_line) %>% 
       mutate(team_home = str_extract(game_id, "[A-Z]+$")),
     by = "team_home"
@@ -1231,13 +1236,28 @@ df_pred_total_spread_fin %>%
         .default = NA
       ),
     team_points_diff = team_points_mod - team_points_vegas,
-    team = fct_reorder(factor(team), game)
+    team = fct_reorder(factor(team), game),
+    points_text_label_position = 
+      case_when(
+        team_points_diff >= 0 ~ team_points_diff + 0.4,
+        team_points_diff < 0 ~ team_points_diff - 0.4,
+        .default = NA
+      ),
+    points_text_label = str_c("(", round(team_points_mod, 1), "-", team_points_vegas, ")")
   ) %>% 
-  ggplot(aes(x = team_points_diff, y = team, fill = team_color)) + 
+  ggplot(
+    aes(
+      x = team_points_diff, 
+      y = team, 
+      fill = team_color
+    )
+  ) + 
   geom_col(alpha = 0.85) +
   geom_image(aes(image = team_logo_espn)) +
+  geom_text(aes(color = team_color, label = points_text_label, x = points_text_label_position), size = rel(2)) +
   scale_x_continuous(breaks = seq(-3, 5, by = 1)) + 
   scale_fill_identity() + 
+  scale_color_identity() + 
   labs(
     title = "Model vs Vegas Projected Team Totals",
     x = "\U0394 Team Total Points",
@@ -1250,6 +1270,164 @@ df_pred_total_spread_fin %>%
     axis.line.y = element_blank(),
     plot.title = element_text(hjust = 0.5)
   )
+
+# plot_team_points %>% 
+#   ggplotly(tooltip = "text")
+```
+
+:::
+
+## **Totals & Spreads of Teams Thus Far (Up to Week `r week_n - 1`)**
+
+```{r spreads totals data clean}
+#| include: false
+
+df_spreads = 
+  df_szn_pbp %>% 
+  distinct(game_id, .keep_all = T) %>% 
+  select(week, game_id, posteam, home_team, away_team, spread_line, result) %>% 
+  pivot_longer(
+    c(home_team, away_team),
+    values_to = "team",
+    names_to = "home_away",
+    names_pattern = "(.*)_team"
+  ) %>% 
+  mutate(spread = ifelse(home_away == "home", spread_line, -spread_line),
+         result = ifelse(home_away == "home", result, -result),
+         dif = result - spread) %>% 
+  select(week, team, spread, result, dif)
+
+df_med_spread = 
+  df_spreads %>% 
+  group_by(team) %>% 
+  summarize(med_diff = median(dif)) %>% 
+  arrange(med_diff)
+
+df_spreads = 
+  df_spreads %>% 
+  left_join(df_med_spread)
+
+df_spread_cols = 
+  teams_colors_logos %>% 
+  mutate(team = team_abbr) %>% 
+  left_join(df_med_spread) %>% 
+  mutate(team = fct_reorder(as.factor(team), med_diff)) %>% 
+  arrange(med_diff)
+
+df_totals = 
+  df_szn_pbp %>% 
+  distinct(game_id, .keep_all = T) %>% 
+  select(game_id, week, posteam, home_team, away_team, total_line, total, result) %>% 
+  pivot_longer(
+    c(home_team, away_team),
+    values_to = "team",
+    names_to = "home_away",
+    names_pattern = "(.*)_team"
+  ) %>% 
+  mutate(dif = total - total_line) %>% 
+  select(team, week, dif, total_line, total)
+
+df_med_tot = 
+  df_totals %>% 
+  group_by(team) %>% 
+  summarize(med_diff = median(dif)) %>% 
+  arrange(med_diff)
+
+df_totals = 
+  df_totals %>% 
+  left_join(df_med_tot)
+
+df_tot_cols = 
+  teams_colors_logos %>% 
+  mutate(team = team_abbr) %>% 
+  left_join(df_med_tot) %>% 
+  mutate(team = fct_reorder(as.factor(team), med_diff)) %>% 
+  arrange(med_diff)
+```
+
+::: panel-tabset
+
+### **Spreads/Totals Boxplots**
+
+```{r spreads totals boxplots}
+plot_spreads = 
+  df_spreads %>% 
+  mutate(team = fct_reorder(as.factor(team), med_diff)) %>% 
+  ggplot(aes(x = dif, y = team)) +
+  geom_boxplot(fill = df_spread_cols$team_color, alpha = 0.75) +
+  geom_vline(xintercept = 0, linetype = "dotted", color = "black") +
+  labs(
+    title = glue::glue("Game Results vs Spread Line"), 
+    x = "Point Difference (Result - Spread)", 
+    y = "Team"
+  ) + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+plot_totals = 
+  df_totals %>% 
+  mutate(team = fct_reorder(as.factor(team), med_diff)) %>% 
+  ggplot(aes(x = dif, y = team)) +
+  geom_boxplot(fill = df_tot_cols$team_color, alpha = 0.75) +
+  geom_vline(xintercept = 0, linetype = "dotted", color = "black") +
+  labs(
+    title = glue::glue("Game Totals vs O/U Line"),
+    x = "Point Difference (Total - Line)", 
+    y = "Team") +
+  theme(plot.title = element_text(hjust = 0.5))
+
+plot_spreads + plot_totals
+```
+
+### **Spreads by Week**
+
+```{r spreads by week}
+#| fig-width: 11
+#| fig-height: 8
+
+df_spreads %>% 
+  # filter(between(week, 1, 7)) %>% 
+  ggplot(aes(x = week, y = dif, color = team)) + 
+  # geom_line(linewidth = 1.2) + 
+  geom_point(size = 3) + 
+  geom_smooth(aes(group = team), se = F, method = "loess") + 
+  geom_abline(slope = 0, intercept = 0, linetype = "dotted") + 
+  geom_abline(slope = 0, intercept = c(-7, 7), linetype = "dashed") + 
+  scale_color_manual(values = teams_colors_logos$team_color) + 
+  scale_x_continuous(breaks = seq(0, 18, by = 2)) +
+  coord_cartesian(ylim = c(-21, 21)) +
+  facet_wrap(~ team, nrow = 4) +
+  labs(
+    title = "Results vs Spreads",
+    x = "Week",
+    y = "Point Difference (Result - Spread)"
+  ) +
+  theme(legend.position = "none")
+```
+
+### **Totals by Week**
+
+```{r totals by week}
+#| fig-width: 11
+#| fig-height: 8
+
+df_totals %>% 
+  # filter(between(week, 1, 7)) %>% 
+  ggplot(aes(x = week, y = dif, color = team)) + 
+  # geom_line(linewidth = 1.2) + 
+  geom_point(size = 3) + 
+  geom_smooth(aes(group = team), se = F, method = "loess") + 
+  geom_abline(slope = 0, intercept = 0, linetype = "dotted") + 
+  geom_abline(slope = 0, intercept = c(-7, 7), linetype = "dashed") + 
+  scale_color_manual(values = teams_colors_logos$team_color) + 
+  scale_x_continuous(breaks = seq(0, 18, by = 2)) +
+  coord_cartesian(ylim = c(-21, 21)) +
+  facet_wrap(~ team, nrow = 4) +
+  labs(
+    title = "Totals vs Lines",
+    x = "Week",
+    y = "Point Difference (Total - O/U Line)"
+  ) + 
+  theme(legend.position = "none")
 ```
 
 :::
