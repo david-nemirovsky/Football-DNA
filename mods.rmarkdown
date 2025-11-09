@@ -4,7 +4,11 @@ format: html
 editor: source
 ---
 
+
+
 ## **NFL Game Totals & Spreads Prediction**
+
+
 
 ```{r setup}
 #| include: false
@@ -1117,8 +1121,8 @@ df_pred_total_spread_fin =
 ```
 
 ```{r tots spreads plot}
-#| fig-width: 12
-#| fig-height: 10
+#| fig-width: 14
+#| fig-height: 11
 
 df_pred_total_spread_fin %>% 
   left_join(
