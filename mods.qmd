@@ -1547,17 +1547,7 @@ df_totals_hit_rate =
         .default = 0
       ),
     week = as.integer(str_remove(str_extract(game_id, "^2025_[0-9]+"), "^[0-9]+_"))
-  ) %>% 
-  group_by(week) %>% 
-  summarise(
-    n_hit = sum(ind_bet_hit),
-    n_total = n(),
-    hit_rate = round(n_hit / n_total * 100, 0)
-  ) %>% 
-  mutate(
-    hit_rate_totals = str_c(n_hit, "/", n_total, " (", hit_rate, "%)")
-  ) %>% 
-  select(week, hit_rate_totals)
+  )
 
 df_spreads_hit_rate =
   df_total_team_test_solo_boot_prior %>% 
@@ -1619,27 +1609,109 @@ df_spreads_hit_rate =
         .default = 0
       ),
     week = as.integer(str_remove(str_extract(game_id, "^2025_[0-9]+"), "^[0-9]+_"))
-  ) %>% 
+  )
+
+df_totals_hit_rate %>% 
   group_by(week) %>% 
+  summarise(
+    n_hit_tot = sum(ind_bet_hit),
+    n_total_tot = n(),
+    hit_rate_tot = round(n_hit_tot / n_total_tot * 100, 0)
+  ) %>% 
+  mutate(
+    hit_rate_totals = str_c(n_hit_tot, "/", n_total_tot, " (", hit_rate_tot, "%)")
+  ) %>% 
+  left_join(
+    df_spreads_hit_rate %>% 
+      group_by(week) %>% 
+      summarise(
+        n_hit_spread = sum(ind_bet_hit),
+        n_total_spread = n(),
+        hit_rate_spread = round(n_hit_spread / n_total_spread * 100, 0)
+      ) %>% 
+      mutate(
+        hit_rate_spreads = str_c(n_hit_spread, "/", n_total_spread, " (", hit_rate_spread, "%)")
+      ),
+    by = "week"
+  ) %>% 
+  mutate(
+    n_hit_ovr = n_hit_tot + n_hit_spread,
+    n_total_ovr = n_total_tot + n_total_spread,
+    hit_rate_ovr = round(n_hit_ovr / n_total_ovr * 100, 0),
+    hit_rate_all = str_c(n_hit_ovr, "/", n_total_ovr, " (", hit_rate_ovr, "%)")
+  ) %>% 
+  select(week, hit_rate_totals, hit_rate_spreads, hit_rate_all) %>% 
+  labelled::set_variable_labels(
+    week = "Week",
+    hit_rate_totals = "Totals",
+    hit_rate_spreads = "Spreads",
+    hit_rate_all = "Overall"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  gtsummary::modify_caption("**Hit Rates by Week**")
+
+df_totals_hit_rate %>% 
+  group_by(week, ind_total_hit) %>% 
   summarise(
     n_hit = sum(ind_bet_hit),
     n_total = n(),
     hit_rate = round(n_hit / n_total * 100, 0)
   ) %>% 
-  mutate(
-    hit_rate_spreads = str_c(n_hit, "/", n_total, " (", hit_rate, "%)")
+  pivot_wider(
+    id_cols = week,
+    names_from = ind_total_hit,
+    values_from = c(n_hit, n_total, hit_rate)
   ) %>% 
-  select(week, hit_rate_spreads)
-
-df_totals_hit_rate %>% 
-  left_join(df_spreads_hit_rate, by = "week") %>% 
+  rename_with(~ str_remove(., "Bet "), everything()) %>% 
+  janitor::clean_names() %>% 
+  mutate(
+    hit_rate_totals = str_c(n_hit_under + n_hit_over, "/", n_total_under + n_total_over, " (", round((n_hit_under + n_hit_over) / (n_total_under + n_total_over) * 100, 0), "%)"),
+    hit_rate_totals_under = str_c(n_hit_under, "/", n_total_under, " (", hit_rate_under, "%)"),
+    hit_rate_totals_over = str_c(n_hit_over, "/", n_total_over, " (", hit_rate_over, "%)")
+  ) %>% 
+  ungroup() %>% 
+  select(week, starts_with("hit_rate_totals")) %>% 
+  relocate(hit_rate_totals, .after = last_col()) %>% 
   labelled::set_variable_labels(
     week = "Week",
     hit_rate_totals = "Totals",
-    hit_rate_spreads = "Spreads"
+    hit_rate_totals_under = "Under Bets",
+    hit_rate_totals_over = "Over Bets"
   ) %>% 
   gtreg::tbl_listing() %>% 
-  gtsummary::modify_caption("**Hit Rates by Week**")
+  gtsummary::modify_caption("**Betting Totals by Week**")
+
+df_spreads_hit_rate %>% 
+  group_by(week, ind_spread_hit) %>% 
+  summarise(
+    n_hit = sum(ind_bet_hit),
+    n_total = n(),
+    hit_rate = round(n_hit / n_total * 100, 0)
+  ) %>% 
+  pivot_wider(
+    id_cols = week,
+    names_from = ind_spread_hit,
+    values_from = c(n_hit, n_total, hit_rate)
+  ) %>% 
+  rename_with(~ str_remove(., "Bet "), everything()) %>% 
+  janitor::clean_names() %>% 
+  mutate(across(everything(), ~ replace_na(., 0))) %>% 
+  mutate(
+    hit_rate_spreads = str_c(n_hit_away + n_hit_home, "/", n_total_away + n_total_home, " (", round((n_hit_away + n_hit_home) / (n_total_away + n_total_home) * 100, 0), "%)"),
+    hit_rate_spreads_away = str_c(n_hit_away, "/", n_total_away, " (", hit_rate_away, "%)"),
+    hit_rate_spreads_home = str_c(n_hit_home, "/", n_total_home, " (", hit_rate_home, "%)")
+  ) %>% 
+  ungroup() %>% 
+  select(week, starts_with("hit_rate_spreads")) %>% 
+  relocate(hit_rate_spreads, .after = last_col()) %>% 
+  labelled::set_variable_labels(
+    week = "Week",
+    hit_rate_spreads = "Spreads",
+    hit_rate_spreads_away = "Away Bets",
+    hit_rate_spreads_home = "Home Bets"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  gtsummary::modify_caption("**Betting Spreads by Week**")
 ```
 
 :::
