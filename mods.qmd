@@ -1618,9 +1618,6 @@ df_totals_hit_rate %>%
     n_total_tot = n(),
     hit_rate_tot = round(n_hit_tot / n_total_tot * 100, 0)
   ) %>% 
-  mutate(
-    hit_rate_totals = str_c(n_hit_tot, "/", n_total_tot, " (", hit_rate_tot, "%)")
-  ) %>% 
   left_join(
     df_spreads_hit_rate %>% 
       group_by(week) %>% 
@@ -1628,16 +1625,44 @@ df_totals_hit_rate %>%
         n_hit_spread = sum(ind_bet_hit),
         n_total_spread = n(),
         hit_rate_spread = round(n_hit_spread / n_total_spread * 100, 0)
-      ) %>% 
-      mutate(
-        hit_rate_spreads = str_c(n_hit_spread, "/", n_total_spread, " (", hit_rate_spread, "%)")
       ),
     by = "week"
   ) %>% 
   mutate(
+    week = as.character(week),
     n_hit_ovr = n_hit_tot + n_hit_spread,
     n_total_ovr = n_total_tot + n_total_spread,
-    hit_rate_ovr = round(n_hit_ovr / n_total_ovr * 100, 0),
+    hit_rate_ovr = round(n_hit_ovr / n_total_ovr * 100, 0)
+  ) %>% 
+  rows_insert(
+    tibble(
+      week = "Season",
+      n_hit_tot = sum(.$n_hit_tot),
+      n_hit_spread = sum(.$n_hit_spread),
+      n_hit_ovr = sum(.$n_hit_ovr),
+      n_total_tot = sum(.$n_total_tot),
+      n_total_spread = sum(.$n_total_spread),
+      n_total_ovr = sum(.$n_total_ovr)
+    )
+  ) %>% 
+  mutate(
+    hit_rate_tot = 
+      case_when(
+        is.na(hit_rate_tot) ~ round(n_hit_tot / n_total_tot * 100, 0),
+        .default = hit_rate_tot
+      ),
+    hit_rate_spread = 
+      case_when(
+        is.na(hit_rate_spread) ~ round(n_hit_spread / n_total_spread * 100, 0),
+        .default = hit_rate_spread
+      ),
+    hit_rate_ovr = 
+      case_when(
+        is.na(hit_rate_ovr) ~ round(n_hit_ovr / n_total_ovr * 100, 0),
+        .default = hit_rate_ovr
+      ),
+    hit_rate_totals = str_c(n_hit_tot, "/", n_total_tot, " (", hit_rate_tot, "%)"),
+    hit_rate_spreads = str_c(n_hit_spread, "/", n_total_spread, " (", hit_rate_spread, "%)"),
     hit_rate_all = str_c(n_hit_ovr, "/", n_total_ovr, " (", hit_rate_ovr, "%)")
   ) %>% 
   select(week, hit_rate_totals, hit_rate_spreads, hit_rate_all) %>% 
@@ -1664,7 +1689,27 @@ df_totals_hit_rate %>%
   ) %>% 
   rename_with(~ str_remove(., "Bet "), everything()) %>% 
   janitor::clean_names() %>% 
+  mutate(week = as.character(week)) %>% 
+  rows_insert(
+    tibble(
+      week = "Season",
+      n_hit_under = sum(.$n_hit_under),
+      n_hit_over = sum(.$n_hit_over),
+      n_total_under = sum(.$n_total_under),
+      n_total_over = sum(.$n_total_over)
+    )
+  ) %>% 
   mutate(
+    hit_rate_under = 
+      case_when(
+        is.na(hit_rate_under) ~ round(n_hit_under / n_total_under * 100, 0),
+        .default = hit_rate_under
+      ),
+    hit_rate_over = 
+      case_when(
+        is.na(hit_rate_over) ~ round(n_hit_over / n_total_over * 100, 0),
+        .default = hit_rate_over
+      ),
     hit_rate_totals = str_c(n_hit_under + n_hit_over, "/", n_total_under + n_total_over, " (", round((n_hit_under + n_hit_over) / (n_total_under + n_total_over) * 100, 0), "%)"),
     hit_rate_totals_under = str_c(n_hit_under, "/", n_total_under, " (", hit_rate_under, "%)"),
     hit_rate_totals_over = str_c(n_hit_over, "/", n_total_over, " (", hit_rate_over, "%)")
@@ -1695,8 +1740,30 @@ df_spreads_hit_rate %>%
   ) %>% 
   rename_with(~ str_remove(., "Bet "), everything()) %>% 
   janitor::clean_names() %>% 
-  mutate(across(everything(), ~ replace_na(., 0))) %>% 
   mutate(
+    across(everything(), ~ replace_na(., 0)),
+    week = as.character(week)
+  ) %>% 
+  rows_insert(
+    tibble(
+      week = "Season",
+      n_hit_home = sum(.$n_hit_home),
+      n_hit_away = sum(.$n_hit_away),
+      n_total_home = sum(.$n_total_home),
+      n_total_away = sum(.$n_total_away)
+    )
+  ) %>% 
+  mutate(
+    hit_rate_home = 
+      case_when(
+        is.na(hit_rate_home) ~ round(n_hit_home / n_total_home * 100, 0),
+        .default = hit_rate_home
+      ), 
+    hit_rate_away = 
+      case_when(
+        is.na(hit_rate_away) ~ round(n_hit_away / n_total_away * 100, 0),
+        .default = hit_rate_away
+      ),
     hit_rate_spreads = str_c(n_hit_away + n_hit_home, "/", n_total_away + n_total_home, " (", round((n_hit_away + n_hit_home) / (n_total_away + n_total_home) * 100, 0), "%)"),
     hit_rate_spreads_away = str_c(n_hit_away, "/", n_total_away, " (", hit_rate_away, "%)"),
     hit_rate_spreads_home = str_c(n_hit_home, "/", n_total_home, " (", hit_rate_home, "%)")
