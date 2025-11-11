@@ -1369,14 +1369,14 @@ df_pred_total_spread_fin %>%
   mutate(
     ind_total_hit = 
       case_when(
-        total_line > total_game_upper_adj + 0.5 ~ 1,
-        total_line < total_game_lower_adj - 0.5 ~ 1,
+        total_line > total_game_upper_adj ~ 1,
+        total_line < total_game_lower_adj ~ 1,
         .default = 0
       ),
     ind_spread_hit = 
       case_when(
-        spread_line > spread_upper_adj + 0.5 ~ 1,
-        spread_line < spread_lower_adj - 0.5 ~ 1,
+        spread_line > spread_upper_adj ~ 1,
+        spread_line < spread_lower_adj ~ 1,
         .default = 0
       )
   ) %>% 
@@ -1406,7 +1406,7 @@ df_pred_total_spread_fin %>%
   ) +
   coord_cartesian(
     clip = "off",
-    xlim = c(34.5, 55.5)
+    xlim = c(34.5, 54.5)
   )
 
 ```
@@ -1678,7 +1678,7 @@ df_team_points_delta_szn %>%
   scale_x_continuous(breaks = seq(-10, 10, by = 1)) + 
   scale_fill_identity() + 
   scale_color_identity() + 
-  coord_cartesian(xlim = c(-8, 8)) +
+  coord_cartesian(xlim = c(-8.5, 8.5)) +
   labs(
     title = "Season-Long Model vs Actual Team Totals",
     x = "Mean \U0394 Team Points",
@@ -1754,6 +1754,8 @@ df_totals_hit_rate =
       case_when(
         ind_total_hit == "Bet Under" & actual_total < total_line ~ 1,
         ind_total_hit == "Bet Over" & actual_total > total_line ~ 1,
+        ind_total_hit == "Bet Under" & actual_total == total_line ~ NA,
+        ind_total_hit == "Bet Over" & actual_total == total_line ~ NA,
         .default = 0
       ),
     week = as.integer(str_remove(str_extract(game_id, "^2025_[0-9]+"), "^[0-9]+_"))
@@ -1816,6 +1818,8 @@ df_spreads_hit_rate =
       case_when(
         ind_spread_hit == "Bet Away" & actual_spread < spread_line ~ 1,
         ind_spread_hit == "Bet Home" & actual_spread > spread_line ~ 1,
+        ind_spread_hit == "Bet Away" & actual_spread == spread_line ~ NA,
+        ind_spread_hit == "Bet Home" & actual_spread == spread_line ~ NA,
         .default = 0
       ),
     week = as.integer(str_remove(str_extract(game_id, "^2025_[0-9]+"), "^[0-9]+_"))
