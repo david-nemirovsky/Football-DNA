@@ -1464,12 +1464,12 @@ df_pred_total_spread_fin %>%
   geom_col(alpha = 0.85) +
   geom_image(aes(image = team_logo_espn)) +
   geom_text(aes(color = team_color, label = points_text_label, x = points_text_label_position), size = rel(2)) +
-  scale_x_continuous(breaks = seq(-3, 5, by = 1)) + 
+  scale_x_continuous(breaks = seq(-10, 10, by = 1)) + 
   scale_fill_identity() + 
   scale_color_identity() + 
-  coord_cartesian(xlim = c(-5, 5)) +
+  coord_cartesian(xlim = c(-5.5, 5.5)) +
   labs(
-    title = "Model vs Vegas Projected Team Totals",
+    title = glue::glue("Week {week_n} Model vs Vegas Projected Team Totals"),
     x = "\U0394 Team Total Points",
     y = ""
   ) +
@@ -1609,12 +1609,11 @@ df_total_team_test_solo_boot_prior %>%
     mean_team_points_diff = mean(team_points_diff),
     points_text_label_position = 
       case_when(
-        mean_team_points_diff >= 0 ~ mean_team_points_diff + 0.4,
-        mean_team_points_diff < 0 ~ mean_team_points_diff - 0.4,
+        mean_team_points_diff >= 0 ~ mean_team_points_diff + 0.33,
+        mean_team_points_diff < 0 ~ mean_team_points_diff - 0.33,
         .default = NA
       ),
-    points_text_label = round(mean_team_points_diff, 2)
-      #str_c("(", round(team_points_mod, 1), "-", team_points_vegas, ")")
+    points_text_label = str_c("\U0394=", round(mean_team_points_diff, 2))
   ) %>% 
   ungroup() %>% 
   distinct(team, mean_team_points_diff, points_text_label_position, points_text_label, team_color, team_logo_espn) %>% 
@@ -1628,14 +1627,14 @@ df_total_team_test_solo_boot_prior %>%
   ) + 
   geom_col(alpha = 0.85) +
   geom_image(aes(image = team_logo_espn)) +
-  geom_text(aes(color = team_color, label = points_text_label, x = points_text_label_position), size = rel(2)) +
+  geom_text(aes(color = team_color, label = points_text_label, x = points_text_label_position), size = rel(2.4)) +
   scale_x_continuous(breaks = seq(-10, 10, by = 1)) + 
   scale_fill_identity() + 
   scale_color_identity() + 
   coord_cartesian(xlim = c(-4, 4)) +
   labs(
     title = "Season-Long Model vs Vegas Projected Team Totals",
-    x = "\U0394 Team Total Points",
+    x = "Mean \U0394 Team Points",
     y = ""
   ) +
   theme_classic() + 
