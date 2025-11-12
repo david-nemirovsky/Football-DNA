@@ -1845,7 +1845,9 @@ df_totals_hit_rate =
     week = as.integer(str_remove(str_extract(game_id, "^2025_[0-9]+"), "^[0-9]+_"))
   ) %>% 
   left_join(df_qb_cont_old %>% select(game_id, week, qb_cont), by = c("game_id", "week")) %>% 
-  filter(qb_cont == 1) %>% 
+  group_by(game_id) %>% 
+  filter(sum(qb_cont) == 2) %>% 
+  ungroup() %>% 
   distinct()
 
 df_spreads_hit_rate =
@@ -1913,7 +1915,9 @@ df_spreads_hit_rate =
     week = as.integer(str_remove(str_extract(game_id, "^2025_[0-9]+"), "^[0-9]+_"))
   ) %>% 
   left_join(df_qb_cont_old %>% select(game_id, week, qb_cont), by = c("game_id", "week")) %>% 
-  filter(qb_cont == 1) %>% 
+  group_by(game_id) %>% 
+  filter(sum(qb_cont) == 2) %>% 
+  ungroup() %>% 
   distinct()
 
 df_totals_hit_rate %>% 
