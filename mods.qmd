@@ -1781,7 +1781,7 @@ df_team_points_delta_szn %>%
 ### **Hit Rates**
 
 ```{r hit rate}
-df_totals_hit_rate = 
+df_totals_hit_rate =
   df_total_team_test_solo_boot_prior %>% 
   left_join(
     df_total_team_test_solo_boot_prior %>% 
@@ -1843,7 +1843,10 @@ df_totals_hit_rate =
         .default = 0
       ),
     week = as.integer(str_remove(str_extract(game_id, "^2025_[0-9]+"), "^[0-9]+_"))
-  )
+  ) %>% 
+  left_join(df_qb_cont_old %>% select(game_id, week, qb_cont), by = c("game_id", "week")) %>% 
+  filter(qb_cont == 1) %>% 
+  distinct()
 
 df_spreads_hit_rate =
   df_total_team_test_solo_boot_prior %>% 
@@ -1908,9 +1911,13 @@ df_spreads_hit_rate =
         .default = 0
       ),
     week = as.integer(str_remove(str_extract(game_id, "^2025_[0-9]+"), "^[0-9]+_"))
-  )
+  ) %>% 
+  left_join(df_qb_cont_old %>% select(game_id, week, qb_cont), by = c("game_id", "week")) %>% 
+  filter(qb_cont == 1) %>% 
+  distinct()
 
 df_totals_hit_rate %>% 
+  # filter(qb_cont == 1) %>% 
   group_by(week) %>% 
   summarise(
     n_hit_tot = sum(ind_bet_hit),
@@ -1919,6 +1926,7 @@ df_totals_hit_rate %>%
   ) %>% 
   left_join(
     df_spreads_hit_rate %>% 
+      # filter(qb_cont == 1) %>% 
       group_by(week) %>% 
       summarise(
         n_hit_spread = sum(ind_bet_hit),
