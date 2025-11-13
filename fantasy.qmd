@@ -59,9 +59,9 @@ teams_colors_logos = teams_colors_logos %>% filter(team_abbr %nin% c("OAK", "SD"
 #| include: false
 
 # week_n = ceiling(as.integer(Sys.Date() - as.Date("2025-09-07")) / 7)
-week_n = ceiling(as.integer(Sys.Date() - as.Date("2025-09-07")) / 7) + 1
-n_targets = round(week_n * 4.5, 1)
-n_touches = round(week_n * 7.5, -1)
+week_n = ceiling(as.integer(Sys.Date() - as.Date("2025-09-07")) / 7)
+n_targets = round(week_n * 5, -1)
+n_touches = round(week_n * 8, -1)
 n_att = week_n * 15
 n_rec = round(week_n * 3, -1)
 
