@@ -1448,6 +1448,73 @@ df_pred_total_spread_fin %>%
     xlim = c(34.5, 54.5)
   )
 
+df_pred_total_spread_fin %>% 
+  select(-game_id) %>% 
+  left_join(
+    df_schedule %>% 
+      filter(week == week_n) %>% 
+      select(game_id, spread_line, total_line) %>% 
+      mutate(
+        team_home = str_extract(game_id, "[A-Z]+$"),
+        spread_line_label = 
+          case_when(
+            spread_line < 0 ~ str_c("(", team_home, " +", as.character(-spread_line), ")"),
+            spread_line >= 0 ~ str_c("(", team_home, " ", as.character(-spread_line), ")"),
+            .default = NA
+          ),
+        total_line_label = total_line
+      ),
+    by = "team_home"
+  ) %>% 
+  mutate(
+    ind_total_hit = 
+      case_when(
+        total_line > total_game_upper_adj ~ 1,
+        total_line < total_game_lower_adj ~ 1,
+        .default = 0
+      ),
+    ind_spread_hit = 
+      case_when(
+        spread_line > spread_upper_adj ~ 1,
+        spread_line < spread_lower_adj ~ 1,
+        .default = 0
+      )
+  ) %>% 
+  filter(ind_total_hit == 1 | ind_spread_hit) %>% 
+  select(game_id, team_home, team_away, total_line, total_line_label, total_game_adj, ind_total_hit, spread_line, spread_line_label, spread_game_adj, ind_spread_hit, spread_band_adj_label) %>% 
+  left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_home = team), by = "team_home") %>% 
+  left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_away = team), by = "team_away") %>% 
+  filter(qb_cont.x == 1 & qb_cont.y == 1) %>% 
+  mutate(
+    bet_total = 
+      case_when(
+        ind_total_hit == 1 & total_game_adj > total_line ~ str_c("Over ", total_line_label),
+        ind_total_hit == 1 & total_game_adj < total_line ~ str_c("Under ", total_line_label),
+        .default = "NA"
+      ),
+    bet_spread = 
+      case_when(
+        ind_spread_hit == 1 & spread_game_adj > spread_line & spread_line < 0 ~ str_c(team_home, " +", -spread_line),
+        ind_spread_hit == 1 & spread_game_adj > spread_line & spread_line >= 0 ~ str_c(team_home, " ", -spread_line),
+        ind_spread_hit == 1 & spread_game_adj < spread_line & spread_line < 0 ~ str_c(team_away, " ", spread_line),
+        ind_spread_hit == 1 & spread_game_adj < spread_line & spread_line >= 0 ~ str_c(team_away, " +", spread_line),
+        .default = "NA"
+      ),
+    game = str_c(team_away, " @ ", team_home),
+    total_mod_label = round(total_game_adj, 1),
+    spread_mod_label = str_extract(spread_band_adj_label, "^[A-Z]+ [+-][0-9].[0-9]")
+  ) %>% 
+  arrange(desc(bet_total), desc(bet_spread)) %>% 
+  select(game, total_mod_label, bet_total, spread_mod_label, bet_spread) %>% 
+  labelled::set_variable_labels(
+    game = "Game",
+    total_mod_label = "Predicted Total",
+    bet_total = "Bet Total",
+    spread_mod_label = "Predicted Spread",
+    bet_spread = "Bet Spread"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  gtsummary::modify_caption("**Bets to Take This Week**")
 ```
 
 ### **Projected Team Scores**
@@ -1844,11 +1911,27 @@ df_totals_hit_rate =
       ),
     week = as.integer(str_remove(str_extract(game_id, "^2025_[0-9]+"), "^[0-9]+_"))
   ) %>% 
-  left_join(df_qb_cont_old %>% select(game_id, week, qb_cont), by = c("game_id", "week")) %>% 
-  group_by(game_id) %>% 
-  filter(sum(qb_cont) == 2) %>% 
-  ungroup() %>% 
+  left_join(df_qb_cont_old %>% select(game_id, week, qb_cont), by = c("game_id", "week")) %>%
+  group_by(game_id) %>%
+  filter(sum(qb_cont) == 2) %>%
+  ungroup() %>%
   distinct()
+
+# df_totals_hit_rate %>% 
+#   left_join(df_szn_pbp %>% distinct(game_id, total_line) %>% rename(total_line_close = total_line), by = "game_id") %>%   
+#   left_join(df_qb_cont_old %>% select(game_id, week, qb_cont), by = c("game_id", "week")) %>% 
+#   filter(abs(total_line_close - total_line) > 2) %>% 
+#   group_by(game_id) %>% 
+#   mutate(
+#     qb_cont_game = sum(qb_cont, na.rm = T)
+#   ) %>% 
+#   ungroup() %>% 
+#   select(-qb_cont) %>% 
+#   distinct() %>% 
+#   filter(qb_cont_game < 2) %>% 
+#   pull(ind_bet_hit) %>% table(useNA = "ifany")
+#   pull(qb_cont_game) %>% table(useNA = "ifany")
+#   view
 
 df_spreads_hit_rate =
   df_total_team_test_solo_boot_prior %>% 
@@ -1914,11 +1997,27 @@ df_spreads_hit_rate =
       ),
     week = as.integer(str_remove(str_extract(game_id, "^2025_[0-9]+"), "^[0-9]+_"))
   ) %>% 
-  left_join(df_qb_cont_old %>% select(game_id, week, qb_cont), by = c("game_id", "week")) %>% 
-  group_by(game_id) %>% 
-  filter(sum(qb_cont) == 2) %>% 
-  ungroup() %>% 
+  left_join(df_qb_cont_old %>% select(game_id, week, qb_cont), by = c("game_id", "week")) %>%
+  group_by(game_id) %>%
+  filter(sum(qb_cont) == 2) %>%
+  ungroup() %>%
   distinct()
+
+# df_spreads_hit_rate %>% 
+#   left_join(df_szn_pbp %>% distinct(game_id, spread_line) %>% rename(spread_line_close = spread_line), by = "game_id") %>%   
+#   left_join(df_qb_cont_old %>% select(game_id, week, qb_cont), by = c("game_id", "week")) %>% 
+#   filter(abs(spread_line_close - spread_line) > 2) %>% 
+#   group_by(game_id) %>% 
+#   mutate(
+#     qb_cont_game = sum(qb_cont, na.rm = T)
+#   ) %>% 
+#   ungroup() %>% 
+#   select(-qb_cont) %>% 
+#   distinct() %>% 
+#   # filter(qb_cont_game < 2) %>% 
+#   # pull(ind_bet_hit) %>% table(useNA = "ifany")
+#   pull(qb_cont_game) %>% table(useNA = "ifany")
+#   view
 
 df_totals_hit_rate %>% 
   # filter(qb_cont == 1) %>% 

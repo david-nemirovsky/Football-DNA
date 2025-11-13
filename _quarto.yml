@@ -10,6 +10,8 @@ website:
         text: Home
       - href: mods.qmd
         text: "Game Totals & Spreads"
+      - href: fantasy.qmd
+        text: "Fantasy Football"
 
 format:
   html:
