@@ -12,7 +12,7 @@ format:
 editor: source
 ---
 
-## **My Model vs Vegas**
+## **My Model vs Vegas (Based on Opening Bet Lines)**
 
 ```{r setup}
 #| include: false
@@ -1390,12 +1390,13 @@ df_spread_total_bands_prior =
 ```{r tots spreads plot}
 df_pred_total_spread_fin %>% 
   left_join(
-    df_schedule %>% 
-      filter(week == week_n) %>% 
-      select(game_id, spread_line, total_line) %>% 
+    df_lines_open %>% 
+      # df_schedule %>%
+      filter(week == week_n) %>%
+      select(game_id, spread_line, total_line) %>%
       mutate(
         team_home = str_extract(game_id, "[A-Z]+$"),
-        spread_line_label = 
+        spread_line_label =
           case_when(
             spread_line < 0 ~ str_c("(", team_home, " +", as.character(-spread_line), ")"),
             spread_line >= 0 ~ str_c("(", team_home, " ", as.character(-spread_line), ")"),
@@ -1451,21 +1452,46 @@ df_pred_total_spread_fin %>%
 df_pred_total_spread_fin %>% 
   select(-game_id) %>% 
   left_join(
-    df_schedule %>% 
+    df_lines_open %>% 
+    # df_schedule %>% 
       filter(week == week_n) %>% 
       select(game_id, spread_line, total_line) %>% 
       mutate(
         team_home = str_extract(game_id, "[A-Z]+$"),
         spread_line_label = 
           case_when(
-            spread_line < 0 ~ str_c("(", team_home, " +", as.character(-spread_line), ")"),
-            spread_line >= 0 ~ str_c("(", team_home, " ", as.character(-spread_line), ")"),
+            spread_line < 0 ~ str_c(team_home, " +", as.character(-spread_line)),
+            spread_line >= 0 ~ str_c(team_home, " ", as.character(-spread_line)),
             .default = NA
           ),
         total_line_label = total_line
+      ) %>% 
+      select(-game_id),
+    by = "team_home"
+  ) %>% 
+  left_join(
+    df_schedule %>% 
+      filter(week == week_n) %>% 
+      select(game_id, spread_line, total_line) %>% 
+      rename(
+        spread_line_current = spread_line,
+        total_line_current = total_line
+      ) %>% 
+      mutate(
+        team_home = str_extract(game_id, "[A-Z]+$"),
+        spread_line_current_label = 
+          case_when(
+            spread_line_current < 0 ~ str_c("(", team_home, " +", as.character(-spread_line_current), ")"),
+            spread_line_current >= 0 ~ str_c("(", team_home, " ", as.character(-spread_line_current), ")"),
+            .default = NA
+          ),
+        total_line_current_label = total_line_current
       ),
     by = "team_home"
   ) %>% 
+  left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_home = team, qb_cont_home = qb_cont), by = c("team_home")) %>% 
+  left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_away = team, qb_cont_away = qb_cont), by = c("team_away")) %>% 
+  filter(qb_cont_home == 1 & qb_cont_away == 1) %>% 
   mutate(
     ind_total_hit = 
       case_when(
@@ -1478,26 +1504,41 @@ df_pred_total_spread_fin %>%
         spread_line > spread_upper_adj ~ 1,
         spread_line < spread_lower_adj ~ 1,
         .default = 0
+      ),
+    ind_total_current_hit = 
+      case_when(
+        total_line_current > total_game_upper_adj ~ 1,
+        total_line_current < total_game_lower_adj ~ 1,
+        .default = 0
+      ),
+    ind_spread_current_hit = 
+      case_when(
+        spread_line_current > spread_upper_adj ~ 1,
+        spread_line_current < spread_lower_adj ~ 1,
+        .default = 0
       )
   ) %>% 
-  filter(ind_total_hit == 1 | ind_spread_hit) %>% 
-  select(game_id, team_home, team_away, total_line, total_line_label, total_game_adj, ind_total_hit, spread_line, spread_line_label, spread_game_adj, ind_spread_hit, spread_band_adj_label) %>% 
+  filter(
+    (ind_total_hit == 1 | ind_spread_hit == 1) & 
+      (ind_total_current_hit == 1 | ind_spread_current_hit == 1)
+  ) %>% 
+  select(game_id, team_home, team_away, total_line, total_line_label, total_line_current, total_line_current_label, total_game_adj, ind_total_hit, ind_total_current_hit, spread_line, spread_line_label, spread_game_adj, ind_spread_hit, ind_spread_current_hit, spread_line_current, spread_line_current_label, spread_band_adj_label) %>% 
   left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_home = team), by = "team_home") %>% 
   left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_away = team), by = "team_away") %>% 
   filter(qb_cont.x == 1 & qb_cont.y == 1) %>% 
   mutate(
     bet_total = 
       case_when(
-        ind_total_hit == 1 & total_game_adj > total_line ~ str_c("Over ", total_line_label),
-        ind_total_hit == 1 & total_game_adj < total_line ~ str_c("Under ", total_line_label),
+        ind_total_current_hit == 1 & total_game_adj > total_line_current ~ str_c("Over ", total_line_current_label),
+        ind_total_current_hit == 1 & total_game_adj < total_line_current ~ str_c("Under ", total_line_current_label),
         .default = "NA"
       ),
     bet_spread = 
       case_when(
-        ind_spread_hit == 1 & spread_game_adj > spread_line & spread_line < 0 ~ str_c(team_home, " +", -spread_line),
-        ind_spread_hit == 1 & spread_game_adj > spread_line & spread_line >= 0 ~ str_c(team_home, " ", -spread_line),
-        ind_spread_hit == 1 & spread_game_adj < spread_line & spread_line < 0 ~ str_c(team_away, " ", spread_line),
-        ind_spread_hit == 1 & spread_game_adj < spread_line & spread_line >= 0 ~ str_c(team_away, " +", spread_line),
+        ind_spread_current_hit == 1 & spread_game_adj > spread_line_current & spread_line_current < 0 ~ str_c(team_home, " +", -spread_line_current),
+        ind_spread_current_hit == 1 & spread_game_adj > spread_line_current & spread_line_current >= 0 ~ str_c(team_home, " ", -spread_line_current),
+        ind_spread_current_hit == 1 & spread_game_adj < spread_line_current & spread_line_current < 0 ~ str_c(team_away, " ", spread_line_current),
+        ind_spread_current_hit == 1 & spread_game_adj < spread_line_current & spread_line_current >= 0 ~ str_c(team_away, " +", spread_line_current),
         .default = "NA"
       ),
     game = str_c(team_away, " @ ", team_home),
@@ -1505,16 +1546,18 @@ df_pred_total_spread_fin %>%
     spread_mod_label = str_extract(spread_band_adj_label, "^[A-Z]+ [+-][0-9].[0-9]")
   ) %>% 
   arrange(desc(bet_total), desc(bet_spread)) %>% 
-  select(game, total_mod_label, bet_total, spread_mod_label, bet_spread) %>% 
+  select(game, total_line_label, total_mod_label, bet_total, spread_line_label, spread_mod_label, bet_spread) %>% 
   labelled::set_variable_labels(
     game = "Game",
+    total_line_label = "Opening Total Line",
     total_mod_label = "Predicted Total",
-    bet_total = "Bet Total",
+    bet_total = "Total to Bet",
+    spread_line_label = "Opening Spread Line",
     spread_mod_label = "Predicted Spread",
-    bet_spread = "Bet Spread"
+    bet_spread = "Spread to Bet"
   ) %>% 
   gtreg::tbl_listing() %>% 
-  gtsummary::modify_caption("**Bets to Take This Week**")
+  gtsummary::modify_caption("**Bets to Take, Updated for Current Odds**")
 ```
 
 ### **Projected Team Scores**
