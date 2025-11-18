@@ -12,6 +12,10 @@ format:
 editor: source
 ---
 
+:::{.callout-note}
+Updated as of `r format(Sys.time(), '%A, %B %d, %Y at %X')` 
+:::
+
 ## **My Model vs Vegas (Based on Opening Bet Lines)**
 
 ```{r setup}
@@ -825,7 +829,7 @@ df_qb_cont =
   ) %>% 
   rows_update(
     tibble(
-      team = c("NYG"),
+      team = c("NYJ", "CLE", "ATL", "PIT"),
       qb_cont = 0
     ),
     by = "team"
@@ -1091,7 +1095,7 @@ df_pred_total_spread_adj =
   relocate(spread_game, spread_adjust, spread_game_adj, spread_adj_label, .after = total_game_adj)
 
 # set.seed(37564)
-# boot_splits_total = bootstraps(df_total_team_train, times = 100)
+# boot_splits_total = bootstraps(df_total_team_train, times = 200)
 # 
 # # 2. Predict for each bootstrap model
 # boot_preds_total = map(boot_splits_total$splits, ~ {
@@ -1123,8 +1127,8 @@ df_pred_total_spread_adj =
 #   select(week, team, team_opp) %>%
 #   mutate(
 #     pred_mean  = round(rowMeans(pred_matrix_total), 2),
-#     pred_lower = round(apply(pred_matrix_total, 1, quantile, probs = 0.1), 2),
-#     pred_upper = round(apply(pred_matrix_total, 1, quantile, probs = 0.9), 2),
+#     pred_lower = round(apply(pred_matrix_total, 1, quantile, probs = 0.025), 2),
+#     pred_upper = round(apply(pred_matrix_total, 1, quantile, probs = 0.975), 2),
 #   )
 # 
 # saveRDS(df_total_team_pred_bands, glue::glue("df_total_team_pred_bands_week_{week_n}.rds"))
@@ -1326,7 +1330,7 @@ df_total_team_test_boot_prior =
   )
 
 # set.seed(37564)
-# boot_splits_total_prior = bootstraps(df_total_team_train, times = 100)
+# boot_splits_total_prior = bootstraps(df_total_team_train, times = 200)
 # 
 # # 2. Predict for each bootstrap model
 # boot_preds_total_prior = map(boot_splits_total_prior$splits, ~ {
@@ -1358,13 +1362,13 @@ df_total_team_test_boot_prior =
 #   select(week, team, team_opp) %>%
 #   mutate(
 #     pred_mean  = round(rowMeans(pred_matrix_total_prior), 2),
-#     pred_lower = round(apply(pred_matrix_total_prior, 1, quantile, probs = 0.1), 2),
-#     pred_upper = round(apply(pred_matrix_total_prior, 1, quantile, probs = 0.9), 2),
+#     pred_lower = round(apply(pred_matrix_total_prior, 1, quantile, probs = 0.025), 2),
+#     pred_upper = round(apply(pred_matrix_total_prior, 1, quantile, probs = 0.975), 2),
 #   )
 # 
 # saveRDS(df_total_team_pred_bands_prior, glue::glue("df_total_team_pred_bands_prior_week_{week_n}.rds"))
 
-df_total_team_pred_bands_prior = readRDS(glue::glue("df_total_team_pred_bands_prior_week_{week_n-1}.rds")) %>% 
+df_total_team_pred_bands_prior = readRDS(glue::glue("df_total_team_pred_bands_prior_week_{week_n-1}.rds")) %>%
   rbind(df_total_team_pred_bands_last)
 
 df_spread_total_bands_prior = 
@@ -1435,7 +1439,7 @@ df_pred_total_spread_fin %>%
   labs(
     x = "Predicted Total",
     y = NULL,
-    title = glue::glue("Week {week_n} Spreads & Totals (80% Confidence Bands)")
+    title = glue::glue("Week {week_n} Spreads & Totals (95% Confidence Bands)")
   ) +
   theme_minimal() +
   theme(
@@ -1519,7 +1523,7 @@ df_pred_total_spread_fin %>%
       )
   ) %>% 
   filter(
-    (ind_total_hit == 1 | ind_spread_hit == 1) & 
+    (ind_total_hit == 1 | ind_spread_hit == 1) &
       (ind_total_current_hit == 1 | ind_spread_current_hit == 1)
   ) %>% 
   select(game_id, team_home, team_away, total_line, total_line_label, total_line_current, total_line_current_label, total_game_adj, ind_total_hit, ind_total_current_hit, spread_line, spread_line_label, spread_game_adj, ind_spread_hit, ind_spread_current_hit, spread_line_current, spread_line_current_label, spread_band_adj_label) %>% 
@@ -1543,7 +1547,7 @@ df_pred_total_spread_fin %>%
       ),
     game = str_c(team_away, " @ ", team_home),
     total_mod_label = round(total_game_adj, 1),
-    spread_mod_label = str_extract(spread_band_adj_label, "^[A-Z]+ [+-][0-9].[0-9]")
+    spread_mod_label = str_remove(spread_band_adj_label, " \\(.*")
   ) %>% 
   arrange(desc(bet_total), desc(bet_spread)) %>% 
   select(game, total_line_label, total_mod_label, bet_total, spread_line_label, spread_mod_label, bet_spread) %>% 
@@ -1558,6 +1562,110 @@ df_pred_total_spread_fin %>%
   ) %>% 
   gtreg::tbl_listing() %>% 
   gtsummary::modify_caption("**Bets to Take, Updated for Current Odds**")
+
+# df_total_team_train_id = readRDS("id_total_team_train_df.rds")
+# 
+# df_win_prob_resid = 
+#   df_total_team_train_id %>% 
+#   mutate(
+#     pred_team_total = predict(mod_total_team_svm, newdata = .)
+#   ) %>% 
+#   group_by(game_id) %>% 
+#   mutate(
+#     home_away = 
+#       case_when(
+#         row_number() == 1 ~ "home",
+#         row_number() == 2 ~ "away",
+#         .default = NA
+#       )
+#   ) %>% 
+#   summarise(
+#     resid_home = ifelse(home_away == "home", total_team - pred_team_total, NA)[1],
+#     resid_away = ifelse(home_away == "away", total_team - pred_team_total, NA)[2]
+#   ) %>% 
+#   drop_na()
+# 
+# df_test_win_prob = 
+#   df_total_team_test %>% 
+#   drop_na(rest_days, prior_rolling_off_rush_epa, prior_rolling_off_rush_epa_opp) %>% 
+#   mutate(
+#     pred_total_team_svm = predict(mod_total_team_svm, newdata = .)
+#   ) %>% 
+#   relocate(pred_total_team_svm, .after = team) %>% 
+#   select(team, team_opp, team_home, pred_total_team_svm) %>% 
+#   mutate(
+#     home_away = 
+#       case_when(
+#         team == team_home ~ "home", 
+#       .default = "away"
+#     ),
+#     game_id = rep(seq(1:c(nrow(.) / 2)), each = 2)
+#   ) %>% 
+#   pivot_wider(
+#     id_cols = c(game_id, team_home),
+#     names_from = home_away,
+#     values_from = pred_total_team_svm,
+#     names_prefix = "pred_"
+#   ) %>% 
+#   group_by(game_id) %>% 
+#   fill(pred_away, .direction = "up") %>% 
+#   drop_na() %>% 
+#   ungroup()
+# 
+# B <- 2000
+# n_new <- nrow(df_test_win_prob)
+# set.seed(1)
+# pred_total_draws <- array(NA, dim = c(B, n_new))  # optional: store totals
+# win_prob <- numeric(n_new)
+# 
+# for(i in seq_len(n_new)) {
+#   # sample B paired residuals
+#   idx <- sample(nrow(df_win_prob_resid), size = B, replace = TRUE)
+#   draws <- df_win_prob_resid[idx, c("resid_home", "resid_away")]
+#   
+#   home_draws <- df_test_win_prob$pred_home[i] + draws$resid_home
+#   away_draws <- df_test_win_prob$pred_away[i] + draws$resid_away
+#   
+#   wins <- mean(home_draws > away_draws)        # home win prob
+#   win_prob[i] <- wins
+#   pred_total_draws[, i] <- home_draws + away_draws
+# }
+# 
+# df_test_win_prob %>%
+#   mutate(win_prob_home = win_prob) %>% 
+#   left_join(
+#     df_schedule %>% 
+#       filter(week == week_n) %>% 
+#       mutate(
+#         home_wp_implied = 
+#           case_when(
+#             home_moneyline < 0 ~ abs(home_moneyline) / (abs(home_moneyline) + 100),
+#             home_moneyline >= 0 ~ 100 / (home_moneyline + 100),
+#             .default = NA
+#           ),
+#         away_wp_implied = 
+#           case_when(
+#             away_moneyline < 0 ~ abs(away_moneyline) / (abs(away_moneyline) + 100),
+#             away_moneyline >= 0 ~ 100 / (away_moneyline + 100),
+#             .default = NA
+#           ),
+#         vegas_home_wp = home_wp_implied / (home_wp_implied + away_wp_implied),
+#         vegas_away_wp = away_wp_implied / (home_wp_implied + away_wp_implied)
+#       ) %>% 
+#       select(home_team, vegas_home_wp, home_moneyline, away_moneyline) %>% 
+#       rename(team_home = home_team), 
+#     by = "team_home"
+#   ) %>% 
+#   filter(abs(win_prob_home - vegas_home_wp) > 0.1) %>% 
+#   mutate(
+#     money_line_hit = 
+#       case_when(
+#         win_prob_home - vegas_home_wp > 0 ~ home_moneyline,
+#         win_prob_home - vegas_home_wp < 0 ~ away_moneyline,
+#         .default = NA
+#       )
+#   ) %>% 
+#   view
 ```
 
 ### **Projected Team Scores**
@@ -1621,7 +1729,7 @@ df_pred_total_spread_fin %>%
   scale_x_continuous(breaks = seq(-10, 10, by = 1)) + 
   scale_fill_identity() + 
   scale_color_identity() + 
-  coord_cartesian(xlim = c(-5.5, 5.5)) +
+  coord_cartesian(xlim = c(-6, 6)) +
   labs(
     title = glue::glue("Week {week_n} Model vs Vegas Projected Team Totals"),
     x = "\U0394 Team Total Points",
