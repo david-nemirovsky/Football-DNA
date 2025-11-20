@@ -2079,14 +2079,20 @@ df_totals_hit_rate =
   mutate(
     pred_total_adj = predict(mod_total_correct_enet, newdata = .)
   ) %>% 
-  # left_join(df_szn_pbp %>% distinct(game_id, total_line), by = "game_id") %>% 
-  left_join(df_lines_open %>% distinct(game_id, total_line), by = "game_id") %>% 
+  left_join(df_szn_pbp %>% distinct(game_id, total_line) %>% rename(total_line_close = total_line), by = "game_id") %>%
+  left_join(df_lines_open %>% distinct(game_id, total_line), by = "game_id") %>%
   mutate(
     across(c(pred_total, pred_total_upper, pred_total_lower), ~ . + pred_total_adj, .names = "{col}_adj"),
     ind_total_hit = 
       case_when(
         total_line > pred_total_upper_adj ~ "Bet Under",
         total_line < pred_total_lower_adj ~ "Bet Over",
+        .default = "No Bet"
+      ),
+    ind_total_hit_close = 
+      case_when(
+        total_line_close > pred_total_upper_adj ~ "Bet Under",
+        total_line_close < pred_total_lower_adj ~ "Bet Over",
         .default = "No Bet"
       )
   ) %>% 
@@ -2098,6 +2104,14 @@ df_totals_hit_rate =
         ind_total_hit == "Bet Over" & actual_total > total_line ~ 1,
         ind_total_hit == "Bet Under" & actual_total == total_line ~ NA,
         ind_total_hit == "Bet Over" & actual_total == total_line ~ NA,
+        .default = 0
+      ),
+    ind_bet_hit_close = 
+      case_when(
+        ind_total_hit == "Bet Under" & actual_total < total_line_close ~ 1,
+        ind_total_hit == "Bet Over" & actual_total > total_line_close ~ 1,
+        ind_total_hit == "Bet Under" & actual_total == total_line_close ~ NA,
+        ind_total_hit == "Bet Over" & actual_total == total_line_close ~ NA,
         .default = 0
       ),
     week = as.integer(str_remove(str_extract(game_id, "^2025_[0-9]+"), "^[0-9]+_"))
@@ -2165,14 +2179,20 @@ df_spreads_hit_rate =
   mutate(
     pred_spread_adj = predict(mod_spread_correct_enet, newdata = .)
   ) %>% 
-  # left_join(df_szn_pbp %>% distinct(game_id, spread_line), by = "game_id") %>% 
-  left_join(df_lines_open %>% distinct(game_id, spread_line), by = "game_id") %>% 
+  left_join(df_szn_pbp %>% distinct(game_id, spread_line) %>% rename(spread_line_close = spread_line), by = "game_id") %>%
+  left_join(df_lines_open %>% distinct(game_id, spread_line), by = "game_id") %>%
   mutate(
     across(c(pred_spread, pred_spread_upper, pred_spread_lower), ~ . + pred_spread_adj, .names = "{col}_adj"),
     ind_spread_hit = 
       case_when(
         spread_line > pred_spread_upper_adj ~ "Bet Away",
         spread_line < pred_spread_lower_adj ~ "Bet Home",
+        .default = "No Bet"
+      ),
+    ind_spread_hit_close = 
+      case_when(
+        spread_line_close > pred_spread_upper_adj ~ "Bet Away",
+        spread_line_close < pred_spread_lower_adj ~ "Bet Home",
         .default = "No Bet"
       )
   ) %>% 
@@ -2184,6 +2204,14 @@ df_spreads_hit_rate =
         ind_spread_hit == "Bet Home" & actual_spread > spread_line ~ 1,
         ind_spread_hit == "Bet Away" & actual_spread == spread_line ~ NA,
         ind_spread_hit == "Bet Home" & actual_spread == spread_line ~ NA,
+        .default = 0
+      ),
+    ind_bet_hit_close = 
+      case_when(
+        ind_spread_hit == "Bet Away" & actual_spread < spread_line_close ~ 1,
+        ind_spread_hit == "Bet Home" & actual_spread > spread_line_close ~ 1,
+        ind_spread_hit == "Bet Away" & actual_spread == spread_line_close ~ NA,
+        ind_spread_hit == "Bet Home" & actual_spread == spread_line_close ~ NA,
         .default = 0
       ),
     week = as.integer(str_remove(str_extract(game_id, "^2025_[0-9]+"), "^[0-9]+_"))
@@ -2214,7 +2242,7 @@ df_totals_hit_rate %>%
   # filter(qb_cont == 1) %>% 
   group_by(week) %>% 
   summarise(
-    n_hit_tot = sum(ind_bet_hit),
+    n_hit_tot = sum(ind_bet_hit, na.rm = T),
     n_total_tot = n(),
     hit_rate_tot = round(n_hit_tot / n_total_tot * 100, 0)
   ) %>% 
@@ -2223,13 +2251,14 @@ df_totals_hit_rate %>%
       # filter(qb_cont == 1) %>% 
       group_by(week) %>% 
       summarise(
-        n_hit_spread = sum(ind_bet_hit),
+        n_hit_spread = sum(ind_bet_hit, na.rm = T),
         n_total_spread = n(),
         hit_rate_spread = round(n_hit_spread / n_total_spread * 100, 0)
       ),
     by = "week"
   ) %>% 
   mutate(
+    across(everything(), ~ replace_na(., 0)),
     week = as.character(week),
     n_hit_ovr = n_hit_tot + n_hit_spread,
     n_total_ovr = n_total_tot + n_total_spread,
@@ -2238,12 +2267,12 @@ df_totals_hit_rate %>%
   rows_insert(
     tibble(
       week = "Season",
-      n_hit_tot = sum(.$n_hit_tot),
-      n_hit_spread = sum(.$n_hit_spread),
-      n_hit_ovr = sum(.$n_hit_ovr),
-      n_total_tot = sum(.$n_total_tot),
-      n_total_spread = sum(.$n_total_spread),
-      n_total_ovr = sum(.$n_total_ovr)
+      n_hit_tot = sum(.$n_hit_tot, na.rm = T),
+      n_hit_spread = sum(.$n_hit_spread, na.rm = T),
+      n_hit_ovr = sum(.$n_hit_ovr, na.rm = T),
+      n_total_tot = sum(.$n_total_tot, na.rm = T),
+      n_total_spread = sum(.$n_total_spread, na.rm = T),
+      n_total_ovr = sum(.$n_total_ovr, na.rm = T)
     )
   ) %>% 
   mutate(
@@ -2290,7 +2319,10 @@ df_totals_hit_rate %>%
   ) %>% 
   rename_with(~ str_remove(., "Bet "), everything()) %>% 
   janitor::clean_names() %>% 
-  mutate(week = as.character(week)) %>% 
+  mutate(
+    week = as.character(week),
+    across(everything(), ~ replace_na(., 0))
+  ) %>% 
   rows_insert(
     tibble(
       week = "Season",
