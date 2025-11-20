@@ -1523,8 +1523,8 @@ df_pred_total_spread_fin %>%
       )
   ) %>% 
   filter(
-    (ind_total_hit == 1 | ind_spread_hit == 1) &
-      (ind_total_current_hit == 1 | ind_spread_current_hit == 1)
+    (ind_total_hit == 1 | ind_total_current_hit == 1) &
+      (ind_spread_hit == 1 | ind_spread_current_hit == 1)
   ) %>% 
   select(game_id, team_home, team_away, total_line, total_line_label, total_line_current, total_line_current_label, total_game_adj, ind_total_hit, ind_total_current_hit, spread_line, spread_line_label, spread_game_adj, ind_spread_hit, ind_spread_current_hit, spread_line_current, spread_line_current_label, spread_band_adj_label) %>% 
   left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_home = team), by = "team_home") %>% 
@@ -2096,9 +2096,10 @@ df_totals_hit_rate =
         .default = "No Bet"
       )
   ) %>% 
-  filter(ind_total_hit != "No Bet") %>% 
+  filter(ind_total_hit != "No Bet") %>%
+  # filter(ind_total_hit != "No Bet" | ind_total_hit_close != "No Bet") %>% 
   mutate(
-    ind_bet_hit = 
+    ind_bet_hit =
       case_when(
         ind_total_hit == "Bet Under" & actual_total < total_line ~ 1,
         ind_total_hit == "Bet Over" & actual_total > total_line ~ 1,
@@ -2114,6 +2115,20 @@ df_totals_hit_rate =
         ind_total_hit == "Bet Over" & actual_total == total_line_close ~ NA,
         .default = 0
       ),
+    # ind_bet_hit_open = 
+    #   case_when(
+    #     ind_total_hit == "Bet Under" & actual_total < total_line ~ 1,
+    #     ind_total_hit == "Bet Over" & actual_total > total_line ~ 1,
+    #     ind_total_hit == "Bet Under" & actual_total == total_line ~ NA,
+    #     ind_total_hit == "Bet Over" & actual_total == total_line ~ NA,
+    #     .default = 0
+    #   ),
+    # ind_bet_hit = 
+    #   case_when(
+    #     ind_bet_hit_open == 1 | ind_bet_hit_close == 1 ~ 1,
+    #     is.na(ind_bet_hit_open) | is.na(ind_bet_hit_close) ~ NA,
+    #     .default = 0
+    #   ),
     week = as.integer(str_remove(str_extract(game_id, "^2025_[0-9]+"), "^[0-9]+_"))
   ) %>% 
   left_join(df_qb_cont_old %>% select(game_id, week, qb_cont), by = c("game_id", "week")) %>%
@@ -2196,9 +2211,10 @@ df_spreads_hit_rate =
         .default = "No Bet"
       )
   ) %>% 
-  filter(ind_spread_hit != "No Bet") %>% 
+  filter(ind_spread_hit != "No Bet") %>%
+  # filter(ind_spread_hit != "No Bet" | ind_spread_hit_close != "No Bet") %>% 
   mutate(
-    ind_bet_hit = 
+    ind_bet_hit =
       case_when(
         ind_spread_hit == "Bet Away" & actual_spread < spread_line ~ 1,
         ind_spread_hit == "Bet Home" & actual_spread > spread_line ~ 1,
@@ -2214,6 +2230,20 @@ df_spreads_hit_rate =
         ind_spread_hit == "Bet Home" & actual_spread == spread_line_close ~ NA,
         .default = 0
       ),
+    # ind_bet_hit_open = 
+    #   case_when(
+    #     ind_spread_hit == "Bet Away" & actual_spread < spread_line ~ 1,
+    #     ind_spread_hit == "Bet Home" & actual_spread > spread_line ~ 1,
+    #     ind_spread_hit == "Bet Away" & actual_spread == spread_line ~ NA,
+    #     ind_spread_hit == "Bet Home" & actual_spread == spread_line ~ NA,
+    #     .default = 0
+    #   ),
+    # ind_bet_hit = 
+    #   case_when(
+    #     ind_bet_hit_open == 1 | ind_bet_hit_close == 1 ~ 1,
+    #     is.na(ind_bet_hit_open) | is.na(ind_bet_hit_close) ~ NA,
+    #     .default = 0
+    #   ),
     week = as.integer(str_remove(str_extract(game_id, "^2025_[0-9]+"), "^[0-9]+_"))
   ) %>% 
   left_join(df_qb_cont_old %>% select(game_id, week, qb_cont), by = c("game_id", "week")) %>%
