@@ -1523,8 +1523,8 @@ df_pred_total_spread_fin %>%
       )
   ) %>% 
   filter(
-    (ind_total_hit == 1 | ind_total_current_hit == 1) &
-      (ind_spread_hit == 1 | ind_spread_current_hit == 1)
+    (ind_total_hit == 1 & ind_total_current_hit == 1) |
+      (ind_spread_hit == 1 & ind_spread_current_hit == 1)
   ) %>% 
   select(game_id, team_home, team_away, total_line, total_line_label, total_line_current, total_line_current_label, total_game_adj, ind_total_hit, ind_total_current_hit, spread_line, spread_line_label, spread_game_adj, ind_spread_hit, ind_spread_current_hit, spread_line_current, spread_line_current_label, spread_band_adj_label) %>% 
   left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_home = team), by = "team_home") %>% 
