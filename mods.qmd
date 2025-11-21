@@ -1533,16 +1533,16 @@ df_pred_total_spread_fin %>%
   mutate(
     bet_total = 
       case_when(
-        ind_total_current_hit == 1 & total_game_adj > total_line_current ~ str_c("Over ", total_line_current_label),
-        ind_total_current_hit == 1 & total_game_adj < total_line_current ~ str_c("Under ", total_line_current_label),
+        ind_total_current_hit == 1 & ind_total_hit == 1 & total_game_adj > total_line_current ~ str_c("Over ", total_line_current_label),
+        ind_total_current_hit == 1 & ind_total_hit == 1 & total_game_adj < total_line_current ~ str_c("Under ", total_line_current_label),
         .default = "NA"
       ),
     bet_spread = 
       case_when(
-        ind_spread_current_hit == 1 & spread_game_adj > spread_line_current & spread_line_current < 0 ~ str_c(team_home, " +", -spread_line_current),
-        ind_spread_current_hit == 1 & spread_game_adj > spread_line_current & spread_line_current >= 0 ~ str_c(team_home, " ", -spread_line_current),
-        ind_spread_current_hit == 1 & spread_game_adj < spread_line_current & spread_line_current < 0 ~ str_c(team_away, " ", spread_line_current),
-        ind_spread_current_hit == 1 & spread_game_adj < spread_line_current & spread_line_current >= 0 ~ str_c(team_away, " +", spread_line_current),
+        ind_spread_current_hit == 1 & ind_spread_hit == 1 & spread_game_adj > spread_line_current & spread_line_current < 0 ~ str_c(team_home, " +", -spread_line_current),
+        ind_spread_current_hit == 1 & ind_spread_hit == 1 & spread_game_adj > spread_line_current & spread_line_current >= 0 ~ str_c(team_home, " ", -spread_line_current),
+        ind_spread_current_hit == 1 & ind_spread_hit == 1 & spread_game_adj < spread_line_current & spread_line_current < 0 ~ str_c(team_away, " ", spread_line_current),
+        ind_spread_current_hit == 1 & ind_spread_hit == 1 & spread_game_adj < spread_line_current & spread_line_current >= 0 ~ str_c(team_away, " +", spread_line_current),
         .default = "NA"
       ),
     game = str_c(team_away, " @ ", team_home),
