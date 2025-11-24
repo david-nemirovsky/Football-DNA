@@ -1588,7 +1588,7 @@ df_pred_total_spread_fin %>%
   geom_point(aes(color = as.factor(ind_total_hit), x = total_line, y = reorder(game, total_game_adj)), size = rel(2)) +
   geom_text(aes(label = total_adj_label, x = total_game_adj), vjust = -1, size = rel(2)) +
   geom_text(aes(label = spread_band_adj_label, x = total_game_upper_adj + 0.15), hjust = 0, size = rel(2)) +
-  geom_text(aes(label = game, x = total_game_lower_adj - 1.25), hjust = 0, size = rel(2)) +
+  geom_text(aes(label = game, x = total_game_lower_adj - 1.5), hjust = 0, size = rel(2)) +
   geom_text(aes(color = as.factor(ind_total_hit), label = total_line_label, x = total_line), vjust = -1, size = rel(2)) +
   geom_text(aes(color = as.factor(ind_spread_hit), label = spread_line_label, x = total_line), vjust = 2, size = rel(1.5)) +
   # scale_color_identity() + 
@@ -1608,7 +1608,7 @@ df_pred_total_spread_fin %>%
   ) +
   coord_cartesian(
     clip = "off",
-    xlim = c(33.5, 57.5)
+    xlim = c(33.5, 58.5)
   )
 
 df_pred_total_spread_fin %>% 
@@ -1908,8 +1908,8 @@ df_pred_total_spread_fin %>%
     team = fct_reorder(factor(team), game),
     points_text_label_position = 
       case_when(
-        team_points_diff >= 0 ~ team_points_diff + 0.4,
-        team_points_diff < 0 ~ team_points_diff - 0.4,
+        team_points_diff >= 0 ~ team_points_diff + 0.6,
+        team_points_diff < 0 ~ team_points_diff - 0.6,
         .default = NA
       ),
     points_text_label = str_c("(", round(team_points_mod, 1), "-", team_points_vegas, ")")
@@ -2087,22 +2087,22 @@ df_team_points_delta_szn =
     mean_team_points_diff = mean(team_points_diff),
     points_text_label_position_vegas = 
       case_when(
-        mean_team_points_diff_vegas >= 0 ~ mean_team_points_diff_vegas + 0.64,
-        mean_team_points_diff_vegas < 0 ~ mean_team_points_diff_vegas - 0.64,
+        mean_team_points_diff_vegas >= 0 ~ mean_team_points_diff_vegas + 0.75,
+        mean_team_points_diff_vegas < 0 ~ mean_team_points_diff_vegas - 0.75,
         .default = NA
       ),
     points_text_label_vegas = str_c("\U0394=", round(mean_team_points_diff_vegas, 1)),
     points_text_label_position_actual = 
       case_when(
-        mean_team_points_diff_actual >= 0 ~ mean_team_points_diff_actual + 0.64,
-        mean_team_points_diff_actual < 0 ~ mean_team_points_diff_actual - 0.64,
+        mean_team_points_diff_actual >= 0 ~ mean_team_points_diff_actual + 0.75,
+        mean_team_points_diff_actual < 0 ~ mean_team_points_diff_actual - 0.75,
         .default = NA
       ),
     points_text_label_actual = str_c("\U0394=", round(mean_team_points_diff_actual, 1)),
     points_text_label_position = 
       case_when(
-        mean_team_points_diff >= 0 ~ mean_team_points_diff + 0.33,
-        mean_team_points_diff < 0 ~ mean_team_points_diff - 0.33,
+        mean_team_points_diff >= 0 ~ mean_team_points_diff + 0.4,
+        mean_team_points_diff < 0 ~ mean_team_points_diff - 0.4,
         .default = NA
       ),
     points_text_label = str_c("\U0394=", round(mean_team_points_diff, 1))
