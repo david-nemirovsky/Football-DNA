@@ -37,6 +37,8 @@ library(rsample)
 # library(gbm)
 # library(e1071)
 # library(gtsummary)
+library(httr)
+library(jsonlite)
 
 knitr::opts_chunk$set(
   fig.width = 7,
@@ -117,13 +119,300 @@ df_schedule =
       )
   )
 
+teams_exclude = 
+  df_schedule %>% 
+  filter(week == week_n - 1) %>% 
+  mutate(
+    date_time = as.POSIXct(str_c(gameday, " ", gametime), format = "%Y-%m-%d %H:%M", tz = "America/New_York")
+  ) %>% 
+  filter(date_time > (format(Sys.time() - 5 * 3600, "%Y-%m-%d %H:%M"))) %>% 
+  select(home_team, away_team) %>% 
+  pivot_longer(
+    ends_with("_team"),
+    names_to = "home_away",
+    values_to = "team"
+  ) %>% 
+  pull(team)
+
+df_stadium_coords = 
+  tibble::tribble(
+    ~team,    ~stadium,                        ~lat,      ~lon,
+    # --- Current Teams ---
+    "ARI",    "State Farm Stadium",            33.5273,  -112.2639,
+    "ATL",    "Mercedes-Benz Stadium",         33.7558,   -84.4018,
+    "BAL",    "M&T Bank Stadium",              39.2781,   -76.6228,
+    "BUF",    "Highmark Stadium",              42.7735,   -78.7869,
+    "CAR",    "Bank of America Stadium",       35.2258,   -80.8528,
+    "CHI",    "Soldier Field",                 41.8625,   -87.6167,
+    "CIN",    "Paycor Stadium",                39.0954,   -84.5160,
+    "CLE",    "Cleveland Browns Stadium",      41.5061,   -81.6994,
+    "DAL",    "AT&T Stadium",                  32.7473,   -97.0945,
+    "DEN",    "Empower Field",                 39.7439,  -105.0200,
+    "DET",    "Ford Field",                    42.3400,   -83.0456,
+    "GB",     "Lambeau Field",                 44.5013,   -88.0622,
+    "HOU",    "NRG Stadium",                   29.6849,   -95.4108,
+    "IND",    "Lucas Oil Stadium",             39.7601,   -86.1638,
+    "JAX",    "EverBank Stadium",              30.3239,   -81.6373,
+    "KC",     "Arrowhead Stadium",             39.0489,   -94.4839,
+    "LA",     "SoFi Stadium",                  33.9536,  -118.3396,
+    "LAC",    "SoFi Stadium",                  33.9536,  -118.3396,
+    "LV",     "Allegiant Stadium",             36.0908,  -115.1839,
+    "MIA",    "Hard Rock Stadium",             25.9580,   -80.2389,
+    "MIN",    "U.S. Bank Stadium",             44.9738,   -93.2581,
+    "NE",     "Gillette Stadium",              42.0909,   -71.2643,
+    "NO",     "Caesars Superdome",             29.9508,   -90.0811,
+    "NYG",    "MetLife Stadium",               40.8135,   -74.0745,
+    "NYJ",    "MetLife Stadium",               40.8135,   -74.0745,
+    "PHI",    "Lincoln Financial Field",       39.9008,   -75.1675,
+    "PIT",    "Acrisure Stadium",              40.4468,   -80.0158,
+    "SEA",    "Lumen Field",                   47.5951,  -122.3323,
+    "SF",     "Levi's Stadium",                37.4030,  -121.9700,
+    "TB",     "Raymond James Stadium",         27.9758,   -82.5033,
+    "TEN",    "Nissan Stadium",                36.1665,   -86.7713,
+    "WAS",    "FedExField",                    38.9078,   -76.8644,
+    
+    # --- Old Stadiums / Relocated Teams ---
+    "SD",     "Qualcomm Stadium",              32.7831,  -117.1195,  # San Diego Chargers (1967–2016)
+    "STL",    "Edward Jones Dome",             38.6329,   -90.1885,  # St. Louis Rams (1995–2015)
+    "OAK",    "Oakland Coliseum",              37.7516,  -122.2005,  # Oakland Raiders (1966–2019)
+  
+    # --- International / Neutral ---
+    "INTL_LON",   "Wembley Stadium",      51.5560,   -0.2796,
+    "INTL_LON",   "Tottenham Stadium",     51.6043,   -0.0664,
+    "INTL_MEX",   "Azteca Stadium",  19.3029,  -99.1505,
+    "INTL_GER",   "Allianz Arena",        48.2188,   11.6247,
+    "INTL_GER",   "Deutsche Bank Park",50.0686,    8.6456
+) %>%
+  add_row(
+    team = "INTL_BRA", 
+    stadium = "Arena Corinthians", 
+    lat = -23.5450, 
+    lon = -46.4734
+  ) %>%
+  add_row(
+    team    = "INTL_TWICKENHAM",
+    stadium = "Twickenham Stadium",
+    lat     = 51.4560,
+    lon     = -0.3415
+  ) %>%
+  add_row(
+    team    = "INTL_TOR",
+    stadium = "Rogers Centre",
+    lat     = 43.6414,
+    lon     = -79.3894
+  )
+
+df_games_coords = 
+  df_schedule %>% 
+  rename(stadium_old = stadium) %>% 
+  filter(location != "Neutral") %>% 
+  left_join(
+    df_stadium_coords %>% 
+      rename(home_team = team),
+    by = "home_team"
+  ) %>% 
+  rbind(
+    df_schedule %>% 
+      filter(location == "Neutral") %>% 
+      left_join(
+        df_stadium_coords %>% 
+          select(-team),
+        by = "stadium"
+      ) %>% 
+      mutate(
+        lat = 
+          case_when(
+            is.na(lat) & game_type == "REG" ~ df_stadium_coords %>% filter(stadium == "Wembley Stadium") %>% pull(lat), 
+            game_type == "REG" ~ df_stadium_coords %>% filter(stadium == "Wembley Stadium") %>% pull(lat), 
+            .default = lat
+          ),
+        lon = 
+          case_when(
+            is.na(lon) & game_type == "REG" ~ df_stadium_coords %>% filter(stadium == "Wembley Stadium") %>% pull(lon), 
+            game_type == "REG" ~ df_stadium_coords %>% filter(stadium == "Wembley Stadium") %>% pull(lon), 
+            .default = lon
+          ),
+        stadium_old = NA
+      )
+  ) %>% 
+  drop_na(lat, lon) %>% 
+  rename(
+    game_lat = lat,
+    game_lon = lon
+  ) %>% 
+  select(game_id, home_team, location, stadium, game_lat, game_lon) %>% 
+  distinct()
+
+df_team_coords = 
+  df_games_coords %>%
+  distinct(home_team, .keep_all = TRUE) %>%
+  select(-game_id) %>% 
+  rename(
+    team = home_team,
+    home_lat = game_lat, 
+    home_lon = game_lon
+  )
+
+haversine <- function(lat1, lon1, lat2, lon2) {
+  R <- 6371  # km
+  dlat <- (lat2 - lat1) * pi/180
+  dlon <- (lon2 - lon1) * pi/180
+  a <- sin(dlat/2)^2 + cos(lat1*pi/180) * cos(lat2*pi/180) * sin(dlon/2)^2
+  c <- 2 * atan2(sqrt(a), sqrt(1-a))
+  R * c
+}
+
+df_travel_old =
+  df_szn_pbp %>% 
+  distinct(season, week, game_id, home_team, away_team) %>% 
+  mutate(
+    home_team = 
+      case_when(
+        season < 2017 & home_team == "LA" ~ "STL",
+        season < 2017 & home_team == "LAC" ~ "SD",
+        season < 2020 & home_team == "LV" ~ "OAK",
+        .default = home_team
+      ),
+    away_team = 
+      case_when(
+        season < 2017 & away_team == "LA" ~ "STL",
+        season < 2017 & away_team == "LAC" ~ "SD",
+        season < 2020 & away_team == "LV" ~ "OAK",
+        .default = away_team
+      )
+  ) %>% 
+  pivot_longer(
+    ends_with("_team"),
+    names_to = "home_away",
+    values_to = "team"
+  ) %>% 
+  left_join(df_games_coords %>% select(game_id, location, stadium, game_lat, game_lon), by = "game_id") %>% 
+  left_join(df_team_coords %>% select(-location), by = "team") %>% 
+  mutate(
+    travel_km = ifelse(home_away == "home" & location != "Neutral", 0, haversine(home_lat, home_lon, game_lat, game_lon)),
+    team = 
+      case_when(
+        season < 2017 & team == "LA" ~ "STL",
+        season < 2017 & team == "SD" ~ "LAC",
+        season < 2020 & team == "OAK" ~ "LV",
+        .default = team
+      )
+  ) %>% 
+  select(season, week, team, game_id, travel_km)
+
+# df_weather_last = 
+#   readxl::read_xlsx("weather_2025_raw.xlsx", sheet = glue::glue("Week {week_n-1}")) %>% 
+#   mutate(across(c(temp, wind), ~ as.integer(.)))
+
+# df_weather = 
+#   readxl::read_xlsx("weather_2025_raw.xlsx", sheet = glue::glue("Week {week_n}")) %>% 
+#   mutate(across(c(temp, wind), ~ as.integer(.)))
+
+get_weather <- function(
+    lat,
+    lon,
+    datetime,
+    variables = c("temperature_2m", "windspeed_10m")) {
+
+  # Pull a small window around the requested hour
+  start_date <- as.Date(datetime - hours(2))
+  end_date   <- as.Date(datetime + hours(2))
+
+  # Build query
+  query <- list(
+    latitude   = lat,
+    longitude  = lon,
+    hourly     = paste(variables, collapse = ","),
+    timezone   = "America/New_York",
+    start_date = as.character(start_date),
+    end_date   = as.character(end_date)
+  )
+
+  url <- "https://api.open-meteo.com/v1/forecast"
+  resp <- GET(url, query = query)
+  stop_for_status(resp)
+
+  parsed <- fromJSON(content(resp, "text", encoding = "UTF-8"))
+
+  hourly <- as_tibble(parsed$hourly) %>%
+    mutate(time = as.POSIXct(str_replace(time, "T", " "), format = "%Y-%m-%d %H:%M", tz = "America/New_York"))
+
+  # Exact timestamp match
+  row <- hourly %>% filter(time == datetime)
+
+  if (nrow(row) == 0) {
+    stop("No forecast available for that exact datetime.")
+  }
+
+  # Return row containing ONLY requested variables (plus time)
+  out <- row %>% select(time, all_of(variables))
+
+  return(out)
+}
+
 df_weather_last = 
-  readxl::read_xlsx("weather_2025_raw.xlsx", sheet = glue::glue("Week {week_n-1}")) %>% 
-  mutate(across(c(temp, wind), ~ as.integer(.)))
+  df_schedule %>% 
+  filter(week == week_n - 1) %>% 
+  select(game_id, gameday, weekday, gametime) %>% 
+  left_join(df_games_coords, by = "game_id") %>% 
+  mutate(
+    # date_time = as.POSIXct(str_c(gameday, " ", gametime), format = "%Y-%m-%d %H:%M", tz = "America/New_York"),
+    date_time = 
+      case_when(
+        as.integer(str_extract(gametime, "[0-9]+$")) < 30 ~ as.POSIXct(str_c(gameday, " ", gametime), format = "%Y-%m-%d %H:%M", tz = "America/New_York") - as.integer(str_extract(gametime, "[0-9]+$")) * 60,
+        as.integer(str_extract(gametime, "[0-9]+$")) >= 30 ~ as.POSIXct(str_c(gameday, " ", gametime), format = "%Y-%m-%d %H:%M", tz = "America/New_York") + 3600 - as.integer(str_extract(gametime, "[0-9]+$")) * 60,
+        .default = NA
+      )
+  ) %>% 
+  rowwise() %>% 
+  mutate(
+    weather = list(
+      get_weather(game_lat, game_lon, date_time)
+    ),
+    temp = as.integer(weather$temperature_2m * (9 / 5) + 32),
+    wind  = as.integer(weather$windspeed_10m)
+  ) %>% 
+  ungroup() %>% 
+  mutate(
+    team_home = str_extract(game_id, "[A-Z]+$"),
+    team_away = str_extract(str_remove(game_id, "^[0-9]+_[0-9]+_"), "^[A-Z]+"),
+    team_a = pmin(team_home, team_away),
+    team_b = pmax(team_home, team_away),
+    game = str_c(team_a, "vs", team_b)
+  ) %>% 
+  select(game, temp, wind)
 
 df_weather = 
-  readxl::read_xlsx("weather_2025_raw.xlsx", sheet = glue::glue("Week {week_n}")) %>% 
-  mutate(across(c(temp, wind), ~ as.integer(.)))
+  df_schedule %>% 
+  filter(week == week_n) %>% 
+  select(game_id, gameday, weekday, gametime) %>% 
+  left_join(df_games_coords, by = "game_id") %>% 
+  mutate(
+    # date_time = as.POSIXct(str_c(gameday, " ", gametime), format = "%Y-%m-%d %H:%M", tz = "America/New_York"),
+    date_time = 
+      case_when(
+        as.integer(str_extract(gametime, "[0-9]+$")) < 30 ~ as.POSIXct(str_c(gameday, " ", gametime), format = "%Y-%m-%d %H:%M", tz = "America/New_York") - as.integer(str_extract(gametime, "[0-9]+$")) * 60,
+        as.integer(str_extract(gametime, "[0-9]+$")) >= 30 ~ as.POSIXct(str_c(gameday, " ", gametime), format = "%Y-%m-%d %H:%M", tz = "America/New_York") + 3600 - as.integer(str_extract(gametime, "[0-9]+$")) * 60,
+        .default = NA
+      )
+  ) %>% 
+  rowwise() %>% 
+  mutate(
+    weather = list(
+      get_weather(game_lat, game_lon, date_time)
+    ),
+    temp = as.integer(weather$temperature_2m * (9 / 5) + 32),
+    wind  = as.integer(weather$windspeed_10m)
+  ) %>% 
+  ungroup() %>% 
+  mutate(
+    team_home = str_extract(game_id, "[A-Z]+$"),
+    team_away = str_extract(str_remove(game_id, "^[0-9]+_[0-9]+_"), "^[A-Z]+"),
+    team_a = pmin(team_home, team_away),
+    team_b = pmax(team_home, team_away),
+    game = str_c(team_a, "vs", team_b)
+  ) %>% 
+  select(game, temp, wind)
 
 df_lines_open = 
   readxl::read_xlsx("betting_lines_open_2025.xlsx", sheet = "Sheet1") %>% 
@@ -530,172 +819,6 @@ df_rest_days_old =
   ungroup() %>%
   select(season, week, team, game_id, rest_days)
 
-df_stadium_coords = 
-  tibble::tribble(
-    ~team,    ~stadium,                        ~lat,      ~lon,
-    # --- Current Teams ---
-    "ARI",    "State Farm Stadium",            33.5273,  -112.2639,
-    "ATL",    "Mercedes-Benz Stadium",         33.7558,   -84.4018,
-    "BAL",    "M&T Bank Stadium",              39.2781,   -76.6228,
-    "BUF",    "Highmark Stadium",              42.7735,   -78.7869,
-    "CAR",    "Bank of America Stadium",       35.2258,   -80.8528,
-    "CHI",    "Soldier Field",                 41.8625,   -87.6167,
-    "CIN",    "Paycor Stadium",                39.0954,   -84.5160,
-    "CLE",    "Cleveland Browns Stadium",      41.5061,   -81.6994,
-    "DAL",    "AT&T Stadium",                  32.7473,   -97.0945,
-    "DEN",    "Empower Field",                 39.7439,  -105.0200,
-    "DET",    "Ford Field",                    42.3400,   -83.0456,
-    "GB",     "Lambeau Field",                 44.5013,   -88.0622,
-    "HOU",    "NRG Stadium",                   29.6849,   -95.4108,
-    "IND",    "Lucas Oil Stadium",             39.7601,   -86.1638,
-    "JAX",    "EverBank Stadium",              30.3239,   -81.6373,
-    "KC",     "Arrowhead Stadium",             39.0489,   -94.4839,
-    "LA",     "SoFi Stadium",                  33.9536,  -118.3396,
-    "LAC",    "SoFi Stadium",                  33.9536,  -118.3396,
-    "LV",     "Allegiant Stadium",             36.0908,  -115.1839,
-    "MIA",    "Hard Rock Stadium",             25.9580,   -80.2389,
-    "MIN",    "U.S. Bank Stadium",             44.9738,   -93.2581,
-    "NE",     "Gillette Stadium",              42.0909,   -71.2643,
-    "NO",     "Caesars Superdome",             29.9508,   -90.0811,
-    "NYG",    "MetLife Stadium",               40.8135,   -74.0745,
-    "NYJ",    "MetLife Stadium",               40.8135,   -74.0745,
-    "PHI",    "Lincoln Financial Field",       39.9008,   -75.1675,
-    "PIT",    "Acrisure Stadium",              40.4468,   -80.0158,
-    "SEA",    "Lumen Field",                   47.5951,  -122.3323,
-    "SF",     "Levi's Stadium",                37.4030,  -121.9700,
-    "TB",     "Raymond James Stadium",         27.9758,   -82.5033,
-    "TEN",    "Nissan Stadium",                36.1665,   -86.7713,
-    "WAS",    "FedExField",                    38.9078,   -76.8644,
-    
-    # --- Old Stadiums / Relocated Teams ---
-    "SD",     "Qualcomm Stadium",              32.7831,  -117.1195,  # San Diego Chargers (1967–2016)
-    "STL",    "Edward Jones Dome",             38.6329,   -90.1885,  # St. Louis Rams (1995–2015)
-    "OAK",    "Oakland Coliseum",              37.7516,  -122.2005,  # Oakland Raiders (1966–2019)
-  
-    # --- International / Neutral ---
-    "INTL_LON",   "Wembley Stadium",      51.5560,   -0.2796,
-    "INTL_LON",   "Tottenham Stadium",     51.6043,   -0.0664,
-    "INTL_MEX",   "Azteca Stadium",  19.3029,  -99.1505,
-    "INTL_GER",   "Allianz Arena",        48.2188,   11.6247,
-    "INTL_GER",   "Deutsche Bank Park",50.0686,    8.6456
-) %>%
-  add_row(
-    team = "INTL_BRA", 
-    stadium = "Arena Corinthians", 
-    lat = -23.5450, 
-    lon = -46.4734
-  ) %>%
-  add_row(
-    team    = "INTL_TWICKENHAM",
-    stadium = "Twickenham Stadium",
-    lat     = 51.4560,
-    lon     = -0.3415
-  ) %>%
-  add_row(
-    team    = "INTL_TOR",
-    stadium = "Rogers Centre",
-    lat     = 43.6414,
-    lon     = -79.3894
-  )
-
-df_games_coords = 
-  df_schedule %>% 
-  rename(stadium_old = stadium) %>% 
-  filter(location != "Neutral") %>% 
-  left_join(
-    df_stadium_coords %>% 
-      rename(home_team = team),
-    by = "home_team"
-  ) %>% 
-  rbind(
-    df_schedule %>% 
-      filter(location == "Neutral") %>% 
-      left_join(
-        df_stadium_coords %>% 
-          select(-team),
-        by = "stadium"
-      ) %>% 
-      mutate(
-        lat = 
-          case_when(
-            is.na(lat) & game_type == "REG" ~ df_stadium_coords %>% filter(stadium == "Wembley Stadium") %>% pull(lat), 
-            game_type == "REG" ~ df_stadium_coords %>% filter(stadium == "Wembley Stadium") %>% pull(lat), 
-            .default = lat
-          ),
-        lon = 
-          case_when(
-            is.na(lon) & game_type == "REG" ~ df_stadium_coords %>% filter(stadium == "Wembley Stadium") %>% pull(lon), 
-            game_type == "REG" ~ df_stadium_coords %>% filter(stadium == "Wembley Stadium") %>% pull(lon), 
-            .default = lon
-          ),
-        stadium_old = NA
-      )
-  ) %>% 
-  drop_na(lat, lon) %>% 
-  rename(
-    game_lat = lat,
-    game_lon = lon
-  ) %>% 
-  select(game_id, home_team, location, stadium, game_lat, game_lon) %>% 
-  distinct()
-
-df_team_coords = 
-  df_games_coords %>%
-  distinct(home_team, .keep_all = TRUE) %>%
-  select(-game_id) %>% 
-  rename(
-    team = home_team,
-    home_lat = game_lat, 
-    home_lon = game_lon
-  )
-
-haversine <- function(lat1, lon1, lat2, lon2) {
-  R <- 6371  # km
-  dlat <- (lat2 - lat1) * pi/180
-  dlon <- (lon2 - lon1) * pi/180
-  a <- sin(dlat/2)^2 + cos(lat1*pi/180) * cos(lat2*pi/180) * sin(dlon/2)^2
-  c <- 2 * atan2(sqrt(a), sqrt(1-a))
-  R * c
-}
-
-df_travel_old =
-  df_szn_pbp %>% 
-  distinct(season, week, game_id, home_team, away_team) %>% 
-  mutate(
-    home_team = 
-      case_when(
-        season < 2017 & home_team == "LA" ~ "STL",
-        season < 2017 & home_team == "LAC" ~ "SD",
-        season < 2020 & home_team == "LV" ~ "OAK",
-        .default = home_team
-      ),
-    away_team = 
-      case_when(
-        season < 2017 & away_team == "LA" ~ "STL",
-        season < 2017 & away_team == "LAC" ~ "SD",
-        season < 2020 & away_team == "LV" ~ "OAK",
-        .default = away_team
-      )
-  ) %>% 
-  pivot_longer(
-    ends_with("_team"),
-    names_to = "home_away",
-    values_to = "team"
-  ) %>% 
-  left_join(df_games_coords %>% select(game_id, location, stadium, game_lat, game_lon), by = "game_id") %>% 
-  left_join(df_team_coords %>% select(-location), by = "team") %>% 
-  mutate(
-    travel_km = ifelse(home_away == "home" & location != "Neutral", 0, haversine(home_lat, home_lon, game_lat, game_lon)),
-    team = 
-      case_when(
-        season < 2017 & team == "LA" ~ "STL",
-        season < 2017 & team == "SD" ~ "LAC",
-        season < 2020 & team == "OAK" ~ "LV",
-        .default = team
-      )
-  ) %>% 
-  select(season, week, team, game_id, travel_km)
-
 df_team_total_spread_rolling =
   df_szn_pbp %>% 
   distinct(season, week, game_id, home_team, away_team, total_line, total, spread_line, result, home_score, away_score) %>%
@@ -829,7 +952,7 @@ df_qb_cont =
   ) %>% 
   rows_update(
     tibble(
-      team = c("NYJ", "CLE", "ATL", "PIT", "HOU"),
+      team = c("CIN", "TB"),
       qb_cont = 0
     ),
     by = "team"
@@ -876,6 +999,7 @@ df_total_team_test_solo =
     names_to = "home_away",
     values_to = "team"
   ) %>% 
+  filter(!(team %in% teams_exclude)) %>% 
   group_by(game_id) %>% 
   mutate(
     home_away = str_remove(home_away, "_team$"),
@@ -1368,7 +1492,12 @@ df_total_team_test_boot_prior =
 # 
 # saveRDS(df_total_team_pred_bands_prior, glue::glue("df_total_team_pred_bands_prior_week_{week_n}.rds"))
 
-df_total_team_pred_bands_prior = readRDS(glue::glue("df_total_team_pred_bands_prior_week_{week_n-1}.rds")) %>%
+
+
+df_total_team_pred_bands_prior = readRDS(glue::glue("df_total_team_pred_bands_prior_week_{week_n-2}.rds")) %>%
+  rbind(
+    readRDS(glue::glue("df_total_team_pred_bands_week_{week_n-2}.rds"))
+  ) %>% 
   rbind(df_total_team_pred_bands_last)
 
 df_spread_total_bands_prior = 
@@ -1450,7 +1579,7 @@ df_pred_total_spread_fin %>%
   ) +
   coord_cartesian(
     clip = "off",
-    xlim = c(34.5, 54.5)
+    xlim = c(34.5, 57.5)
   )
 
 df_pred_total_spread_fin %>% 
@@ -1769,7 +1898,7 @@ df_pred_total_spread_fin %>%
   scale_x_continuous(breaks = seq(-10, 10, by = 1)) + 
   scale_fill_identity() + 
   scale_color_identity() + 
-  coord_cartesian(xlim = c(-6, 6)) +
+  coord_cartesian(xlim = c(-8, 8)) +
   labs(
     title = glue::glue("Week {week_n} Model vs Vegas Projected Team Totals"),
     x = "\U0394 Team Total Points (Based on Current Lines)",
