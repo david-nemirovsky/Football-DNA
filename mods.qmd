@@ -1682,7 +1682,7 @@ df_pred_total_spread_fin %>%
   ) %>% 
   filter(
     (ind_total_hit == 1 & ind_total_current_hit == 1) |
-      (ind_spread_hit == 1 & ind_spread_current_hit == 1)
+      (ind_spread_hit == 1 & ind_spread_current_hit == 1 & abs(spread_line_current - spread_line) <= 6)
   ) %>% 
   select(game_id, team_home, team_away, total_line, total_line_label, total_line_current, total_line_current_label, total_game_adj, ind_total_hit, ind_total_current_hit, spread_line, spread_line_label, spread_game_adj, ind_spread_hit, ind_spread_current_hit, spread_line_current, spread_line_current_label, spread_band_adj_label) %>% 
   left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_home = team), by = "team_home") %>% 
@@ -2775,3 +2775,99 @@ df_totals %>%
 ```
 
 :::
+
+## **Team Rankings**
+
+```{r rankings}
+df_teams %>% 
+  mutate(
+    team_opp = list(.$team)
+  ) %>% 
+  unnest(team_opp) %>% 
+  left_join(
+    df_total_team_test_solo %>% 
+      select(team, starts_with("prior_rolling")) %>% 
+      mutate(
+        qb_cont = 1,
+        rest_days = 7,
+        travel_km = 0
+      ), 
+    by = "team"
+  ) %>% 
+  left_join(
+    df_total_team_test_solo %>% 
+      select(team, starts_with("prior_rolling")) %>% 
+      mutate(
+        qb_cont = 1,
+        rest_days = 7,
+        travel_km = 0
+      ) %>% 
+      rename_with(~ str_c(., "_opp"), everything()), 
+    by = "team_opp"
+  ) %>% 
+  filter(team != team_opp) %>% 
+  drop_na() %>% 
+  mutate(
+    pred_total_team = predict(mod_total_team_svm, newdata = .)
+  ) %>% 
+  distinct(team, team_opp, pred_total_team) %>% 
+  left_join(
+    df_teams %>% 
+      mutate(
+        team_opp = list(.$team)
+      ) %>% 
+      unnest(team_opp) %>% 
+      left_join(
+        df_total_team_test_solo %>% 
+          select(team, starts_with("prior_rolling")) %>% 
+          mutate(
+            qb_cont = 1,
+            rest_days = 7,
+            travel_km = 0
+          ), 
+        by = "team"
+      ) %>% 
+      left_join(
+        df_total_team_test_solo %>% 
+          select(team, starts_with("prior_rolling")) %>% 
+          mutate(
+            qb_cont = 1,
+            rest_days = 7,
+            travel_km = 0
+          ) %>% 
+          rename_with(~ str_c(., "_opp"), everything()), 
+        by = "team_opp"
+      ) %>% 
+      filter(team != team_opp) %>% 
+      drop_na() %>% 
+      mutate(
+        pred_total_team = predict(mod_total_team_svm, newdata = .)
+      ) %>% 
+      distinct(team, team_opp, pred_total_team) %>% 
+      rename(
+        pred_total_team_opp = pred_total_team,
+        team_opp = team,
+        team = team_opp
+      ),
+    by = c("team", "team_opp")
+  ) %>% 
+  mutate(
+    ind_win = ifelse(pred_total_team > pred_total_team_opp, 1, 0)
+  ) %>% 
+  group_by(team) %>% 
+  summarise(
+    n_wins = sum(ind_win)
+  ) %>% 
+  # arrange(-n_wins) %>% 
+  mutate(
+    week_rank = rank(-n_wins)
+  ) %>% 
+  arrange(week_rank) %>% 
+  select(week_rank, team) %>% 
+  labelled::set_variable_labels(
+    week_rank = "Rank",
+    team = "Team"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  gtsummary::modify_caption("**Updated Rankings**")
+```
