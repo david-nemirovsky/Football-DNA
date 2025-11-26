@@ -1814,15 +1814,27 @@ df_test_win_prob %>%
       rename(team_home = home_team),
     by = "team_home"
   ) %>%
-  filter(abs(win_prob_home - vegas_home_wp) > 0.1) %>%
+  filter(abs(win_prob_home - vegas_home_wp) > 0.05) %>%
   mutate(
+    win_prob_away = 1 - win_prob_home,
     money_line_hit =
       case_when(
         win_prob_home - vegas_home_wp > 0 ~ home_moneyline,
         win_prob_home - vegas_home_wp < 0 ~ away_moneyline,
         .default = NA
       )
-  ) %>%
+  ) %>% 
+  mutate(
+    ind_money_line_hit_new = 
+      case_when(
+        money_line_hit < 0 & money_line_hit == home_moneyline & abs(win_prob_home - (-home_moneyline / (-home_moneyline + 100))) > 0.05~ 1, 
+        money_line_hit > 0 & money_line_hit == home_moneyline & abs(win_prob_home - (100 / home_moneyline)) > 0.05 ~ 1,
+        money_line_hit < 0 & money_line_hit == away_moneyline & abs(win_prob_away - (-away_moneyline / (-away_moneyline + 100))) > 0.05 ~ 1, 
+        money_line_hit > 0 & money_line_hit == away_moneyline & abs(win_prob_away - (100 / away_moneyline)) > 0.05 ~ 1,
+        .default = 0
+      )
+  ) %>% 
+  filter(ind_money_line_hit_new == 1) %>% 
   left_join(df_pred_total_spread_fin %>% select(game, team_home, team_away), by = "team_home") %>% 
   left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_home = team), by = "team_home") %>% 
   left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_away = team), by = "team_away") %>% 
@@ -1863,7 +1875,7 @@ df_test_win_prob %>%
     team_ml_hit_label = "Moneyline to Bet"
   ) %>% 
   gtreg::tbl_listing() %>% 
-  gtsummary::modify_caption("**Moneyline Bets to Take, Updated for Current Odds**")
+  gtsummary::modify_caption("**Moneyline Bets to Consider, Updated for Current Odds**")
 ```
 
 ### **Projected Team Scores**
