@@ -1828,9 +1828,9 @@ df_test_win_prob %>%
     ind_money_line_hit_new = 
       case_when(
         money_line_hit < 0 & money_line_hit == home_moneyline & abs(win_prob_home - (-home_moneyline / (-home_moneyline + 100))) > 0.05~ 1, 
-        money_line_hit > 0 & money_line_hit == home_moneyline & abs(win_prob_home - (100 / home_moneyline)) > 0.05 ~ 1,
+        money_line_hit > 0 & money_line_hit == home_moneyline & abs(win_prob_home - (100 / (100 + home_moneyline))) > 0.05 ~ 1,
         money_line_hit < 0 & money_line_hit == away_moneyline & abs(win_prob_away - (-away_moneyline / (-away_moneyline + 100))) > 0.05 ~ 1, 
-        money_line_hit > 0 & money_line_hit == away_moneyline & abs(win_prob_away - (100 / away_moneyline)) > 0.05 ~ 1,
+        money_line_hit > 0 & money_line_hit == away_moneyline & abs(win_prob_away - (100 / (100 + away_moneyline))) > 0.05 ~ 1,
         .default = 0
       )
   ) %>% 
