@@ -953,7 +953,7 @@ df_qb_cont =
   rows_update(
     tibble(
       team = c("CIN", "TB"),
-      qb_cont = 0
+      qb_cont = 1
     ),
     by = "team"
   )
@@ -1262,7 +1262,7 @@ df_pred_total_spread_adj =
 # saveRDS(pred_matrix_total, glue::glue("pred_matrix_boot_bands_week_{week_n}.rds"))
 # 
 # saveRDS(df_total_team_pred_bands, glue::glue("df_total_team_pred_bands_week_{week_n}.rds"))
-
+# 
 # df_total_team_pred_bands_last = readRDS(glue::glue("df_total_team_pred_bands_week_{week_n-1}.rds"))
 
 df_total_team_pred_bands = readRDS(glue::glue("df_total_team_pred_bands_week_{week_n}.rds"))
@@ -1608,7 +1608,7 @@ df_pred_total_spread_fin %>%
   ) +
   coord_cartesian(
     clip = "off",
-    xlim = c(33.5, 58.5)
+    xlim = c(32.5, 56.5)
   )
 
 df_pred_total_spread_fin %>% 
@@ -2791,6 +2791,10 @@ df_totals %>%
 ## **Team Rankings**
 
 ```{r rankings}
+df_team_ranks_prior  = 
+  readRDS(glue::glue("df_team_ranks_{week_n-1}.rds")) %>% 
+  rename(prior_rank = week_rank)
+
 df_team_ranks = 
   df_teams %>% 
   mutate(
@@ -2879,9 +2883,11 @@ df_team_ranks =
   select(week_rank, team)
 
 df_team_ranks %>% 
+  left_join(df_team_ranks_prior, by = "team") %>% 
   labelled::set_variable_labels(
     week_rank = "Rank",
-    team = "Team"
+    team = "Team",
+    prior_rank = "Prior Rank",
   ) %>% 
   gtreg::tbl_listing() %>% 
   gtsummary::modify_caption("**Updated Rankings**")
