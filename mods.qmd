@@ -2795,7 +2795,7 @@ df_team_ranks_prior  =
   readRDS(glue::glue("df_team_ranks_{week_n-1}.rds")) %>% 
   rename(prior_rank = week_rank)
 
-df_team_ranks = 
+df_team_ranks =
   df_teams %>% 
   mutate(
     team_opp = list(.$team)
@@ -2880,10 +2880,21 @@ df_team_ranks =
     week_rank = rank(-n_wins)
   ) %>% 
   arrange(week_rank) %>% 
-  select(week_rank, team)
+  select(week_rank, team) %>% 
+  right_join(df_team_ranks_prior, by = "team") %>% 
+  arrange(prior_rank) %>% 
+  mutate(
+    week_rank = 
+      case_when(
+        is.na(week_rank) ~ prior_rank - 0.1,
+        .default = week_rank
+      )
+  ) %>% 
+  arrange(week_rank, prior_rank) %>% 
+  select(-week_rank) %>% 
+  rowid_to_column("week_rank")
 
 df_team_ranks %>% 
-  left_join(df_team_ranks_prior, by = "team") %>% 
   labelled::set_variable_labels(
     week_rank = "Rank",
     team = "Team",
