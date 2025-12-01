@@ -2791,7 +2791,8 @@ df_totals %>%
 ## **Team Rankings**
 
 ```{r rankings}
-df_teams %>% 
+df_team_ranks = 
+  df_teams %>% 
   mutate(
     team_opp = list(.$team)
   ) %>% 
@@ -2875,11 +2876,17 @@ df_teams %>%
     week_rank = rank(-n_wins)
   ) %>% 
   arrange(week_rank) %>% 
-  select(week_rank, team) %>% 
+  select(week_rank, team)
+
+df_team_ranks %>% 
   labelled::set_variable_labels(
     week_rank = "Rank",
     team = "Team"
   ) %>% 
   gtreg::tbl_listing() %>% 
   gtsummary::modify_caption("**Updated Rankings**")
+
+# save for following week:
+saveRDS(df_team_ranks, glue::glue("df_team_ranks_{week_n}.rds"))
+
 ```
