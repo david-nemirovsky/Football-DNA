@@ -512,6 +512,33 @@ df_rolling_pace =
   ) %>% 
   ungroup()
 
+# df_rolling_pace = 
+#   df_szn_pbp %>% 
+#   # filter(season > 2008) %>% 
+#   group_by(season, week, game_id, posteam) %>% 
+#   summarise(n_plays = n()) %>% 
+#   drop_na() %>% 
+#   rename(team = posteam) %>% 
+#   group_by(season, team) %>% 
+#   arrange(season, team, week) %>% 
+#   mutate(
+#     n_game = row_number(),
+#     sum_plays = cumsum(n_plays),
+#     sum_recent = n_plays + lag(n_plays) + lag(lag(n_plays)) + lag(lag(lag(n_plays))),
+#     rolling_recent = sum_recent / 4,
+#     sum_prev = sum_plays - sum_recent,
+#     rolling_prev = sum_prev / (n_game - 4),
+#     rolling_pace = 
+#       case_when(
+#         n_game <= 4 ~ sum_plays / n_game,
+#         .default = 0.75 * rolling_recent + 0.25 * rolling_prev
+#       ),
+#     across(starts_with("rolling_"), ~ lag(.), .names = "prior_{col}")#,
+#     # rolling_pace = cumsum(n_plays) / n_game
+#   ) %>% 
+#   select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>% 
+#   ungroup()
+
 df_rolling_rz_eff =
   df_szn_pbp %>% 
   filter(season > 2008) %>% 
@@ -1814,7 +1841,7 @@ df_test_win_prob %>%
       rename(team_home = home_team),
     by = "team_home"
   ) %>%
-  filter(abs(win_prob_home - vegas_home_wp) > 0.05) %>%
+  filter(abs(win_prob_home - vegas_home_wp) > 0.1) %>%
   mutate(
     win_prob_away = 1 - win_prob_home,
     money_line_hit =
@@ -1827,10 +1854,10 @@ df_test_win_prob %>%
   mutate(
     ind_money_line_hit_new = 
       case_when(
-        money_line_hit < 0 & money_line_hit == home_moneyline & abs(win_prob_home - (-home_moneyline / (-home_moneyline + 100))) > 0.05~ 1, 
-        money_line_hit > 0 & money_line_hit == home_moneyline & abs(win_prob_home - (100 / (100 + home_moneyline))) > 0.05 ~ 1,
-        money_line_hit < 0 & money_line_hit == away_moneyline & abs(win_prob_away - (-away_moneyline / (-away_moneyline + 100))) > 0.05 ~ 1, 
-        money_line_hit > 0 & money_line_hit == away_moneyline & abs(win_prob_away - (100 / (100 + away_moneyline))) > 0.05 ~ 1,
+        money_line_hit < 0 & money_line_hit == home_moneyline & abs(win_prob_home - (-home_moneyline / (-home_moneyline + 100))) > 0.1 ~ 1, 
+        money_line_hit > 0 & money_line_hit == home_moneyline & abs(win_prob_home - (100 / (100 + home_moneyline))) > 0.1 ~ 1,
+        money_line_hit < 0 & money_line_hit == away_moneyline & abs(win_prob_away - (-away_moneyline / (-away_moneyline + 100))) > 0.1 ~ 1, 
+        money_line_hit > 0 & money_line_hit == away_moneyline & abs(win_prob_away - (100 / (100 + away_moneyline))) > 0.1 ~ 1,
         .default = 0
       )
   ) %>% 
