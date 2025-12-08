@@ -1,6 +1,10 @@
 project:
   type: website
   output-dir: docs
+  render:
+    - index.qmd
+    - mods.qmd
+    - fantasy.qmd
 
 website:
   title: "Football DNA"
