@@ -426,7 +426,7 @@ df_lines_open =
   ) %>% 
   relocate(game_id)
 
-mod_total_team_svm = readRDS("mod_total_team_svm_2025_12_08.rds")
+mod_total_team_svm = readRDS("mod_total_team_svm_2025_12_11.rds")
 mod_total_correct_enet = readRDS("mod_total_correct_enet.rds")
 mod_spread_correct_enet = readRDS("mod_spread_correct_enet.rds")
 df_total_team_train = readRDS("total_team_train_df.rds")
@@ -523,32 +523,32 @@ df_rolling_epa =
   mutate(n_game = row_number()) %>%
   mutate(
     across(ends_with("_epa"), ~ cumsum(.), .names = "sum_{col}"),
-    across(ends_with("_epa"), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))), .names = "sum_recent_{col}"),
-    across(starts_with("sum_recent_"), ~ . / 4, .names = "rolling_{col}_recent"),
+    across(ends_with("_epa"), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
+    across(starts_with("sum_recent_"), ~ . / 5, .names = "rolling_{col}_recent"),
     sum_prev_off_rush_epa = sum_off_rush_epa - sum_recent_off_rush_epa,
     sum_prev_off_pass_epa = sum_off_pass_epa - sum_recent_off_pass_epa,
     sum_prev_def_rush_epa = sum_def_rush_epa - sum_recent_def_pass_epa,
     sum_prev_def_pass_epa = sum_def_pass_epa - sum_recent_def_pass_epa,
-    across(starts_with("sum_prev_"), ~ . / (n_game - 4), .names = "rolling_{col}_prev"),
+    across(starts_with("sum_prev_"), ~ . / (n_game - 5), .names = "rolling_{col}_prev"),
     rolling_off_rush_epa =
       case_when(
-        n_game <= 4 ~ sum_off_rush_epa / n_game,
-        .default = 0.75 * rolling_sum_recent_off_rush_epa_recent + 0.25 * rolling_sum_prev_off_rush_epa_prev
+        n_game <= 5 ~ sum_off_rush_epa / n_game,
+        .default = 0.65 * rolling_sum_recent_off_rush_epa_recent + 0.35 * rolling_sum_prev_off_rush_epa_prev
       ),
     rolling_off_pass_epa =
       case_when(
-        n_game <= 4 ~ sum_off_pass_epa / n_game,
-        .default = 0.75 * rolling_sum_recent_off_pass_epa_recent + 0.25 * rolling_sum_prev_off_pass_epa_prev
+        n_game <= 5 ~ sum_off_pass_epa / n_game,
+        .default = 0.65 * rolling_sum_recent_off_pass_epa_recent + 0.35 * rolling_sum_prev_off_pass_epa_prev
       ),
     rolling_def_rush_epa =
       case_when(
-        n_game <= 4 ~ sum_def_rush_epa / n_game,
-        .default = 0.75 * rolling_sum_recent_def_rush_epa_recent + 0.25 * rolling_sum_prev_def_rush_epa_prev
+        n_game <= 5 ~ sum_def_rush_epa / n_game,
+        .default = 0.65 * rolling_sum_recent_def_rush_epa_recent + 0.35 * rolling_sum_prev_def_rush_epa_prev
       ),
     rolling_def_pass_epa =
       case_when(
-        n_game <= 4 ~ sum_def_pass_epa / n_game,
-        .default = 0.75 * rolling_sum_recent_def_pass_epa_recent + 0.25 * rolling_sum_prev_def_pass_epa_prev
+        n_game <= 5 ~ sum_def_pass_epa / n_game,
+        .default = 0.65 * rolling_sum_recent_def_pass_epa_recent + 0.35 * rolling_sum_prev_def_pass_epa_prev
       ),
     across(starts_with("rolling_"), ~ lag(.), .names = "prior_{col}")
   ) %>%
@@ -583,14 +583,14 @@ df_rolling_pace =
   mutate(
     n_game = row_number(),
     sum_plays = cumsum(n_plays),
-    sum_recent = n_plays + lag(n_plays) + lag(lag(n_plays)) + lag(lag(lag(n_plays))),
-    rolling_recent = sum_recent / 4,
+    sum_recent = n_plays + lag(n_plays) + lag(lag(n_plays)) + lag(lag(lag(n_plays))) + lag(lag(lag(lag(n_plays)))),
+    rolling_recent = sum_recent / 5,
     sum_prev = sum_plays - sum_recent,
-    rolling_prev = sum_prev / (n_game - 4),
+    rolling_prev = sum_prev / (n_game - 5),
     rolling_pace =
       case_when(
-        n_game <= 4 ~ sum_plays / n_game,
-        .default = 0.75 * rolling_recent + 0.25 * rolling_prev
+        n_game <= 5 ~ sum_plays / n_game,
+        .default = 0.65 * rolling_recent + 0.35 * rolling_prev
       ),
     across(starts_with("rolling_"), ~ lag(.), .names = "prior_{col}")#,
     # rolling_pace = cumsum(n_plays) / n_game
@@ -682,15 +682,15 @@ df_rolling_rz_eff =
   mutate(
     n_game = row_number(),
     across(starts_with("redzone_"), ~ cumsum(.), .names = "sum_{col}"),
-    across(starts_with("redzone_"), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))), .names = "sum_recent_{col}"),
+    across(starts_with("redzone_"), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
     rolling_recent = (sum_recent_redzone_tds / sum_recent_redzone_trips),
     sum_prev_redzone_trips = sum_redzone_trips - sum_recent_redzone_trips,
     sum_prev_redzone_tds = sum_redzone_tds - sum_recent_redzone_tds,
     rolling_prev = (sum_prev_redzone_tds / sum_prev_redzone_trips),
     rolling_rz_eff =
       case_when(
-        n_game <= 4 ~ (sum_redzone_tds / sum_redzone_trips),
-        .default = 0.75 * rolling_recent + 0.25 * rolling_prev
+        n_game <= 5 ~ (sum_redzone_tds / sum_redzone_trips),
+        .default = 0.65 * rolling_recent + 0.35 * rolling_prev
       ),
     across(starts_with("rolling_"), ~ lag(.), .names = "prior_{col}")
   ) %>%
@@ -813,7 +813,7 @@ df_rolling_success =
   ) %>%
   mutate(
     across(contains("_success_"), ~ cumsum(.), .names = "sum_{col}"),
-    across(starts_with("_success_"), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))), .names = "sum_recent_{col}"),
+    across(starts_with("_success_"), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
     rolling_recent_off = (sum_sum_success_off / sum_n_success_off),
     rolling_recent_def = (sum_sum_success_def / sum_n_success_def),
     sum_prev_sum_success_off = sum_success_off - sum_sum_success_off,
@@ -824,13 +824,13 @@ df_rolling_success =
     rolling_prev_def = (sum_prev_sum_success_def / sum_prev_n_success_def),
     rolling_success_off_rate =
       case_when(
-        n_game <= 4 ~ (sum_sum_success_off / sum_n_success_off),
-        .default = 0.75 * rolling_recent_off + 0.25 * rolling_prev_off
+        n_game <= 5 ~ (sum_sum_success_off / sum_n_success_off),
+        .default = 0.65 * rolling_recent_off + 0.35 * rolling_prev_off
       ),
     rolling_success_def_rate =
       case_when(
-        n_game <= 4 ~ (sum_sum_success_def / sum_n_success_def),
-        .default = 0.75 * rolling_recent_def + 0.25 * rolling_prev_def
+        n_game <= 5 ~ (sum_sum_success_def / sum_n_success_def),
+        .default = 0.65 * rolling_recent_def + 0.35 * rolling_prev_def
       ),
     across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
   ) %>%
@@ -929,7 +929,7 @@ df_rolling_exp_plays =
   ) %>%
   mutate(
     across(c(contains("_exp_"), contains("_tot_")), ~ cumsum(.), .names = "sum_{col}"),
-    across(c(contains("_exp_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))), .names = "sum_recent_{col}"),
+    across(c(contains("_exp_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
     rolling_recent_off = (sum_recent_n_exp_off / sum_recent_n_tot_off),
     rolling_recent_def = (sum_recent_n_exp_def / sum_recent_n_tot_def),
     sum_prev_n_exp_off = sum_n_exp_off - sum_recent_n_exp_off,
@@ -940,13 +940,13 @@ df_rolling_exp_plays =
     rolling_prev_def = (sum_prev_n_exp_def / sum_prev_n_tot_def),
     rolling_exp_off_rate =
       case_when(
-        n_game <= 4 ~ (sum_n_exp_off / sum_n_tot_off),
-        .default = 0.75 * rolling_recent_off + 0.25 * rolling_prev_off
+        n_game <= 5 ~ (sum_n_exp_off / sum_n_tot_off),
+        .default = 0.65 * rolling_recent_off + 0.35 * rolling_prev_off
       ),
     rolling_exp_def_rate =
       case_when(
-        n_game <= 4 ~ (sum_n_exp_def / sum_n_tot_def),
-        .default = 0.75 * rolling_recent_def + 0.25 * rolling_prev_def
+        n_game <= 5 ~ (sum_n_exp_def / sum_n_tot_def),
+        .default = 0.65 * rolling_recent_def + 0.35 * rolling_prev_def
       ),
     across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
   ) %>%
@@ -1046,7 +1046,7 @@ df_rolling_to_rate =
   ) %>%
   mutate(
     across(c(contains("_to_"), contains("_tot_")), ~ cumsum(.), .names = "sum_{col}"),
-    across(c(contains("_to_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))), .names = "sum_recent_{col}"),
+    across(c(contains("_to_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
     rolling_recent_off = (sum_recent_n_to_off / sum_recent_n_tot_off),
     rolling_recent_def = (sum_recent_n_to_def / sum_recent_n_tot_def),
     sum_prev_n_to_off = sum_n_to_off - sum_recent_n_to_off,
@@ -1057,13 +1057,13 @@ df_rolling_to_rate =
     rolling_prev_def = (sum_prev_n_to_def / sum_prev_n_tot_def),
     rolling_to_off_rate =
       case_when(
-        n_game <= 4 ~ (sum_n_to_off / sum_n_tot_off),
-        .default = 0.75 * rolling_recent_off + 0.25 * rolling_prev_off
+        n_game <= 5 ~ (sum_n_to_off / sum_n_tot_off),
+        .default = 0.65 * rolling_recent_off + 0.35 * rolling_prev_off
       ),
     rolling_to_def_rate =
       case_when(
-        n_game <= 4 ~ (sum_n_to_def / sum_n_tot_def),
-        .default = 0.75 * rolling_recent_def + 0.25 * rolling_prev_def
+        n_game <= 5 ~ (sum_n_to_def / sum_n_tot_def),
+        .default = 0.65 * rolling_recent_def + 0.35 * rolling_prev_def
       ),
     across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
   ) %>%
@@ -1148,7 +1148,7 @@ df_rolling_pen_yards =
   ) %>%
   mutate(
     across(c(contains("_pen_"), contains("_tot_")), ~ cumsum(.), .names = "sum_{col}"),
-    across(c(contains("_pen_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))), .names = "sum_recent_{col}"),
+    across(c(contains("_pen_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
     rolling_recent_off = (sum_recent_n_pen_off / sum_recent_n_tot_off),
     rolling_recent_def = (sum_recent_n_pen_def / sum_recent_n_tot_def),
     sum_prev_n_pen_off = sum_n_pen_off - sum_recent_n_pen_off,
@@ -1159,13 +1159,13 @@ df_rolling_pen_yards =
     rolling_prev_def = (sum_prev_n_pen_def / sum_prev_n_tot_def),
     rolling_pen_yards_off =
       case_when(
-        n_game <= 4 ~ (sum_n_pen_off / sum_n_tot_off),
-        .default = 0.75 * rolling_recent_off + 0.25 * rolling_prev_off
+        n_game <= 5 ~ (sum_n_pen_off / sum_n_tot_off),
+        .default = 0.65 * rolling_recent_off + 0.35 * rolling_prev_off
       ),
     rolling_pen_yards_def =
       case_when(
-        n_game <= 4 ~ (sum_n_pen_def / sum_n_tot_def),
-        .default = 0.75 * rolling_recent_def + 0.25 * rolling_prev_def
+        n_game <= 5 ~ (sum_n_pen_def / sum_n_tot_def),
+        .default = 0.65 * rolling_recent_def + 0.35 * rolling_prev_def
       ),
     across(starts_with("rolling_") & contains("_yards_"), ~ lag(.), .names = "prior_{col}")
   ) %>%

@@ -3540,39 +3540,318 @@ szn_all %>%
   geom_point() + 
   geom_line()
   
-rolling_epa_df =
-  szn_all %>%
-  filter(season > 2008) %>%
-  filter(rush == 1 | pass == 1, !is.na(epa), !is.na(posteam), posteam != "") %>%
-  select(season, week, posteam, pass, epa) %>%
-  group_by(season, week, posteam, pass) %>%
-  summarize(epa = mean(epa)) %>%
-  pivot_wider(names_from = pass, values_from = epa) %>%
-  rename(off_pass_epa = "1", off_rush_epa = "0", team = "posteam") %>%
-  ungroup() %>%
-  left_join(
-    szn_all %>%
-      filter(season > 2008) %>%
-      filter(rush == 1 | pass == 1, !is.na(epa), !is.na(defteam), defteam != "") %>%
-      select(season, week, defteam, pass, epa) %>%
-      group_by(season, week, defteam, pass) %>%
-      summarize(epa = mean(epa)) %>%
-      pivot_wider(names_from = pass, values_from = epa) %>%
-      rename(def_pass_epa = "1", def_rush_epa = "0", team = "defteam") %>%
-      ungroup(),
-    by = c("season", "week", "team")
-  ) %>%
-  group_by(season, team) %>%
-  arrange(season, team, week) %>%
-  mutate(n_game = row_number()) %>%
-  mutate(
-    # tst = cumsum(off_pass_epa),
-    # avg_cum_sum = tst / n_game,
-    across(ends_with("_epa"), ~ cumsum(.) / n_game, .names = "rolling_{col}"),
-    across(starts_with("rolling_"), ~ lag(.), .names = "prior_{col}"),
-  ) %>%
-  ungroup()
+# rolling_epa_df =
+#   szn_all %>%
+#   filter(season > 2008) %>%
+#   filter(rush == 1 | pass == 1, !is.na(epa), !is.na(posteam), posteam != "") %>%
+#   select(season, week, posteam, pass, epa) %>%
+#   group_by(season, week, posteam, pass) %>%
+#   summarize(epa = mean(epa)) %>%
+#   pivot_wider(names_from = pass, values_from = epa) %>%
+#   rename(off_pass_epa = "1", off_rush_epa = "0", team = "posteam") %>%
+#   ungroup() %>%
+#   left_join(
+#     szn_all %>%
+#       filter(season > 2008) %>%
+#       filter(rush == 1 | pass == 1, !is.na(epa), !is.na(defteam), defteam != "") %>%
+#       select(season, week, defteam, pass, epa) %>%
+#       group_by(season, week, defteam, pass) %>%
+#       summarize(epa = mean(epa)) %>%
+#       pivot_wider(names_from = pass, values_from = epa) %>%
+#       rename(def_pass_epa = "1", def_rush_epa = "0", team = "defteam") %>%
+#       ungroup(),
+#     by = c("season", "week", "team")
+#   ) %>%
+#   group_by(season, team) %>%
+#   arrange(season, team, week) %>%
+#   mutate(n_game = row_number()) %>%
+#   mutate(
+#     # tst = cumsum(off_pass_epa),
+#     # avg_cum_sum = tst / n_game,
+#     across(ends_with("_epa"), ~ cumsum(.) / n_game, .names = "rolling_{col}"),
+#     across(starts_with("rolling_"), ~ lag(.), .names = "prior_{col}"),
+#   ) %>%
+#   ungroup()
 
+# rolling_pace_df =
+#   szn_all %>%
+#   filter(season > 2008) %>%
+#   group_by(season, week, game_id, posteam) %>%
+#   summarise(n_plays = n()) %>%
+#   drop_na() %>%
+#   rename(team = posteam) %>%
+#   group_by(season, team) %>%
+#   arrange(season, team, week) %>%
+#   mutate(n_game = row_number()) %>%
+#   mutate(
+#     rolling_pace = cumsum(n_plays) / n_game,
+#     across(starts_with("rolling_"), ~ lag(.), .names = "prior_{col}"),
+#   ) %>%
+#   ungroup()
+
+# rolling_rz_eff_df =
+#   szn_all %>%
+#   filter(season > 2008) %>%
+#   group_by(season, week, game_id, posteam) %>%
+#   mutate(
+#     redzone =
+#       case_when(
+#         yardline_100 <= 20 & two_point_attempt == 1 ~ NA,
+#         yardline_100 <= 20 & extra_point_attempt == 1 ~ NA,
+#         yardline_100 <= 20 ~ 1,
+#         yardline_100 > 20 ~ 0,
+#         .default = NA
+#       )
+#   ) %>%
+#   select(game_id, drive, posteam, yardline_100, redzone, touchdown, extra_point_attempt, two_point_attempt) %>%
+#   ungroup() %>%
+#   group_by(season, week, game_id, posteam, drive) %>%
+#   mutate(
+#     n_drive = row_number(),
+#     n_drive_rz = ifelse(redzone == 1, n_drive, NA),
+#     redzone_start = ifelse(n_drive_rz == min(n_drive_rz, na.rm = T), 1, 0)
+#   ) %>%
+#   ungroup() %>%
+#   group_by(season, week, game_id, posteam) %>%
+#   summarise(
+#     redzone_trips = sum(redzone_start == 1, na.rm = T),
+#     redzone_tds = sum(redzone == 1 & touchdown == 1, na.rm = T)
+#   ) %>%
+#   drop_na() %>%
+#   ungroup() %>%
+#   rename(team = posteam) %>%
+#   group_by(season, team) %>%
+#   arrange(season, team, week) %>%
+#   mutate(
+#     n_game = row_number()
+#   ) %>%
+#   mutate(
+#     rolling_rz_n = cumsum(redzone_trips) / n_game,
+#     rolling_rz_td = cumsum(redzone_tds) / n_game,
+#     rolling_rz_eff =
+#       case_when(
+#         rolling_rz_n == 0 ~ 0,
+#         .default = rolling_rz_td / rolling_rz_n
+#       ),
+#     across(starts_with("rolling_") & ends_with("_eff"), ~ lag(.), .names = "prior_{col}")
+#   ) %>%
+#   ungroup()
+
+# view(rolling_rz_eff_df)
+
+# rolling_success_df =
+#   szn_all %>%
+#   filter(season > 2008) %>%
+#   filter(down %in% c(1:4) & !is.na(yards_gained)) %>%
+#   group_by(season, week, game_id, posteam) %>%
+#   mutate(
+#     success =
+#       case_when(
+#         down == 1 & yards_gained >= 0.4 * ydstogo ~ 1,
+#         down == 2 & yards_gained >= 0.6 * ydstogo ~ 1,
+#         down %in% c(3:4) & yards_gained >= ydstogo ~ 1,
+#         .default = 0
+#       )
+#   ) %>%
+#   summarise(
+#     sum_success_off = sum(success, na.rm = T),
+#     n_success_off = n(),
+#     .groups = "drop"
+#   ) %>%
+#   drop_na() %>%
+#   ungroup() %>%
+#   rename(team = posteam) %>%
+#   left_join(
+#     szn_all %>%
+#       filter(season > 2008) %>%
+#       filter(down %in% c(1:4) & !is.na(yards_gained)) %>%
+#       group_by(season, week, game_id, defteam) %>%
+#       mutate(
+#         success =
+#           case_when(
+#             down == 1 & yards_gained >= 0.4 * ydstogo ~ 1,
+#             down == 2 & yards_gained >= 0.6 * ydstogo ~ 1,
+#             down %in% c(3:4) & yards_gained >= ydstogo ~ 1,
+#             .default = 0
+#           )
+#       ) %>%
+#       summarise(
+#         sum_success_def = sum(success, na.rm = T),
+#         n_success_def = n(),
+#         .groups = "drop"
+#       ) %>%
+#       drop_na() %>%
+#       ungroup() %>%
+#       rename(team = defteam),
+#     by = c("season", "week", "game_id", "team")
+#   ) %>%
+#   group_by(season, team) %>%
+#   arrange(season, team, week) %>%
+#   mutate(
+#     n_game = row_number()
+#   ) %>%
+#   mutate(
+#     across(starts_with("sum_success_"), ~ cumsum(.) / n_game, .names = "rolling_{col}"),
+#     across(starts_with("n_success_"), ~ cumsum(.) / n_game, .names = "rolling_{col}"),
+#     # rolling_success = cumsum(sum_success) / n_game,
+#     # rolling_success_n = cumsum(n_success) / n_game,
+#     rolling_success_off_rate = rolling_sum_success_off / rolling_n_success_off,
+#     rolling_success_def_rate = rolling_sum_success_def / rolling_n_success_def,
+#     # rolling_success_def_rate = rolling_success / rolling_success_n,
+#     across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
+#   ) %>%
+#   ungroup()
+
+# view(rolling_success_df)
+
+# rolling_exp_plays_df =
+#   szn_all %>%
+#   filter(season > 2008) %>%
+#   filter(!is.na(posteam)) %>%
+#   group_by(season, week, game_id, posteam) %>%
+#   mutate(
+#     explosive = ifelse(yards_gained >= 20, 1, 0)
+#   ) %>%
+#   summarise(
+#     n_exp_off = sum(explosive, na.rm = T),
+#     n_tot_off = n(),
+#     .groups = "drop"
+#   ) %>%
+#   drop_na() %>%
+#   ungroup() %>%
+#   rename(team = posteam) %>%
+#   left_join(
+#     szn_all %>%
+#       filter(season > 2008) %>%
+#       filter(!is.na(defteam)) %>%
+#       group_by(season, week, game_id, defteam) %>%
+#       mutate(
+#         explosive = ifelse(yards_gained >= 20, 1, 0)
+#       ) %>%
+#       summarise(
+#         n_exp_def = sum(explosive, na.rm = T),
+#         n_tot_def = n(),
+#         .groups = "drop"
+#       ) %>%
+#       drop_na() %>%
+#       ungroup() %>%
+#       rename(team = defteam),
+#     by = c("season", "week", "game_id", "team")
+#   ) %>%
+#   group_by(season, team) %>%
+#   arrange(season, team, week) %>%
+#   mutate(
+#     n_game = row_number()
+#   ) %>%
+#   mutate(
+#     across(starts_with("n_exp"), ~ cumsum(.) / n_game, .names = "rolling_{col}"),
+#     across(starts_with("n_tot"), ~ cumsum(.) / n_game, .names = "rolling_{col}"),
+#     # rolling_success = cumsum(sum_success) / n_game,
+#     # rolling_success_n = cumsum(n_success) / n_game,
+#     rolling_exp_off_rate = rolling_n_exp_off / rolling_n_tot_off,
+#     rolling_exp_def_rate = rolling_n_exp_def / rolling_n_tot_def,
+#     # rolling_success_def_rate = rolling_success / rolling_success_n,
+#     across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
+#   ) %>%
+#   ungroup()
+
+# view(rolling_exp_plays_df)
+
+# rolling_to_rate_df =
+#   szn_all %>%
+#   filter(season > 2008) %>%
+#   filter(!is.na(posteam)) %>%
+#   group_by(season, week, game_id, posteam) %>%
+#   mutate(
+#     turnover = ifelse(interception == 1 | fumble == 1, 1, 0)
+#   ) %>%
+#   summarise(
+#     n_to_off = sum(turnover, na.rm = T),
+#     n_tot_off = n(),
+#     .groups = "drop"
+#   ) %>%
+#   drop_na() %>%
+#   ungroup() %>%
+#   rename(team = posteam) %>%
+#   left_join(
+#     szn_all %>%
+#       filter(season > 2008) %>%
+#       filter(!is.na(defteam)) %>%
+#       group_by(season, week, game_id, defteam) %>%
+#       mutate(
+#         turnover = ifelse(interception == 1 | fumble == 1, 1, 0)
+#       ) %>%
+#       summarise(
+#         n_to_def = sum(turnover, na.rm = T),
+#         n_tot_def = n(),
+#         .groups = "drop"
+#       ) %>%
+#       drop_na() %>%
+#       ungroup() %>%
+#       rename(team = defteam),
+#     by = c("season", "week", "game_id", "team")
+#   ) %>%
+#   group_by(season, team) %>%
+#   arrange(season, team, week) %>%
+#   mutate(
+#     n_game = row_number()
+#   ) %>%
+#   mutate(
+#     across(starts_with("n_to_"), ~ cumsum(.) / n_game, .names = "rolling_{col}"),
+#     across(starts_with("n_tot_"), ~ cumsum(.) / n_game, .names = "rolling_{col}"),
+#     # rolling_success = cumsum(sum_success) / n_game,
+#     # rolling_success_n = cumsum(n_success) / n_game,
+#     rolling_to_off_rate = rolling_n_to_off / rolling_n_tot_off,
+#     rolling_to_def_rate = rolling_n_to_def / rolling_n_tot_def,
+#     # rolling_success_def_rate = rolling_success / rolling_success_n,
+#     across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
+#   ) %>%
+#   ungroup()
+  
+# view(rolling_to_rate_df)
+
+# rolling_pen_yards_df =
+#   szn_all %>%
+#   filter(season > 2008) %>%
+#   filter(!is.na(posteam)) %>%
+#   group_by(season, week, game_id, posteam) %>%
+#   summarise(
+#     n_pen_off = sum(penalty_yards, na.rm = T),
+#     n_tot_off = n(),
+#     .groups = "drop"
+#   ) %>%
+#   drop_na() %>%
+#   ungroup() %>%
+#   rename(team = posteam) %>%
+#   left_join(
+#     szn_all %>%
+#       filter(season > 2008) %>%
+#       filter(!is.na(defteam)) %>%
+#       group_by(season, week, game_id, defteam) %>%
+#       summarise(
+#         n_pen_def = sum(penalty_yards, na.rm = T),
+#         n_tot_def = n(),
+#         .groups = "drop"
+#       ) %>%
+#       drop_na() %>%
+#       ungroup() %>%
+#       rename(team = defteam),
+#     by = c("season", "week", "game_id", "team")
+#   ) %>%
+#   group_by(season, team) %>%
+#   arrange(season, team, week) %>%
+#   mutate(
+#     n_game = row_number()
+#   ) %>%
+#   mutate(
+#     across(starts_with("n_pen_"), ~ cumsum(.) / n_game, .names = "rolling_{col}"),
+#     across(starts_with("n_tot_"), ~ cumsum(.) / n_game, .names = "rolling_{col}"),
+#     rolling_pen_yards_off = rolling_n_pen_off / rolling_n_tot_off,
+#     rolling_pen_yards_def = rolling_n_pen_def / rolling_n_tot_def,
+#     across(starts_with("rolling_") & contains("_yards_"), ~ lag(.), .names = "prior_{col}")
+#   ) %>%
+#   ungroup()
+  
 rolling_epa_df =
   szn_all %>%
   filter(season > 2008) %>%
@@ -3600,32 +3879,32 @@ rolling_epa_df =
   mutate(n_game = row_number()) %>%
   mutate(
     across(ends_with("_epa"), ~ cumsum(.), .names = "sum_{col}"),
-    across(ends_with("_epa"), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))), .names = "sum_recent_{col}"),
-    across(starts_with("sum_recent_"), ~ . / 4, .names = "rolling_{col}_recent"),
+    across(ends_with("_epa"), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
+    across(starts_with("sum_recent_"), ~ . / 5, .names = "rolling_{col}_recent"),
     sum_prev_off_rush_epa = sum_off_rush_epa - sum_recent_off_rush_epa,
     sum_prev_off_pass_epa = sum_off_pass_epa - sum_recent_off_pass_epa,
     sum_prev_def_rush_epa = sum_def_rush_epa - sum_recent_def_pass_epa,
     sum_prev_def_pass_epa = sum_def_pass_epa - sum_recent_def_pass_epa,
-    across(starts_with("sum_prev_"), ~ . / (n_game - 4), .names = "rolling_{col}_prev"),
+    across(starts_with("sum_prev_"), ~ . / (n_game - 5), .names = "rolling_{col}_prev"),
     rolling_off_rush_epa =
       case_when(
-        n_game <= 4 ~ sum_off_rush_epa / n_game,
-        .default = 0.75 * rolling_sum_recent_off_rush_epa_recent + 0.25 * rolling_sum_prev_off_rush_epa_prev
+        n_game <= 5 ~ sum_off_rush_epa / n_game,
+        .default = 0.65 * rolling_sum_recent_off_rush_epa_recent + 0.35 * rolling_sum_prev_off_rush_epa_prev
       ),
     rolling_off_pass_epa =
       case_when(
-        n_game <= 4 ~ sum_off_pass_epa / n_game,
-        .default = 0.75 * rolling_sum_recent_off_pass_epa_recent + 0.25 * rolling_sum_prev_off_pass_epa_prev
+        n_game <= 5 ~ sum_off_pass_epa / n_game,
+        .default = 0.65 * rolling_sum_recent_off_pass_epa_recent + 0.35 * rolling_sum_prev_off_pass_epa_prev
       ),
     rolling_def_rush_epa =
       case_when(
-        n_game <= 4 ~ sum_def_rush_epa / n_game,
-        .default = 0.75 * rolling_sum_recent_def_rush_epa_recent + 0.25 * rolling_sum_prev_def_rush_epa_prev
+        n_game <= 5 ~ sum_def_rush_epa / n_game,
+        .default = 0.65 * rolling_sum_recent_def_rush_epa_recent + 0.35 * rolling_sum_prev_def_rush_epa_prev
       ),
     rolling_def_pass_epa =
       case_when(
-        n_game <= 4 ~ sum_def_pass_epa / n_game,
-        .default = 0.75 * rolling_sum_recent_def_pass_epa_recent + 0.25 * rolling_sum_prev_def_pass_epa_prev
+        n_game <= 5 ~ sum_def_pass_epa / n_game,
+        .default = 0.65 * rolling_sum_recent_def_pass_epa_recent + 0.35 * rolling_sum_prev_def_pass_epa_prev
       ),
     across(starts_with("rolling_"), ~ lag(.), .names = "prior_{col}")
   ) %>%
@@ -3641,33 +3920,17 @@ rolling_pace_df =
   rename(team = posteam) %>%
   group_by(season, team) %>%
   arrange(season, team, week) %>%
-  mutate(n_game = row_number()) %>%
-  mutate(
-    rolling_pace = cumsum(n_plays) / n_game,
-    across(starts_with("rolling_"), ~ lag(.), .names = "prior_{col}"),
-  ) %>%
-  ungroup()
-
-rolling_pace_df =
-  szn_all %>%
-  filter(season > 2008) %>%
-  group_by(season, week, game_id, posteam) %>%
-  summarise(n_plays = n()) %>%
-  drop_na() %>%
-  rename(team = posteam) %>%
-  group_by(season, team) %>%
-  arrange(season, team, week) %>%
   mutate(
     n_game = row_number(),
     sum_plays = cumsum(n_plays),
-    sum_recent = n_plays + lag(n_plays) + lag(lag(n_plays)) + lag(lag(lag(n_plays))),
-    rolling_recent = sum_recent / 4,
+    sum_recent = n_plays + lag(n_plays) + lag(lag(n_plays)) + lag(lag(lag(n_plays))) + lag(lag(lag(lag(n_plays)))),
+    rolling_recent = sum_recent / 5,
     sum_prev = sum_plays - sum_recent,
-    rolling_prev = sum_prev / (n_game - 4),
+    rolling_prev = sum_prev / (n_game - 5),
     rolling_pace =
       case_when(
-        n_game <= 4 ~ sum_plays / n_game,
-        .default = 0.75 * rolling_recent + 0.25 * rolling_prev
+        n_game <= 5 ~ sum_plays / n_game,
+        .default = 0.65 * rolling_recent + 0.35 * rolling_prev
       ),
     across(starts_with("rolling_"), ~ lag(.), .names = "prior_{col}")#,
     # rolling_pace = cumsum(n_plays) / n_game
@@ -3689,55 +3952,7 @@ rolling_rz_eff_df =
         .default = NA
       )
   ) %>%
-  select(game_id, drive, posteam, yardline_100, redzone, touchdown, extra_point_attempt, two_point_attempt) %>%
-  ungroup() %>%
-  group_by(season, week, game_id, posteam, drive) %>%
-  mutate(
-    n_drive = row_number(),
-    n_drive_rz = ifelse(redzone == 1, n_drive, NA),
-    redzone_start = ifelse(n_drive_rz == min(n_drive_rz, na.rm = T), 1, 0)
-  ) %>%
-  ungroup() %>%
-  group_by(season, week, game_id, posteam) %>%
-  summarise(
-    redzone_trips = sum(redzone_start == 1, na.rm = T),
-    redzone_tds = sum(redzone == 1 & touchdown == 1, na.rm = T)
-  ) %>%
-  drop_na() %>%
-  ungroup() %>%
-  rename(team = posteam) %>%
-  group_by(season, team) %>%
-  arrange(season, team, week) %>%
-  mutate(
-    n_game = row_number()
-  ) %>%
-  mutate(
-    rolling_rz_n = cumsum(redzone_trips) / n_game,
-    rolling_rz_td = cumsum(redzone_tds) / n_game,
-    rolling_rz_eff =
-      case_when(
-        rolling_rz_n == 0 ~ 0,
-        .default = rolling_rz_td / rolling_rz_n
-      ),
-    across(starts_with("rolling_") & ends_with("_eff"), ~ lag(.), .names = "prior_{col}")
-  ) %>%
-  ungroup()
-
-rolling_rz_eff_df =
-  szn_all %>%
-  filter(season > 2008) %>%
-  group_by(season, week, game_id, posteam) %>%
-  mutate(
-    redzone =
-      case_when(
-        yardline_100 <= 20 & two_point_attempt == 1 ~ NA,
-        yardline_100 <= 20 & extra_point_attempt == 1 ~ NA,
-        yardline_100 <= 20 ~ 1,
-        yardline_100 > 20 ~ 0,
-        .default = NA
-      )
-  ) %>%
-  select(game_id, drive, posteam, yardline_100, redzone, touchdown, extra_point_attempt, two_point_attempt) %>%
+  select(season, week, game_id, drive, posteam, yardline_100, redzone, touchdown, extra_point_attempt, two_point_attempt) %>%
   ungroup() %>%
   group_by(season, week, game_id, posteam, drive) %>%
   mutate(
@@ -3759,84 +3974,19 @@ rolling_rz_eff_df =
   mutate(
     n_game = row_number(),
     across(starts_with("redzone_"), ~ cumsum(.), .names = "sum_{col}"),
-    across(starts_with("redzone_"), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))), .names = "sum_recent_{col}"),
+    across(starts_with("redzone_"), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
     rolling_recent = (sum_recent_redzone_tds / sum_recent_redzone_trips),
     sum_prev_redzone_trips = sum_redzone_trips - sum_recent_redzone_trips,
     sum_prev_redzone_tds = sum_redzone_tds - sum_recent_redzone_tds,
     rolling_prev = (sum_prev_redzone_tds / sum_prev_redzone_trips),
     rolling_rz_eff =
       case_when(
-        n_game <= 4 ~ (sum_redzone_tds / sum_redzone_trips),
-        .default = 0.75 * rolling_recent + 0.25 * rolling_prev
+        n_game <= 5 ~ (sum_redzone_tds / sum_redzone_trips),
+        .default = 0.65 * rolling_recent + 0.35 * rolling_prev
       ),
     across(starts_with("rolling_"), ~ lag(.), .names = "prior_{col}")
   ) %>%
   select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
-  ungroup()
-
-# view(rolling_rz_eff_df)
-
-rolling_success_df =
-  szn_all %>% 
-  filter(season > 2008) %>% 
-  filter(down %in% c(1:4) & !is.na(yards_gained)) %>% 
-  group_by(season, week, game_id, posteam) %>%
-  mutate(
-    success = 
-      case_when(
-        down == 1 & yards_gained >= 0.4 * ydstogo ~ 1,
-        down == 2 & yards_gained >= 0.6 * ydstogo ~ 1,
-        down %in% c(3:4) & yards_gained >= ydstogo ~ 1,
-        .default = 0
-      )
-  ) %>%
-  summarise(
-    sum_success_off = sum(success, na.rm = T),
-    n_success_off = n(),
-    .groups = "drop"
-  ) %>% 
-  drop_na() %>% 
-  ungroup() %>% 
-  rename(team = posteam) %>% 
-  left_join(
-    szn_all %>% 
-      filter(season > 2008) %>% 
-      filter(down %in% c(1:4) & !is.na(yards_gained)) %>% 
-      group_by(season, week, game_id, defteam) %>%
-      mutate(
-        success = 
-          case_when(
-            down == 1 & yards_gained >= 0.4 * ydstogo ~ 1,
-            down == 2 & yards_gained >= 0.6 * ydstogo ~ 1,
-            down %in% c(3:4) & yards_gained >= ydstogo ~ 1,
-            .default = 0
-          )
-      ) %>%
-      summarise(
-        sum_success_def = sum(success, na.rm = T),
-        n_success_def = n(),
-        .groups = "drop"
-      ) %>% 
-      drop_na() %>% 
-      ungroup() %>% 
-      rename(team = defteam),
-    by = c("season", "week", "game_id", "team")
-  ) %>% 
-  group_by(season, team) %>% 
-  arrange(season, team, week) %>% 
-  mutate(
-    n_game = row_number()
-  ) %>% 
-  mutate(
-    across(starts_with("sum_success_"), ~ cumsum(.) / n_game, .names = "rolling_{col}"),
-    across(starts_with("n_success_"), ~ cumsum(.) / n_game, .names = "rolling_{col}"),
-    # rolling_success = cumsum(sum_success) / n_game,
-    # rolling_success_n = cumsum(n_success) / n_game,
-    rolling_success_off_rate = rolling_sum_success_off / rolling_n_success_off,
-    rolling_success_def_rate = rolling_sum_success_def / rolling_n_success_def,
-    # rolling_success_def_rate = rolling_success / rolling_success_n,
-    across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
-  ) %>% 
   ungroup()
 
 rolling_success_df =
@@ -3892,7 +4042,7 @@ rolling_success_df =
   ) %>%
   mutate(
     across(contains("_success_"), ~ cumsum(.), .names = "sum_{col}"),
-    across(starts_with("_success_"), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))), .names = "sum_recent_{col}"),
+    across(starts_with("_success_"), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
     rolling_recent_off = (sum_sum_success_off / sum_n_success_off),
     rolling_recent_def = (sum_sum_success_def / sum_n_success_def),
     sum_prev_sum_success_off = sum_success_off - sum_sum_success_off,
@@ -3903,70 +4053,17 @@ rolling_success_df =
     rolling_prev_def = (sum_prev_sum_success_def / sum_prev_n_success_def),
     rolling_success_off_rate =
       case_when(
-        n_game <= 4 ~ (sum_sum_success_off / sum_n_success_off),
-        .default = 0.75 * rolling_recent_off + 0.25 * rolling_prev_off
+        n_game <= 5 ~ (sum_sum_success_off / sum_n_success_off),
+        .default = 0.65 * rolling_recent_off + 0.35 * rolling_prev_off
       ),
     rolling_success_def_rate =
       case_when(
-        n_game <= 4 ~ (sum_sum_success_def / sum_n_success_def),
-        .default = 0.75 * rolling_recent_def + 0.25 * rolling_prev_def
+        n_game <= 5 ~ (sum_sum_success_def / sum_n_success_def),
+        .default = 0.65 * rolling_recent_def + 0.35 * rolling_prev_def
       ),
     across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
   ) %>%
   select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
-  ungroup()
-
-# view(rolling_success_df)
-
-rolling_exp_plays_df = 
-  szn_all %>% 
-  filter(season > 2008) %>% 
-  filter(!is.na(posteam)) %>%
-  group_by(season, week, game_id, posteam) %>%
-  mutate(
-    explosive = ifelse(yards_gained >= 20, 1, 0)
-  ) %>%
-  summarise(
-    n_exp_off = sum(explosive, na.rm = T),
-    n_tot_off = n(),
-    .groups = "drop"
-  ) %>% 
-  drop_na() %>% 
-  ungroup() %>% 
-  rename(team = posteam) %>% 
-  left_join(
-    szn_all %>% 
-      filter(season > 2008) %>%
-      filter(!is.na(defteam)) %>%
-      group_by(season, week, game_id, defteam) %>%
-      mutate(
-        explosive = ifelse(yards_gained >= 20, 1, 0)
-      ) %>%
-      summarise(
-        n_exp_def = sum(explosive, na.rm = T),
-        n_tot_def = n(),
-        .groups = "drop"
-      ) %>% 
-      drop_na() %>% 
-      ungroup() %>% 
-      rename(team = defteam),
-    by = c("season", "week", "game_id", "team")
-  ) %>% 
-  group_by(season, team) %>% 
-  arrange(season, team, week) %>% 
-  mutate(
-    n_game = row_number()
-  ) %>% 
-  mutate(
-    across(starts_with("n_exp"), ~ cumsum(.) / n_game, .names = "rolling_{col}"),
-    across(starts_with("n_tot"), ~ cumsum(.) / n_game, .names = "rolling_{col}"),
-    # rolling_success = cumsum(sum_success) / n_game,
-    # rolling_success_n = cumsum(n_success) / n_game,
-    rolling_exp_off_rate = rolling_n_exp_off / rolling_n_tot_off,
-    rolling_exp_def_rate = rolling_n_exp_def / rolling_n_tot_def,
-    # rolling_success_def_rate = rolling_success / rolling_success_n,
-    across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
-  ) %>% 
   ungroup()
 
 rolling_exp_plays_df =
@@ -4010,7 +4107,7 @@ rolling_exp_plays_df =
   ) %>%
   mutate(
     across(c(contains("_exp_"), contains("_tot_")), ~ cumsum(.), .names = "sum_{col}"),
-    across(c(contains("_exp_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))), .names = "sum_recent_{col}"),
+    across(c(contains("_exp_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
     rolling_recent_off = (sum_recent_n_exp_off / sum_recent_n_tot_off),
     rolling_recent_def = (sum_recent_n_exp_def / sum_recent_n_tot_def),
     sum_prev_n_exp_off = sum_n_exp_off - sum_recent_n_exp_off,
@@ -4021,70 +4118,17 @@ rolling_exp_plays_df =
     rolling_prev_def = (sum_prev_n_exp_def / sum_prev_n_tot_def),
     rolling_exp_off_rate =
       case_when(
-        n_game <= 4 ~ (sum_n_exp_off / sum_n_tot_off),
-        .default = 0.75 * rolling_recent_off + 0.25 * rolling_prev_off
+        n_game <= 5 ~ (sum_n_exp_off / sum_n_tot_off),
+        .default = 0.65 * rolling_recent_off + 0.35 * rolling_prev_off
       ),
     rolling_exp_def_rate =
       case_when(
-        n_game <= 4 ~ (sum_n_exp_def / sum_n_tot_def),
-        .default = 0.75 * rolling_recent_def + 0.25 * rolling_prev_def
+        n_game <= 5 ~ (sum_n_exp_def / sum_n_tot_def),
+        .default = 0.65 * rolling_recent_def + 0.35 * rolling_prev_def
       ),
     across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
   ) %>%
   # left_join(df_rolling_exp_plays %>% select(team, game_id, rolling_exp_off_rate, rolling_exp_def_rate), by = c("team", "game_id")) %>%
-  ungroup()
-
-# view(rolling_exp_plays_df)
-
-rolling_to_rate_df = 
-  szn_all %>% 
-  filter(season > 2008) %>% 
-  filter(!is.na(posteam)) %>%
-  group_by(season, week, game_id, posteam) %>%
-  mutate(
-    turnover = ifelse(interception == 1 | fumble == 1, 1, 0)
-  ) %>%
-  summarise(
-    n_to_off = sum(turnover, na.rm = T),
-    n_tot_off = n(),
-    .groups = "drop"
-  ) %>% 
-  drop_na() %>% 
-  ungroup() %>% 
-  rename(team = posteam) %>% 
-  left_join(
-    szn_all %>% 
-      filter(season > 2008) %>%
-      filter(!is.na(defteam)) %>%
-      group_by(season, week, game_id, defteam) %>%
-      mutate(
-        turnover = ifelse(interception == 1 | fumble == 1, 1, 0)
-      ) %>%
-      summarise(
-        n_to_def = sum(turnover, na.rm = T),
-        n_tot_def = n(),
-        .groups = "drop"
-      ) %>% 
-      drop_na() %>% 
-      ungroup() %>% 
-      rename(team = defteam),
-    by = c("season", "week", "game_id", "team")
-  ) %>% 
-  group_by(season, team) %>% 
-  arrange(season, team, week) %>% 
-  mutate(
-    n_game = row_number()
-  ) %>% 
-  mutate(
-    across(starts_with("n_to_"), ~ cumsum(.) / n_game, .names = "rolling_{col}"),
-    across(starts_with("n_tot_"), ~ cumsum(.) / n_game, .names = "rolling_{col}"),
-    # rolling_success = cumsum(sum_success) / n_game,
-    # rolling_success_n = cumsum(n_success) / n_game,
-    rolling_to_off_rate = rolling_n_to_off / rolling_n_tot_off,
-    rolling_to_def_rate = rolling_n_to_def / rolling_n_tot_def,
-    # rolling_success_def_rate = rolling_success / rolling_success_n,
-    across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
-  ) %>% 
   ungroup()
 
 rolling_to_rate_df =
@@ -4128,7 +4172,7 @@ rolling_to_rate_df =
   ) %>%
   mutate(
     across(c(contains("_to_"), contains("_tot_")), ~ cumsum(.), .names = "sum_{col}"),
-    across(c(contains("_to_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))), .names = "sum_recent_{col}"),
+    across(c(contains("_to_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
     rolling_recent_off = (sum_recent_n_to_off / sum_recent_n_tot_off),
     rolling_recent_def = (sum_recent_n_to_def / sum_recent_n_tot_def),
     sum_prev_n_to_off = sum_n_to_off - sum_recent_n_to_off,
@@ -4139,63 +4183,19 @@ rolling_to_rate_df =
     rolling_prev_def = (sum_prev_n_to_def / sum_prev_n_tot_def),
     rolling_to_off_rate =
       case_when(
-        n_game <= 4 ~ (sum_n_to_off / sum_n_tot_off),
-        .default = 0.75 * rolling_recent_off + 0.25 * rolling_prev_off
+        n_game <= 5 ~ (sum_n_to_off / sum_n_tot_off),
+        .default = 0.65 * rolling_recent_off + 0.35 * rolling_prev_off
       ),
     rolling_to_def_rate =
       case_when(
-        n_game <= 4 ~ (sum_n_to_def / sum_n_tot_def),
-        .default = 0.75 * rolling_recent_def + 0.25 * rolling_prev_def
+        n_game <= 5 ~ (sum_n_to_def / sum_n_tot_def),
+        .default = 0.65 * rolling_recent_def + 0.35 * rolling_prev_def
       ),
     across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
   ) %>%
   # left_join(df_rolling_to_rate %>% select(team, game_id, rolling_to_off_rate, rolling_to_def_rate), by = c("team", "game_id")) %>%
   ungroup()
-
-# view(rolling_to_rate_df)
-
-rolling_pen_yards_df = 
-  szn_all %>% 
-  filter(season > 2008) %>%
-  filter(!is.na(posteam)) %>%
-  group_by(season, week, game_id, posteam) %>%
-  summarise(
-    n_pen_off = sum(penalty_yards, na.rm = T),
-    n_tot_off = n(),
-    .groups = "drop"
-  ) %>% 
-  drop_na() %>% 
-  ungroup() %>% 
-  rename(team = posteam) %>% 
-  left_join(
-    szn_all %>% 
-      filter(season > 2008) %>% 
-      filter(!is.na(defteam)) %>%
-      group_by(season, week, game_id, defteam) %>%
-      summarise(
-        n_pen_def = sum(penalty_yards, na.rm = T),
-        n_tot_def = n(),
-        .groups = "drop"
-      ) %>% 
-      drop_na() %>% 
-      ungroup() %>% 
-      rename(team = defteam),
-    by = c("season", "week", "game_id", "team")
-  ) %>% 
-  group_by(season, team) %>% 
-  arrange(season, team, week) %>% 
-  mutate(
-    n_game = row_number()
-  ) %>% 
-  mutate(
-    across(starts_with("n_pen_"), ~ cumsum(.) / n_game, .names = "rolling_{col}"),
-    across(starts_with("n_tot_"), ~ cumsum(.) / n_game, .names = "rolling_{col}"),
-    rolling_pen_yards_off = rolling_n_pen_off / rolling_n_tot_off,
-    rolling_pen_yards_def = rolling_n_pen_def / rolling_n_tot_def,
-    across(starts_with("rolling_") & contains("_yards_"), ~ lag(.), .names = "prior_{col}")
-  ) %>% 
-  ungroup()
-
+  
 rolling_pen_yards_df = 
   szn_all %>% 
   filter(season > 2008) %>%
@@ -4231,7 +4231,7 @@ rolling_pen_yards_df =
   ) %>% 
   mutate(
     across(c(contains("_pen_"), contains("_tot_")), ~ cumsum(.), .names = "sum_{col}"),
-    across(c(contains("_pen_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))), .names = "sum_recent_{col}"),
+    across(c(contains("_pen_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
     rolling_recent_off = (sum_recent_n_pen_off / sum_recent_n_tot_off),
     rolling_recent_def = (sum_recent_n_pen_def / sum_recent_n_tot_def),
     sum_prev_n_pen_off = sum_n_pen_off - sum_recent_n_pen_off,
@@ -4242,13 +4242,13 @@ rolling_pen_yards_df =
     rolling_prev_def = (sum_prev_n_pen_def / sum_prev_n_tot_def),
     rolling_pen_yards_off =
       case_when(
-        n_game <= 4 ~ (sum_n_pen_off / sum_n_tot_off),
-        .default = 0.75 * rolling_recent_off + 0.25 * rolling_prev_off
+        n_game <= 5 ~ (sum_n_pen_off / sum_n_tot_off),
+        .default = 0.65 * rolling_recent_off + 0.35 * rolling_prev_off
       ),
     rolling_pen_yards_def =
       case_when(
-        n_game <= 4 ~ (sum_n_pen_def / sum_n_tot_def),
-        .default = 0.75 * rolling_recent_def + 0.25 * rolling_prev_def
+        n_game <= 5 ~ (sum_n_pen_def / sum_n_tot_def),
+        .default = 0.65 * rolling_recent_def + 0.35 * rolling_prev_def
       ),
     across(starts_with("rolling_") & contains("_yards_"), ~ lag(.), .names = "prior_{col}")
   ) %>% 
@@ -4598,6 +4598,1479 @@ field_game_df =
 
 # view(field_game_df)
 
+make_weighted_data_3prior <- function(w) {
+
+  # EPA -----------------------------------------------------------------------
+  rolling_epa_df =
+    szn_all %>%
+    filter(season > 2008) %>%
+    filter(rush == 1 | pass == 1, !is.na(epa), !is.na(posteam), posteam != "") %>%
+    select(season, week, posteam, pass, epa) %>%
+    group_by(season, week, posteam, pass) %>%
+    summarize(epa = mean(epa), .groups = "drop_last") %>%
+    pivot_wider(names_from = pass, values_from = epa) %>%
+    rename(off_pass_epa = "1", off_rush_epa = "0", team = "posteam") %>%
+    ungroup() %>%
+    left_join(
+      szn_all %>%
+        filter(season > 2008) %>%
+        filter(rush == 1 | pass == 1, !is.na(epa), !is.na(defteam), defteam != "") %>%
+        select(season, week, defteam, pass, epa) %>%
+        group_by(season, week, defteam, pass) %>%
+        summarize(epa = mean(epa), .groups = "drop_last") %>%
+        pivot_wider(names_from = pass, values_from = epa) %>%
+        rename(def_pass_epa = "1", def_rush_epa = "0", team = "defteam") %>%
+        ungroup(),
+      by = c("season", "week", "team")
+    ) %>%
+    group_by(season, team) %>%
+    arrange(season, team, week) %>%
+    mutate(
+      n_game = row_number(),
+      across(ends_with("_epa"), ~ cumsum(.), .names = "sum_{col}"),
+      across(ends_with("_epa"), ~ . + lag(.) + lag(lag(.)), .names = "sum_recent_{col}"),
+      across(starts_with("sum_recent_"), ~ . / 3, .names = "rolling_{col}_recent"),
+      sum_prev_off_rush_epa = sum_off_rush_epa - sum_recent_off_rush_epa,
+      sum_prev_off_pass_epa = sum_off_pass_epa - sum_recent_off_pass_epa,
+      sum_prev_def_rush_epa = sum_def_rush_epa - sum_recent_def_rush_epa,
+      sum_prev_def_pass_epa = sum_def_pass_epa - sum_recent_def_pass_epa,
+      across(starts_with("sum_prev_"), ~ . / (n_game - 3), .names = "rolling_{col}_prev"),
+
+      # WEIGHTED EPA ---------------------------------------------------------
+      rolling_off_rush_epa =
+        case_when(
+          n_game <= 3 ~ sum_off_rush_epa / n_game,
+          .default = w * rolling_sum_recent_off_rush_epa_recent +
+                     (1 - w) * rolling_sum_prev_off_rush_epa_prev
+        ),
+      rolling_off_pass_epa =
+        case_when(
+          n_game <= 3 ~ sum_off_pass_epa / n_game,
+          .default = w * rolling_sum_recent_off_pass_epa_recent +
+                     (1 - w) * rolling_sum_prev_off_pass_epa_prev
+        ),
+      rolling_def_rush_epa =
+        case_when(
+          n_game <= 3 ~ sum_def_rush_epa / n_game,
+          .default = w * rolling_sum_recent_def_rush_epa_recent +
+                     (1 - w) * rolling_sum_prev_def_rush_epa_prev
+        ),
+      rolling_def_pass_epa =
+        case_when(
+          n_game <= 3 ~ sum_def_pass_epa / n_game,
+          .default = w * rolling_sum_recent_def_pass_epa_recent +
+                     (1 - w) * rolling_sum_prev_def_pass_epa_prev
+        ),
+      across(starts_with("rolling_"), ~ lag(.), .names = "prior_{col}")
+    ) %>%
+    select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
+    ungroup()
+
+  # PACE ----------------------------------------------------------------------
+  rolling_pace_df =
+    szn_all %>%
+    filter(season > 2008) %>%
+    group_by(season, week, game_id, posteam) %>%
+    summarise(n_plays = n(), .groups = "drop_last") %>%
+    rename(team = posteam) %>%
+    group_by(season, team) %>%
+    arrange(season, team, week) %>%
+    mutate(
+      n_game = row_number(),
+      sum_plays = cumsum(n_plays),
+      sum_recent = n_plays + lag(n_plays) + lag(lag(n_plays)),
+      rolling_recent = sum_recent / 3,
+      sum_prev = sum_plays - sum_recent,
+      rolling_prev = sum_prev / (n_game - 3),
+
+      # WEIGHTED PACE ---------------------------------------------------------
+      rolling_pace =
+        case_when(
+          n_game <= 3 ~ sum_plays / n_game,
+          .default = w * rolling_recent + (1 - w) * rolling_prev
+        ),
+
+      across(starts_with("rolling_"), ~ lag(.), .names = "prior_{col}")
+    ) %>%
+    select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
+    ungroup()
+  
+    # RZ EFF ----------------------------------------------------------------  
+  rolling_rz_eff_df =
+    szn_all %>%
+    filter(season > 2008) %>%
+    group_by(season, week, game_id, posteam) %>%
+    mutate(
+      redzone =
+        case_when(
+          yardline_100 <= 20 & two_point_attempt == 1 ~ NA,
+          yardline_100 <= 20 & extra_point_attempt == 1 ~ NA,
+          yardline_100 <= 20 ~ 1,
+          yardline_100 > 20 ~ 0,
+          .default = NA
+        )
+    ) %>%
+    select(season, week, game_id, drive, posteam, yardline_100, redzone, touchdown, extra_point_attempt, two_point_attempt) %>%
+    ungroup() %>%
+    group_by(season, week, game_id, posteam, drive) %>%
+    mutate(
+      n_drive = row_number(),
+      n_drive_rz = ifelse(redzone == 1, n_drive, NA),
+      redzone_start = ifelse(n_drive_rz == min(n_drive_rz, na.rm = T), 1, 0)
+    ) %>%
+    ungroup() %>%
+    group_by(season, week, game_id, posteam) %>%
+    summarise(
+      redzone_trips = sum(redzone_start == 1, na.rm = T),
+      redzone_tds = sum(redzone == 1 & touchdown == 1, na.rm = T)
+    ) %>%
+    drop_na() %>%
+    ungroup() %>%
+    rename(team = posteam) %>%
+    group_by(season, team) %>%
+    arrange(season, team, week) %>%
+    mutate(
+      n_game = row_number(),
+      across(starts_with("redzone_"), ~ cumsum(.), .names = "sum_{col}"),
+      across(starts_with("redzone_"), ~ . + lag(.) + lag(lag(.)), .names = "sum_recent_{col}"),
+      rolling_recent = (sum_recent_redzone_tds / sum_recent_redzone_trips),
+      sum_prev_redzone_trips = sum_redzone_trips - sum_recent_redzone_trips,
+      sum_prev_redzone_tds = sum_redzone_tds - sum_recent_redzone_tds,
+      rolling_prev = (sum_prev_redzone_tds / sum_prev_redzone_trips),
+      
+      # WEIGHTED RZ ---------------------------------------------------------
+      rolling_rz_eff =
+          case_when(
+              n_game <= 3 ~ (sum_redzone_tds / sum_redzone_trips),
+              .default = w * rolling_recent +
+                     (1 - w) * rolling_prev
+          ),
+      across(starts_with("rolling_"), ~ lag(.), .names = "prior_{col}")
+    ) %>%
+    select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
+    ungroup()
+  
+  # SUCCESS ----------------------------------------------------------------  
+  rolling_success_df =
+    szn_all %>%
+    filter(season > 2008) %>%
+    filter(down %in% c(1:4) & !is.na(yards_gained)) %>%
+    group_by(season, week, game_id, posteam) %>%
+    mutate(
+      success =
+        case_when(
+          down == 1 & yards_gained >= 0.4 * ydstogo ~ 1,
+          down == 2 & yards_gained >= 0.6 * ydstogo ~ 1,
+          down %in% c(3:4) & yards_gained >= ydstogo ~ 1,
+          .default = 0
+        )
+    ) %>%
+    summarise(
+      sum_success_off = sum(success, na.rm = T),
+      n_success_off = n(),
+      .groups = "drop"
+    ) %>%
+    drop_na() %>%
+    ungroup() %>%
+    rename(team = posteam) %>%
+    left_join(
+      szn_all %>%
+        filter(season > 2008) %>%
+        filter(down %in% c(1:4) & !is.na(yards_gained)) %>%
+        group_by(season, week, game_id, defteam) %>%
+        mutate(
+          success =
+            case_when(
+              down == 1 & yards_gained >= 0.4 * ydstogo ~ 1,
+              down == 2 & yards_gained >= 0.6 * ydstogo ~ 1,
+              down %in% c(3:4) & yards_gained >= ydstogo ~ 1,
+              .default = 0
+            )
+        ) %>%
+        summarise(
+          sum_success_def = sum(success, na.rm = T),
+          n_success_def = n(),
+          .groups = "drop"
+        ) %>%
+        drop_na() %>%
+        ungroup() %>%
+        rename(team = defteam),
+      by = c("season", "week", "game_id", "team")
+    ) %>%
+    group_by(season, team) %>%
+    arrange(season, team, week) %>%
+    mutate(
+      n_game = row_number()
+    ) %>%
+    mutate(
+      across(contains("_success_"), ~ cumsum(.), .names = "sum_{col}"),
+      across(starts_with("_success_"), ~ . + lag(.) + lag(lag(.)), .names = "sum_recent_{col}"),
+      rolling_recent_off = (sum_sum_success_off / sum_n_success_off),
+      rolling_recent_def = (sum_sum_success_def / sum_n_success_def),
+      sum_prev_sum_success_off = sum_success_off - sum_sum_success_off,
+      sum_prev_n_success_off = n_success_off - sum_n_success_off,
+      sum_prev_sum_success_def = sum_success_def - sum_sum_success_def,
+      sum_prev_n_success_def = n_success_def - sum_n_success_def,
+      rolling_prev_off = (sum_prev_sum_success_off / sum_prev_n_success_off),
+      rolling_prev_def = (sum_prev_sum_success_def / sum_prev_n_success_def),
+      
+      # WEIGHTED SUCCESS ---------------------------------------------------------
+      rolling_success_off_rate =
+        case_when(
+          n_game <= 3 ~ (sum_sum_success_off / sum_n_success_off),
+          .default = w * rolling_recent_off +
+                     (1 - w) * rolling_prev_off
+        ),
+      rolling_success_def_rate =
+        case_when(
+          n_game <= 3 ~ (sum_sum_success_def / sum_n_success_def),
+          .default = w * rolling_recent_def +
+                     (1 - w) * rolling_prev_def
+        ),
+      across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
+    ) %>%
+    select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
+    ungroup()
+
+  # EXP PLAYS ----------------------------------------------------------------  
+  rolling_exp_plays_df =
+    szn_all %>%
+    filter(season > 2008) %>%
+    filter(!is.na(posteam)) %>%
+    group_by(season, week, game_id, posteam) %>%
+    mutate(
+      explosive = ifelse(yards_gained >= 20, 1, 0)
+    ) %>%
+    summarise(
+      n_exp_off = sum(explosive, na.rm = T),
+      n_tot_off = n(),
+      .groups = "drop"
+    ) %>%
+    drop_na() %>%
+    ungroup() %>%
+    rename(team = posteam) %>%
+    left_join(
+      szn_all %>%
+        filter(season > 2008) %>%
+        filter(!is.na(defteam)) %>%
+        group_by(season, week, game_id, defteam) %>%
+        mutate(
+          explosive = ifelse(yards_gained >= 20, 1, 0)
+        ) %>%
+        summarise(
+          n_exp_def = sum(explosive, na.rm = T),
+          n_tot_def = n(),
+          .groups = "drop"
+        ) %>%
+        drop_na() %>%
+        ungroup() %>%
+        rename(team = defteam),
+      by = c("season", "week", "game_id", "team")
+    ) %>%
+    group_by(season, team) %>%
+    arrange(season, team, week) %>%
+    mutate(
+      n_game = row_number()
+    ) %>%
+    mutate(
+      across(c(contains("_exp_"), contains("_tot_")), ~ cumsum(.), .names = "sum_{col}"),
+      across(c(contains("_exp_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)), .names = "sum_recent_{col}"),
+      rolling_recent_off = (sum_recent_n_exp_off / sum_recent_n_tot_off),
+      rolling_recent_def = (sum_recent_n_exp_def / sum_recent_n_tot_def),
+      sum_prev_n_exp_off = sum_n_exp_off - sum_recent_n_exp_off,
+      sum_prev_n_tot_off = sum_n_tot_off - sum_recent_n_tot_off,
+      sum_prev_n_exp_def = sum_n_exp_def - sum_recent_n_exp_def,
+      sum_prev_n_tot_def = sum_n_tot_def - sum_recent_n_tot_def,
+      rolling_prev_off = (sum_prev_n_exp_off / sum_prev_n_tot_off),
+      rolling_prev_def = (sum_prev_n_exp_def / sum_prev_n_tot_def),
+      
+      # WEIGHTED EXP PLAYS ---------------------------------------------------------
+      rolling_exp_off_rate =
+        case_when(
+          n_game <= 3 ~ (sum_n_exp_off / sum_n_tot_off),
+          .default = w * rolling_recent_off +
+                     (1 - w) * rolling_prev_off
+        ),
+      rolling_exp_def_rate =
+        case_when(
+          n_game <= 3 ~ (sum_n_exp_def / sum_n_tot_def),
+          .default = w * rolling_recent_def +
+                     (1 - w) * rolling_prev_def
+        ),
+      across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
+    ) %>%
+    # left_join(df_rolling_exp_plays %>% select(team, game_id, rolling_exp_off_rate, rolling_exp_def_rate), by = c("team", "game_id")) %>%
+    ungroup()
+
+  # TO RATE ----------------------------------------------------------------  
+  rolling_to_rate_df =
+    szn_all %>%
+    filter(season > 2008) %>%
+    filter(!is.na(posteam)) %>%
+    group_by(season, week, game_id, posteam) %>%
+    mutate(
+      turnover = ifelse(interception == 1 | fumble == 1, 1, 0)
+    ) %>%
+    summarise(
+      n_to_off = sum(turnover, na.rm = T),
+      n_tot_off = n(),
+      .groups = "drop"
+    ) %>%
+    drop_na() %>%
+    ungroup() %>%
+    rename(team = posteam) %>%
+    left_join(
+      szn_all %>%
+        filter(season > 2008) %>%
+        filter(!is.na(defteam)) %>%
+        group_by(season, week, game_id, defteam) %>%
+        mutate(
+          turnover = ifelse(interception == 1 | fumble == 1, 1, 0)
+        ) %>%
+        summarise(
+          n_to_def = sum(turnover, na.rm = T),
+          n_tot_def = n(),
+          .groups = "drop"
+        ) %>%
+        drop_na() %>%
+        ungroup() %>%
+        rename(team = defteam),
+      by = c("season", "week", "game_id", "team")
+    ) %>%
+    group_by(season, team) %>%
+    arrange(season, team, week) %>%
+    mutate(
+      n_game = row_number()
+    ) %>%
+    mutate(
+      across(c(contains("_to_"), contains("_tot_")), ~ cumsum(.), .names = "sum_{col}"),
+      across(c(contains("_to_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)), .names = "sum_recent_{col}"),
+      rolling_recent_off = (sum_recent_n_to_off / sum_recent_n_tot_off),
+      rolling_recent_def = (sum_recent_n_to_def / sum_recent_n_tot_def),
+      sum_prev_n_to_off = sum_n_to_off - sum_recent_n_to_off,
+      sum_prev_n_tot_off = sum_n_tot_off - sum_recent_n_tot_off,
+      sum_prev_n_to_def = sum_n_to_def - sum_recent_n_to_def,
+      sum_prev_n_tot_def = sum_n_tot_def - sum_recent_n_tot_def,
+      rolling_prev_off = (sum_prev_n_to_off / sum_prev_n_tot_off),
+      rolling_prev_def = (sum_prev_n_to_def / sum_prev_n_tot_def),
+      
+      
+      # WEIGHTED TO RATE ---------------------------------------------------------
+      rolling_to_off_rate =
+        case_when(
+          n_game <= 3 ~ (sum_n_to_off / sum_n_tot_off),
+          .default = w * rolling_recent_off +
+                     (1 - w) * rolling_prev_off
+        ),
+      rolling_to_def_rate =
+        case_when(
+          n_game <= 3 ~ (sum_n_to_def / sum_n_tot_def),
+          .default = w * rolling_recent_def +
+                     (1 - w) * rolling_prev_def
+        ),
+      across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
+    ) %>%
+    # left_join(df_rolling_to_rate %>% select(team, game_id, rolling_to_off_rate, rolling_to_def_rate), by = c("team", "game_id")) %>%
+    ungroup()
+    
+  # PEN YARDS ----------------------------------------------------------------  
+  rolling_pen_yards_df = 
+    szn_all %>% 
+    filter(season > 2008) %>%
+    filter(!is.na(posteam)) %>%
+    group_by(season, week, game_id, posteam) %>%
+    summarise(
+      n_pen_off = sum(penalty_yards, na.rm = T),
+      n_tot_off = n(),
+      .groups = "drop"
+    ) %>% 
+    drop_na() %>% 
+    ungroup() %>% 
+    rename(team = posteam) %>% 
+    left_join(
+      szn_all %>% 
+        filter(season > 2008) %>% 
+        filter(!is.na(defteam)) %>%
+        group_by(season, week, game_id, defteam) %>%
+        summarise(
+          n_pen_def = sum(penalty_yards, na.rm = T),
+          n_tot_def = n(),
+          .groups = "drop"
+        ) %>% 
+        drop_na() %>% 
+        ungroup() %>% 
+        rename(team = defteam),
+      by = c("season", "week", "game_id", "team")
+    ) %>% 
+    group_by(season, team) %>% 
+    arrange(season, team, week) %>% 
+    mutate(
+      n_game = row_number()
+    ) %>% 
+    mutate(
+      across(c(contains("_pen_"), contains("_tot_")), ~ cumsum(.), .names = "sum_{col}"),
+      across(c(contains("_pen_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)), .names = "sum_recent_{col}"),
+      rolling_recent_off = (sum_recent_n_pen_off / sum_recent_n_tot_off),
+      rolling_recent_def = (sum_recent_n_pen_def / sum_recent_n_tot_def),
+      sum_prev_n_pen_off = sum_n_pen_off - sum_recent_n_pen_off,
+      sum_prev_n_tot_off = sum_n_tot_off - sum_recent_n_tot_off,
+      sum_prev_n_pen_def = sum_n_pen_def - sum_recent_n_pen_def,
+      sum_prev_n_tot_def = sum_n_tot_def - sum_recent_n_tot_def,
+      rolling_prev_off = (sum_prev_n_pen_off / sum_prev_n_tot_off),
+      rolling_prev_def = (sum_prev_n_pen_def / sum_prev_n_tot_def),
+      
+      # WEIGHTED PEN YARDS ---------------------------------------------------------
+      rolling_pen_yards_off =
+        case_when(
+          n_game <= 3 ~ (sum_n_pen_off / sum_n_tot_off),
+          .default = w * rolling_recent_off +
+                     (1 - w) * rolling_prev_off
+        ),
+      rolling_pen_yards_def =
+        case_when(
+          n_game <= 3 ~ (sum_n_pen_def / sum_n_tot_def),
+          .default = w * rolling_recent_def +
+                     (1 - w) * rolling_prev_def
+        ),
+      across(starts_with("rolling_") & contains("_yards_"), ~ lag(.), .names = "prior_{col}")
+    ) %>% 
+    select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>% 
+    # left_join(df_rolling_pen_yards %>% select(team, game_id, rolling_pen_yards_off, rolling_pen_yards_def), by = c("team", "game_id")) %>% 
+    ungroup()
+  
+   # Return merged data
+  rolling_merged_df = 
+    rolling_epa_df %>% 
+    left_join(rolling_pace_df, by = c("season", "team", "week", "n_game")) %>% 
+    left_join(rolling_rz_eff_df, by = c("season", "team", "week", "n_game")) %>% 
+    left_join(rolling_success_df, by = c("season", "team", "week", "n_game")) %>% 
+    left_join(rolling_exp_plays_df, by = c("season", "team", "week", "n_game")) %>% 
+    left_join(rolling_to_rate_df, by = c("season", "team", "week", "n_game")) %>% 
+    left_join(rolling_pen_yards_df, by = c("season", "team", "week", "n_game"))
+  
+  team_total_spread_rolling_df =
+    szn_all %>% 
+    filter(season > 2008) %>% 
+    distinct(season, week, game_id, home_team, away_team, total_line, total, spread_line, result, home_score, away_score) %>%
+    left_join(division_df %>% select(team, division) %>% rename(home_team = team, division_home = division), by = "home_team") %>%
+    left_join(division_df %>% select(team, division) %>% rename(away_team = team, division_away = division), by = "away_team") %>% 
+    mutate(division_game = ifelse(division_home == division_away, 1, 0)) %>%
+    pivot_longer(
+      ends_with("_team"),
+      names_to = "home_away",
+      values_to = "team"
+    ) %>% 
+    mutate(home_away = str_remove(home_away, "_team$")) %>% 
+    left_join(rolling_merged_df, by = c("season", "week", "team")) %>% 
+    left_join(qb_cont_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
+    left_join(rest_days_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
+    left_join(team_travel_df %>% select(-game_id), by = c("season", "week", "team")) %>%  
+    select(season, week, game_id, team, total_line, total, spread_line, result, home_away, home_score, away_score, division_game, starts_with("prior_"), qb_cont, rest_days, travel_km) %>%
+    mutate(
+      travel_km = 
+        case_when(
+          travel_km == 0 ~ 0,
+          .default = log(travel_km)
+        ),
+      total_team = 
+        case_when(
+          home_away == "home" ~ home_score,
+          home_away == "away" ~ away_score,
+          .default = NA
+        )
+    ) %>% 
+    ungroup()  
+
+}
+
+weights <- seq(0.1, 0.9, by = 0.05)
+
+rolling_weights_3prior_df <- map(weights, make_weighted_data_3prior)
+
+names(rolling_weights_3prior_df) <- paste0("w_", gsub("\\.", "_", weights))
+
+
+make_weighted_data_4prior <- function(w) {
+
+  # EPA -----------------------------------------------------------------------
+  rolling_epa_df =
+    szn_all %>%
+    filter(season > 2008) %>%
+    filter(rush == 1 | pass == 1, !is.na(epa), !is.na(posteam), posteam != "") %>%
+    select(season, week, posteam, pass, epa) %>%
+    group_by(season, week, posteam, pass) %>%
+    summarize(epa = mean(epa), .groups = "drop_last") %>%
+    pivot_wider(names_from = pass, values_from = epa) %>%
+    rename(off_pass_epa = "1", off_rush_epa = "0", team = "posteam") %>%
+    ungroup() %>%
+    left_join(
+      szn_all %>%
+        filter(season > 2008) %>%
+        filter(rush == 1 | pass == 1, !is.na(epa), !is.na(defteam), defteam != "") %>%
+        select(season, week, defteam, pass, epa) %>%
+        group_by(season, week, defteam, pass) %>%
+        summarize(epa = mean(epa), .groups = "drop_last") %>%
+        pivot_wider(names_from = pass, values_from = epa) %>%
+        rename(def_pass_epa = "1", def_rush_epa = "0", team = "defteam") %>%
+        ungroup(),
+      by = c("season", "week", "team")
+    ) %>%
+    group_by(season, team) %>%
+    arrange(season, team, week) %>%
+    mutate(
+      n_game = row_number(),
+      across(ends_with("_epa"), ~ cumsum(.), .names = "sum_{col}"),
+      across(ends_with("_epa"), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))), .names = "sum_recent_{col}"),
+      across(starts_with("sum_recent_"), ~ . / 4, .names = "rolling_{col}_recent"),
+      sum_prev_off_rush_epa = sum_off_rush_epa - sum_recent_off_rush_epa,
+      sum_prev_off_pass_epa = sum_off_pass_epa - sum_recent_off_pass_epa,
+      sum_prev_def_rush_epa = sum_def_rush_epa - sum_recent_def_rush_epa,
+      sum_prev_def_pass_epa = sum_def_pass_epa - sum_recent_def_pass_epa,
+      across(starts_with("sum_prev_"), ~ . / (n_game - 4), .names = "rolling_{col}_prev"),
+
+      # WEIGHTED EPA ---------------------------------------------------------
+      rolling_off_rush_epa =
+        case_when(
+          n_game <= 4 ~ sum_off_rush_epa / n_game,
+          .default = w * rolling_sum_recent_off_rush_epa_recent +
+                     (1 - w) * rolling_sum_prev_off_rush_epa_prev
+        ),
+      rolling_off_pass_epa =
+        case_when(
+          n_game <= 4 ~ sum_off_pass_epa / n_game,
+          .default = w * rolling_sum_recent_off_pass_epa_recent +
+                     (1 - w) * rolling_sum_prev_off_pass_epa_prev
+        ),
+      rolling_def_rush_epa =
+        case_when(
+          n_game <= 4 ~ sum_def_rush_epa / n_game,
+          .default = w * rolling_sum_recent_def_rush_epa_recent +
+                     (1 - w) * rolling_sum_prev_def_rush_epa_prev
+        ),
+      rolling_def_pass_epa =
+        case_when(
+          n_game <= 4 ~ sum_def_pass_epa / n_game,
+          .default = w * rolling_sum_recent_def_pass_epa_recent +
+                     (1 - w) * rolling_sum_prev_def_pass_epa_prev
+        ),
+      across(starts_with("rolling_"), ~ lag(.), .names = "prior_{col}")
+    ) %>%
+    select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
+    ungroup()
+
+  # PACE ----------------------------------------------------------------------
+  rolling_pace_df =
+    szn_all %>%
+    filter(season > 2008) %>%
+    group_by(season, week, game_id, posteam) %>%
+    summarise(n_plays = n(), .groups = "drop_last") %>%
+    rename(team = posteam) %>%
+    group_by(season, team) %>%
+    arrange(season, team, week) %>%
+    mutate(
+      n_game = row_number(),
+      sum_plays = cumsum(n_plays),
+      sum_recent = n_plays + lag(n_plays) + lag(lag(n_plays)) + lag(lag(lag(n_plays))),
+      rolling_recent = sum_recent / 4,
+      sum_prev = sum_plays - sum_recent,
+      rolling_prev = sum_prev / (n_game - 4),
+
+      # WEIGHTED PACE ---------------------------------------------------------
+      rolling_pace =
+        case_when(
+          n_game <= 4 ~ sum_plays / n_game,
+          .default = w * rolling_recent + (1 - w) * rolling_prev
+        ),
+
+      across(starts_with("rolling_"), ~ lag(.), .names = "prior_{col}")
+    ) %>%
+    select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
+    ungroup()
+  
+    # RZ EFF ----------------------------------------------------------------  
+  rolling_rz_eff_df =
+    szn_all %>%
+    filter(season > 2008) %>%
+    group_by(season, week, game_id, posteam) %>%
+    mutate(
+      redzone =
+        case_when(
+          yardline_100 <= 20 & two_point_attempt == 1 ~ NA,
+          yardline_100 <= 20 & extra_point_attempt == 1 ~ NA,
+          yardline_100 <= 20 ~ 1,
+          yardline_100 > 20 ~ 0,
+          .default = NA
+        )
+    ) %>%
+    select(season, week, game_id, drive, posteam, yardline_100, redzone, touchdown, extra_point_attempt, two_point_attempt) %>%
+    ungroup() %>%
+    group_by(season, week, game_id, posteam, drive) %>%
+    mutate(
+      n_drive = row_number(),
+      n_drive_rz = ifelse(redzone == 1, n_drive, NA),
+      redzone_start = ifelse(n_drive_rz == min(n_drive_rz, na.rm = T), 1, 0)
+    ) %>%
+    ungroup() %>%
+    group_by(season, week, game_id, posteam) %>%
+    summarise(
+      redzone_trips = sum(redzone_start == 1, na.rm = T),
+      redzone_tds = sum(redzone == 1 & touchdown == 1, na.rm = T)
+    ) %>%
+    drop_na() %>%
+    ungroup() %>%
+    rename(team = posteam) %>%
+    group_by(season, team) %>%
+    arrange(season, team, week) %>%
+    mutate(
+      n_game = row_number(),
+      across(starts_with("redzone_"), ~ cumsum(.), .names = "sum_{col}"),
+      across(starts_with("redzone_"), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))), .names = "sum_recent_{col}"),
+      rolling_recent = (sum_recent_redzone_tds / sum_recent_redzone_trips),
+      sum_prev_redzone_trips = sum_redzone_trips - sum_recent_redzone_trips,
+      sum_prev_redzone_tds = sum_redzone_tds - sum_recent_redzone_tds,
+      rolling_prev = (sum_prev_redzone_tds / sum_prev_redzone_trips),
+      
+      # WEIGHTED RZ ---------------------------------------------------------
+      rolling_rz_eff =
+          case_when(
+              n_game <= 4 ~ (sum_redzone_tds / sum_redzone_trips),
+              .default = w * rolling_recent +
+                     (1 - w) * rolling_prev
+          ),
+      across(starts_with("rolling_"), ~ lag(.), .names = "prior_{col}")
+    ) %>%
+    select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
+    ungroup()
+  
+  # SUCCESS ----------------------------------------------------------------  
+  rolling_success_df =
+    szn_all %>%
+    filter(season > 2008) %>%
+    filter(down %in% c(1:4) & !is.na(yards_gained)) %>%
+    group_by(season, week, game_id, posteam) %>%
+    mutate(
+      success =
+        case_when(
+          down == 1 & yards_gained >= 0.4 * ydstogo ~ 1,
+          down == 2 & yards_gained >= 0.6 * ydstogo ~ 1,
+          down %in% c(3:4) & yards_gained >= ydstogo ~ 1,
+          .default = 0
+        )
+    ) %>%
+    summarise(
+      sum_success_off = sum(success, na.rm = T),
+      n_success_off = n(),
+      .groups = "drop"
+    ) %>%
+    drop_na() %>%
+    ungroup() %>%
+    rename(team = posteam) %>%
+    left_join(
+      szn_all %>%
+        filter(season > 2008) %>%
+        filter(down %in% c(1:4) & !is.na(yards_gained)) %>%
+        group_by(season, week, game_id, defteam) %>%
+        mutate(
+          success =
+            case_when(
+              down == 1 & yards_gained >= 0.4 * ydstogo ~ 1,
+              down == 2 & yards_gained >= 0.6 * ydstogo ~ 1,
+              down %in% c(3:4) & yards_gained >= ydstogo ~ 1,
+              .default = 0
+            )
+        ) %>%
+        summarise(
+          sum_success_def = sum(success, na.rm = T),
+          n_success_def = n(),
+          .groups = "drop"
+        ) %>%
+        drop_na() %>%
+        ungroup() %>%
+        rename(team = defteam),
+      by = c("season", "week", "game_id", "team")
+    ) %>%
+    group_by(season, team) %>%
+    arrange(season, team, week) %>%
+    mutate(
+      n_game = row_number()
+    ) %>%
+    mutate(
+      across(contains("_success_"), ~ cumsum(.), .names = "sum_{col}"),
+      across(starts_with("_success_"), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))), .names = "sum_recent_{col}"),
+      rolling_recent_off = (sum_sum_success_off / sum_n_success_off),
+      rolling_recent_def = (sum_sum_success_def / sum_n_success_def),
+      sum_prev_sum_success_off = sum_success_off - sum_sum_success_off,
+      sum_prev_n_success_off = n_success_off - sum_n_success_off,
+      sum_prev_sum_success_def = sum_success_def - sum_sum_success_def,
+      sum_prev_n_success_def = n_success_def - sum_n_success_def,
+      rolling_prev_off = (sum_prev_sum_success_off / sum_prev_n_success_off),
+      rolling_prev_def = (sum_prev_sum_success_def / sum_prev_n_success_def),
+      
+      # WEIGHTED SUCCESS ---------------------------------------------------------
+      rolling_success_off_rate =
+        case_when(
+          n_game <= 4 ~ (sum_sum_success_off / sum_n_success_off),
+          .default = w * rolling_recent_off +
+                     (1 - w) * rolling_prev_off
+        ),
+      rolling_success_def_rate =
+        case_when(
+          n_game <= 4 ~ (sum_sum_success_def / sum_n_success_def),
+          .default = w * rolling_recent_def +
+                     (1 - w) * rolling_prev_def
+        ),
+      across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
+    ) %>%
+    select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
+    ungroup()
+
+  # EXP PLAYS ----------------------------------------------------------------  
+  rolling_exp_plays_df =
+    szn_all %>%
+    filter(season > 2008) %>%
+    filter(!is.na(posteam)) %>%
+    group_by(season, week, game_id, posteam) %>%
+    mutate(
+      explosive = ifelse(yards_gained >= 20, 1, 0)
+    ) %>%
+    summarise(
+      n_exp_off = sum(explosive, na.rm = T),
+      n_tot_off = n(),
+      .groups = "drop"
+    ) %>%
+    drop_na() %>%
+    ungroup() %>%
+    rename(team = posteam) %>%
+    left_join(
+      szn_all %>%
+        filter(season > 2008) %>%
+        filter(!is.na(defteam)) %>%
+        group_by(season, week, game_id, defteam) %>%
+        mutate(
+          explosive = ifelse(yards_gained >= 20, 1, 0)
+        ) %>%
+        summarise(
+          n_exp_def = sum(explosive, na.rm = T),
+          n_tot_def = n(),
+          .groups = "drop"
+        ) %>%
+        drop_na() %>%
+        ungroup() %>%
+        rename(team = defteam),
+      by = c("season", "week", "game_id", "team")
+    ) %>%
+    group_by(season, team) %>%
+    arrange(season, team, week) %>%
+    mutate(
+      n_game = row_number()
+    ) %>%
+    mutate(
+      across(c(contains("_exp_"), contains("_tot_")), ~ cumsum(.), .names = "sum_{col}"),
+      across(c(contains("_exp_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))), .names = "sum_recent_{col}"),
+      rolling_recent_off = (sum_recent_n_exp_off / sum_recent_n_tot_off),
+      rolling_recent_def = (sum_recent_n_exp_def / sum_recent_n_tot_def),
+      sum_prev_n_exp_off = sum_n_exp_off - sum_recent_n_exp_off,
+      sum_prev_n_tot_off = sum_n_tot_off - sum_recent_n_tot_off,
+      sum_prev_n_exp_def = sum_n_exp_def - sum_recent_n_exp_def,
+      sum_prev_n_tot_def = sum_n_tot_def - sum_recent_n_tot_def,
+      rolling_prev_off = (sum_prev_n_exp_off / sum_prev_n_tot_off),
+      rolling_prev_def = (sum_prev_n_exp_def / sum_prev_n_tot_def),
+      
+      # WEIGHTED EXP PLAYS ---------------------------------------------------------
+      rolling_exp_off_rate =
+        case_when(
+          n_game <= 4 ~ (sum_n_exp_off / sum_n_tot_off),
+          .default = w * rolling_recent_off +
+                     (1 - w) * rolling_prev_off
+        ),
+      rolling_exp_def_rate =
+        case_when(
+          n_game <= 4 ~ (sum_n_exp_def / sum_n_tot_def),
+          .default = w * rolling_recent_def +
+                     (1 - w) * rolling_prev_def
+        ),
+      across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
+    ) %>%
+    # left_join(df_rolling_exp_plays %>% select(team, game_id, rolling_exp_off_rate, rolling_exp_def_rate), by = c("team", "game_id")) %>%
+    ungroup()
+
+  # TO RATE ----------------------------------------------------------------  
+  rolling_to_rate_df =
+    szn_all %>%
+    filter(season > 2008) %>%
+    filter(!is.na(posteam)) %>%
+    group_by(season, week, game_id, posteam) %>%
+    mutate(
+      turnover = ifelse(interception == 1 | fumble == 1, 1, 0)
+    ) %>%
+    summarise(
+      n_to_off = sum(turnover, na.rm = T),
+      n_tot_off = n(),
+      .groups = "drop"
+    ) %>%
+    drop_na() %>%
+    ungroup() %>%
+    rename(team = posteam) %>%
+    left_join(
+      szn_all %>%
+        filter(season > 2008) %>%
+        filter(!is.na(defteam)) %>%
+        group_by(season, week, game_id, defteam) %>%
+        mutate(
+          turnover = ifelse(interception == 1 | fumble == 1, 1, 0)
+        ) %>%
+        summarise(
+          n_to_def = sum(turnover, na.rm = T),
+          n_tot_def = n(),
+          .groups = "drop"
+        ) %>%
+        drop_na() %>%
+        ungroup() %>%
+        rename(team = defteam),
+      by = c("season", "week", "game_id", "team")
+    ) %>%
+    group_by(season, team) %>%
+    arrange(season, team, week) %>%
+    mutate(
+      n_game = row_number()
+    ) %>%
+    mutate(
+      across(c(contains("_to_"), contains("_tot_")), ~ cumsum(.), .names = "sum_{col}"),
+      across(c(contains("_to_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))), .names = "sum_recent_{col}"),
+      rolling_recent_off = (sum_recent_n_to_off / sum_recent_n_tot_off),
+      rolling_recent_def = (sum_recent_n_to_def / sum_recent_n_tot_def),
+      sum_prev_n_to_off = sum_n_to_off - sum_recent_n_to_off,
+      sum_prev_n_tot_off = sum_n_tot_off - sum_recent_n_tot_off,
+      sum_prev_n_to_def = sum_n_to_def - sum_recent_n_to_def,
+      sum_prev_n_tot_def = sum_n_tot_def - sum_recent_n_tot_def,
+      rolling_prev_off = (sum_prev_n_to_off / sum_prev_n_tot_off),
+      rolling_prev_def = (sum_prev_n_to_def / sum_prev_n_tot_def),
+      
+      
+      # WEIGHTED TO RATE ---------------------------------------------------------
+      rolling_to_off_rate =
+        case_when(
+          n_game <= 4 ~ (sum_n_to_off / sum_n_tot_off),
+          .default = w * rolling_recent_off +
+                     (1 - w) * rolling_prev_off
+        ),
+      rolling_to_def_rate =
+        case_when(
+          n_game <= 4 ~ (sum_n_to_def / sum_n_tot_def),
+          .default = w * rolling_recent_def +
+                     (1 - w) * rolling_prev_def
+        ),
+      across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
+    ) %>%
+    # left_join(df_rolling_to_rate %>% select(team, game_id, rolling_to_off_rate, rolling_to_def_rate), by = c("team", "game_id")) %>%
+    ungroup()
+    
+  # PEN YARDS ----------------------------------------------------------------  
+  rolling_pen_yards_df = 
+    szn_all %>% 
+    filter(season > 2008) %>%
+    filter(!is.na(posteam)) %>%
+    group_by(season, week, game_id, posteam) %>%
+    summarise(
+      n_pen_off = sum(penalty_yards, na.rm = T),
+      n_tot_off = n(),
+      .groups = "drop"
+    ) %>% 
+    drop_na() %>% 
+    ungroup() %>% 
+    rename(team = posteam) %>% 
+    left_join(
+      szn_all %>% 
+        filter(season > 2008) %>% 
+        filter(!is.na(defteam)) %>%
+        group_by(season, week, game_id, defteam) %>%
+        summarise(
+          n_pen_def = sum(penalty_yards, na.rm = T),
+          n_tot_def = n(),
+          .groups = "drop"
+        ) %>% 
+        drop_na() %>% 
+        ungroup() %>% 
+        rename(team = defteam),
+      by = c("season", "week", "game_id", "team")
+    ) %>% 
+    group_by(season, team) %>% 
+    arrange(season, team, week) %>% 
+    mutate(
+      n_game = row_number()
+    ) %>% 
+    mutate(
+      across(c(contains("_pen_"), contains("_tot_")), ~ cumsum(.), .names = "sum_{col}"),
+      across(c(contains("_pen_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))), .names = "sum_recent_{col}"),
+      rolling_recent_off = (sum_recent_n_pen_off / sum_recent_n_tot_off),
+      rolling_recent_def = (sum_recent_n_pen_def / sum_recent_n_tot_def),
+      sum_prev_n_pen_off = sum_n_pen_off - sum_recent_n_pen_off,
+      sum_prev_n_tot_off = sum_n_tot_off - sum_recent_n_tot_off,
+      sum_prev_n_pen_def = sum_n_pen_def - sum_recent_n_pen_def,
+      sum_prev_n_tot_def = sum_n_tot_def - sum_recent_n_tot_def,
+      rolling_prev_off = (sum_prev_n_pen_off / sum_prev_n_tot_off),
+      rolling_prev_def = (sum_prev_n_pen_def / sum_prev_n_tot_def),
+      
+      # WEIGHTED PEN YARDS ---------------------------------------------------------
+      rolling_pen_yards_off =
+        case_when(
+          n_game <= 4 ~ (sum_n_pen_off / sum_n_tot_off),
+          .default = w * rolling_recent_off +
+                     (1 - w) * rolling_prev_off
+        ),
+      rolling_pen_yards_def =
+        case_when(
+          n_game <= 4 ~ (sum_n_pen_def / sum_n_tot_def),
+          .default = w * rolling_recent_def +
+                     (1 - w) * rolling_prev_def
+        ),
+      across(starts_with("rolling_") & contains("_yards_"), ~ lag(.), .names = "prior_{col}")
+    ) %>% 
+    select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>% 
+    # left_join(df_rolling_pen_yards %>% select(team, game_id, rolling_pen_yards_off, rolling_pen_yards_def), by = c("team", "game_id")) %>% 
+    ungroup()
+  
+   # Return merged data
+  rolling_merged_df = 
+    rolling_epa_df %>% 
+    left_join(rolling_pace_df, by = c("season", "team", "week", "n_game")) %>% 
+    left_join(rolling_rz_eff_df, by = c("season", "team", "week", "n_game")) %>% 
+    left_join(rolling_success_df, by = c("season", "team", "week", "n_game")) %>% 
+    left_join(rolling_exp_plays_df, by = c("season", "team", "week", "n_game")) %>% 
+    left_join(rolling_to_rate_df, by = c("season", "team", "week", "n_game")) %>% 
+    left_join(rolling_pen_yards_df, by = c("season", "team", "week", "n_game"))
+  
+  team_total_spread_rolling_df =
+    szn_all %>% 
+    filter(season > 2008) %>% 
+    distinct(season, week, game_id, home_team, away_team, total_line, total, spread_line, result, home_score, away_score) %>%
+    left_join(division_df %>% select(team, division) %>% rename(home_team = team, division_home = division), by = "home_team") %>%
+    left_join(division_df %>% select(team, division) %>% rename(away_team = team, division_away = division), by = "away_team") %>% 
+    mutate(division_game = ifelse(division_home == division_away, 1, 0)) %>%
+    pivot_longer(
+      ends_with("_team"),
+      names_to = "home_away",
+      values_to = "team"
+    ) %>% 
+    mutate(home_away = str_remove(home_away, "_team$")) %>% 
+    left_join(rolling_merged_df, by = c("season", "week", "team")) %>% 
+    left_join(qb_cont_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
+    left_join(rest_days_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
+    left_join(team_travel_df %>% select(-game_id), by = c("season", "week", "team")) %>%  
+    select(season, week, game_id, team, total_line, total, spread_line, result, home_away, home_score, away_score, division_game, starts_with("prior_"), qb_cont, rest_days, travel_km) %>%
+    mutate(
+      travel_km = 
+        case_when(
+          travel_km == 0 ~ 0,
+          .default = log(travel_km)
+        ),
+      total_team = 
+        case_when(
+          home_away == "home" ~ home_score,
+          home_away == "away" ~ away_score,
+          .default = NA
+        )
+    ) %>% 
+    ungroup()  
+
+}
+
+weights <- seq(0.1, 0.9, by = 0.05)
+
+rolling_weights_4prior_df <- map(weights, make_weighted_data_4prior)
+
+names(rolling_weights_4prior_df) <- paste0("w_", gsub("\\.", "_", weights))
+
+make_weighted_data_5prior <- function(w) {
+
+  # EPA -----------------------------------------------------------------------
+  rolling_epa_df =
+    szn_all %>%
+    filter(season > 2008) %>%
+    filter(rush == 1 | pass == 1, !is.na(epa), !is.na(posteam), posteam != "") %>%
+    select(season, week, posteam, pass, epa) %>%
+    group_by(season, week, posteam, pass) %>%
+    summarize(epa = mean(epa), .groups = "drop_last") %>%
+    pivot_wider(names_from = pass, values_from = epa) %>%
+    rename(off_pass_epa = "1", off_rush_epa = "0", team = "posteam") %>%
+    ungroup() %>%
+    left_join(
+      szn_all %>%
+        filter(season > 2008) %>%
+        filter(rush == 1 | pass == 1, !is.na(epa), !is.na(defteam), defteam != "") %>%
+        select(season, week, defteam, pass, epa) %>%
+        group_by(season, week, defteam, pass) %>%
+        summarize(epa = mean(epa), .groups = "drop_last") %>%
+        pivot_wider(names_from = pass, values_from = epa) %>%
+        rename(def_pass_epa = "1", def_rush_epa = "0", team = "defteam") %>%
+        ungroup(),
+      by = c("season", "week", "team")
+    ) %>%
+    group_by(season, team) %>%
+    arrange(season, team, week) %>%
+    mutate(
+      n_game = row_number(),
+      across(ends_with("_epa"), ~ cumsum(.), .names = "sum_{col}"),
+      across(ends_with("_epa"), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
+      across(starts_with("sum_recent_"), ~ . / 5, .names = "rolling_{col}_recent"),
+      sum_prev_off_rush_epa = sum_off_rush_epa - sum_recent_off_rush_epa,
+      sum_prev_off_pass_epa = sum_off_pass_epa - sum_recent_off_pass_epa,
+      sum_prev_def_rush_epa = sum_def_rush_epa - sum_recent_def_rush_epa,
+      sum_prev_def_pass_epa = sum_def_pass_epa - sum_recent_def_pass_epa,
+      across(starts_with("sum_prev_"), ~ . / (n_game - 5), .names = "rolling_{col}_prev"),
+
+      # WEIGHTED EPA ---------------------------------------------------------
+      rolling_off_rush_epa =
+        case_when(
+          n_game <= 5 ~ sum_off_rush_epa / n_game,
+          .default = w * rolling_sum_recent_off_rush_epa_recent +
+                     (1 - w) * rolling_sum_prev_off_rush_epa_prev
+        ),
+      rolling_off_pass_epa =
+        case_when(
+          n_game <= 5 ~ sum_off_pass_epa / n_game,
+          .default = w * rolling_sum_recent_off_pass_epa_recent +
+                     (1 - w) * rolling_sum_prev_off_pass_epa_prev
+        ),
+      rolling_def_rush_epa =
+        case_when(
+          n_game <= 5 ~ sum_def_rush_epa / n_game,
+          .default = w * rolling_sum_recent_def_rush_epa_recent +
+                     (1 - w) * rolling_sum_prev_def_rush_epa_prev
+        ),
+      rolling_def_pass_epa =
+        case_when(
+          n_game <= 5 ~ sum_def_pass_epa / n_game,
+          .default = w * rolling_sum_recent_def_pass_epa_recent +
+                     (1 - w) * rolling_sum_prev_def_pass_epa_prev
+        ),
+      across(starts_with("rolling_"), ~ lag(.), .names = "prior_{col}")
+    ) %>%
+    select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
+    ungroup()
+
+  # PACE ----------------------------------------------------------------------
+  rolling_pace_df =
+    szn_all %>%
+    filter(season > 2008) %>%
+    group_by(season, week, game_id, posteam) %>%
+    summarise(n_plays = n(), .groups = "drop_last") %>%
+    rename(team = posteam) %>%
+    group_by(season, team) %>%
+    arrange(season, team, week) %>%
+    mutate(
+      n_game = row_number(),
+      sum_plays = cumsum(n_plays),
+      sum_recent = n_plays + lag(n_plays) + lag(lag(n_plays)) + lag(lag(lag(n_plays))) + lag(lag(lag(lag(n_plays)))),
+      rolling_recent = sum_recent / 5,
+      sum_prev = sum_plays - sum_recent,
+      rolling_prev = sum_prev / (n_game - 5),
+
+      # WEIGHTED PACE ---------------------------------------------------------
+      rolling_pace =
+        case_when(
+          n_game <= 5 ~ sum_plays / n_game,
+          .default = w * rolling_recent + (1 - w) * rolling_prev
+        ),
+
+      across(starts_with("rolling_"), ~ lag(.), .names = "prior_{col}")
+    ) %>%
+    select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
+    ungroup()
+  
+    # RZ EFF ----------------------------------------------------------------  
+  rolling_rz_eff_df =
+    szn_all %>%
+    filter(season > 2008) %>%
+    group_by(season, week, game_id, posteam) %>%
+    mutate(
+      redzone =
+        case_when(
+          yardline_100 <= 20 & two_point_attempt == 1 ~ NA,
+          yardline_100 <= 20 & extra_point_attempt == 1 ~ NA,
+          yardline_100 <= 20 ~ 1,
+          yardline_100 > 20 ~ 0,
+          .default = NA
+        )
+    ) %>%
+    select(season, week, game_id, drive, posteam, yardline_100, redzone, touchdown, extra_point_attempt, two_point_attempt) %>%
+    ungroup() %>%
+    group_by(season, week, game_id, posteam, drive) %>%
+    mutate(
+      n_drive = row_number(),
+      n_drive_rz = ifelse(redzone == 1, n_drive, NA),
+      redzone_start = ifelse(n_drive_rz == min(n_drive_rz, na.rm = T), 1, 0)
+    ) %>%
+    ungroup() %>%
+    group_by(season, week, game_id, posteam) %>%
+    summarise(
+      redzone_trips = sum(redzone_start == 1, na.rm = T),
+      redzone_tds = sum(redzone == 1 & touchdown == 1, na.rm = T)
+    ) %>%
+    drop_na() %>%
+    ungroup() %>%
+    rename(team = posteam) %>%
+    group_by(season, team) %>%
+    arrange(season, team, week) %>%
+    mutate(
+      n_game = row_number(),
+      across(starts_with("redzone_"), ~ cumsum(.), .names = "sum_{col}"),
+      across(starts_with("redzone_"), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
+      rolling_recent = (sum_recent_redzone_tds / sum_recent_redzone_trips),
+      sum_prev_redzone_trips = sum_redzone_trips - sum_recent_redzone_trips,
+      sum_prev_redzone_tds = sum_redzone_tds - sum_recent_redzone_tds,
+      rolling_prev = (sum_prev_redzone_tds / sum_prev_redzone_trips),
+      
+      # WEIGHTED RZ ---------------------------------------------------------
+      rolling_rz_eff =
+          case_when(
+              n_game <= 5 ~ (sum_redzone_tds / sum_redzone_trips),
+              .default = w * rolling_recent +
+                     (1 - w) * rolling_prev
+          ),
+      across(starts_with("rolling_"), ~ lag(.), .names = "prior_{col}")
+    ) %>%
+    select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
+    ungroup()
+  
+  # SUCCESS ----------------------------------------------------------------  
+  rolling_success_df =
+    szn_all %>%
+    filter(season > 2008) %>%
+    filter(down %in% c(1:4) & !is.na(yards_gained)) %>%
+    group_by(season, week, game_id, posteam) %>%
+    mutate(
+      success =
+        case_when(
+          down == 1 & yards_gained >= 0.4 * ydstogo ~ 1,
+          down == 2 & yards_gained >= 0.6 * ydstogo ~ 1,
+          down %in% c(3:4) & yards_gained >= ydstogo ~ 1,
+          .default = 0
+        )
+    ) %>%
+    summarise(
+      sum_success_off = sum(success, na.rm = T),
+      n_success_off = n(),
+      .groups = "drop"
+    ) %>%
+    drop_na() %>%
+    ungroup() %>%
+    rename(team = posteam) %>%
+    left_join(
+      szn_all %>%
+        filter(season > 2008) %>%
+        filter(down %in% c(1:4) & !is.na(yards_gained)) %>%
+        group_by(season, week, game_id, defteam) %>%
+        mutate(
+          success =
+            case_when(
+              down == 1 & yards_gained >= 0.4 * ydstogo ~ 1,
+              down == 2 & yards_gained >= 0.6 * ydstogo ~ 1,
+              down %in% c(3:4) & yards_gained >= ydstogo ~ 1,
+              .default = 0
+            )
+        ) %>%
+        summarise(
+          sum_success_def = sum(success, na.rm = T),
+          n_success_def = n(),
+          .groups = "drop"
+        ) %>%
+        drop_na() %>%
+        ungroup() %>%
+        rename(team = defteam),
+      by = c("season", "week", "game_id", "team")
+    ) %>%
+    group_by(season, team) %>%
+    arrange(season, team, week) %>%
+    mutate(
+      n_game = row_number()
+    ) %>%
+    mutate(
+      across(contains("_success_"), ~ cumsum(.), .names = "sum_{col}"),
+      across(starts_with("_success_"), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
+      rolling_recent_off = (sum_sum_success_off / sum_n_success_off),
+      rolling_recent_def = (sum_sum_success_def / sum_n_success_def),
+      sum_prev_sum_success_off = sum_success_off - sum_sum_success_off,
+      sum_prev_n_success_off = n_success_off - sum_n_success_off,
+      sum_prev_sum_success_def = sum_success_def - sum_sum_success_def,
+      sum_prev_n_success_def = n_success_def - sum_n_success_def,
+      rolling_prev_off = (sum_prev_sum_success_off / sum_prev_n_success_off),
+      rolling_prev_def = (sum_prev_sum_success_def / sum_prev_n_success_def),
+      
+      # WEIGHTED SUCCESS ---------------------------------------------------------
+      rolling_success_off_rate =
+        case_when(
+          n_game <= 5 ~ (sum_sum_success_off / sum_n_success_off),
+          .default = w * rolling_recent_off +
+                     (1 - w) * rolling_prev_off
+        ),
+      rolling_success_def_rate =
+        case_when(
+          n_game <= 5 ~ (sum_sum_success_def / sum_n_success_def),
+          .default = w * rolling_recent_def +
+                     (1 - w) * rolling_prev_def
+        ),
+      across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
+    ) %>%
+    select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
+    ungroup()
+
+  # EXP PLAYS ----------------------------------------------------------------  
+  rolling_exp_plays_df =
+    szn_all %>%
+    filter(season > 2008) %>%
+    filter(!is.na(posteam)) %>%
+    group_by(season, week, game_id, posteam) %>%
+    mutate(
+      explosive = ifelse(yards_gained >= 20, 1, 0)
+    ) %>%
+    summarise(
+      n_exp_off = sum(explosive, na.rm = T),
+      n_tot_off = n(),
+      .groups = "drop"
+    ) %>%
+    drop_na() %>%
+    ungroup() %>%
+    rename(team = posteam) %>%
+    left_join(
+      szn_all %>%
+        filter(season > 2008) %>%
+        filter(!is.na(defteam)) %>%
+        group_by(season, week, game_id, defteam) %>%
+        mutate(
+          explosive = ifelse(yards_gained >= 20, 1, 0)
+        ) %>%
+        summarise(
+          n_exp_def = sum(explosive, na.rm = T),
+          n_tot_def = n(),
+          .groups = "drop"
+        ) %>%
+        drop_na() %>%
+        ungroup() %>%
+        rename(team = defteam),
+      by = c("season", "week", "game_id", "team")
+    ) %>%
+    group_by(season, team) %>%
+    arrange(season, team, week) %>%
+    mutate(
+      n_game = row_number()
+    ) %>%
+    mutate(
+      across(c(contains("_exp_"), contains("_tot_")), ~ cumsum(.), .names = "sum_{col}"),
+      across(c(contains("_exp_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
+      rolling_recent_off = (sum_recent_n_exp_off / sum_recent_n_tot_off),
+      rolling_recent_def = (sum_recent_n_exp_def / sum_recent_n_tot_def),
+      sum_prev_n_exp_off = sum_n_exp_off - sum_recent_n_exp_off,
+      sum_prev_n_tot_off = sum_n_tot_off - sum_recent_n_tot_off,
+      sum_prev_n_exp_def = sum_n_exp_def - sum_recent_n_exp_def,
+      sum_prev_n_tot_def = sum_n_tot_def - sum_recent_n_tot_def,
+      rolling_prev_off = (sum_prev_n_exp_off / sum_prev_n_tot_off),
+      rolling_prev_def = (sum_prev_n_exp_def / sum_prev_n_tot_def),
+      
+      # WEIGHTED EXP PLAYS ---------------------------------------------------------
+      rolling_exp_off_rate =
+        case_when(
+          n_game <= 5 ~ (sum_n_exp_off / sum_n_tot_off),
+          .default = w * rolling_recent_off +
+                     (1 - w) * rolling_prev_off
+        ),
+      rolling_exp_def_rate =
+        case_when(
+          n_game <= 5 ~ (sum_n_exp_def / sum_n_tot_def),
+          .default = w * rolling_recent_def +
+                     (1 - w) * rolling_prev_def
+        ),
+      across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
+    ) %>%
+    # left_join(df_rolling_exp_plays %>% select(team, game_id, rolling_exp_off_rate, rolling_exp_def_rate), by = c("team", "game_id")) %>%
+    ungroup()
+
+  # TO RATE ----------------------------------------------------------------  
+  rolling_to_rate_df =
+    szn_all %>%
+    filter(season > 2008) %>%
+    filter(!is.na(posteam)) %>%
+    group_by(season, week, game_id, posteam) %>%
+    mutate(
+      turnover = ifelse(interception == 1 | fumble == 1, 1, 0)
+    ) %>%
+    summarise(
+      n_to_off = sum(turnover, na.rm = T),
+      n_tot_off = n(),
+      .groups = "drop"
+    ) %>%
+    drop_na() %>%
+    ungroup() %>%
+    rename(team = posteam) %>%
+    left_join(
+      szn_all %>%
+        filter(season > 2008) %>%
+        filter(!is.na(defteam)) %>%
+        group_by(season, week, game_id, defteam) %>%
+        mutate(
+          turnover = ifelse(interception == 1 | fumble == 1, 1, 0)
+        ) %>%
+        summarise(
+          n_to_def = sum(turnover, na.rm = T),
+          n_tot_def = n(),
+          .groups = "drop"
+        ) %>%
+        drop_na() %>%
+        ungroup() %>%
+        rename(team = defteam),
+      by = c("season", "week", "game_id", "team")
+    ) %>%
+    group_by(season, team) %>%
+    arrange(season, team, week) %>%
+    mutate(
+      n_game = row_number()
+    ) %>%
+    mutate(
+      across(c(contains("_to_"), contains("_tot_")), ~ cumsum(.), .names = "sum_{col}"),
+      across(c(contains("_to_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
+      rolling_recent_off = (sum_recent_n_to_off / sum_recent_n_tot_off),
+      rolling_recent_def = (sum_recent_n_to_def / sum_recent_n_tot_def),
+      sum_prev_n_to_off = sum_n_to_off - sum_recent_n_to_off,
+      sum_prev_n_tot_off = sum_n_tot_off - sum_recent_n_tot_off,
+      sum_prev_n_to_def = sum_n_to_def - sum_recent_n_to_def,
+      sum_prev_n_tot_def = sum_n_tot_def - sum_recent_n_tot_def,
+      rolling_prev_off = (sum_prev_n_to_off / sum_prev_n_tot_off),
+      rolling_prev_def = (sum_prev_n_to_def / sum_prev_n_tot_def),
+      
+      
+      # WEIGHTED TO RATE ---------------------------------------------------------
+      rolling_to_off_rate =
+        case_when(
+          n_game <= 5 ~ (sum_n_to_off / sum_n_tot_off),
+          .default = w * rolling_recent_off +
+                     (1 - w) * rolling_prev_off
+        ),
+      rolling_to_def_rate =
+        case_when(
+          n_game <= 5 ~ (sum_n_to_def / sum_n_tot_def),
+          .default = w * rolling_recent_def +
+                     (1 - w) * rolling_prev_def
+        ),
+      across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
+    ) %>%
+    # left_join(df_rolling_to_rate %>% select(team, game_id, rolling_to_off_rate, rolling_to_def_rate), by = c("team", "game_id")) %>%
+    ungroup()
+    
+  # PEN YARDS ----------------------------------------------------------------  
+  rolling_pen_yards_df = 
+    szn_all %>% 
+    filter(season > 2008) %>%
+    filter(!is.na(posteam)) %>%
+    group_by(season, week, game_id, posteam) %>%
+    summarise(
+      n_pen_off = sum(penalty_yards, na.rm = T),
+      n_tot_off = n(),
+      .groups = "drop"
+    ) %>% 
+    drop_na() %>% 
+    ungroup() %>% 
+    rename(team = posteam) %>% 
+    left_join(
+      szn_all %>% 
+        filter(season > 2008) %>% 
+        filter(!is.na(defteam)) %>%
+        group_by(season, week, game_id, defteam) %>%
+        summarise(
+          n_pen_def = sum(penalty_yards, na.rm = T),
+          n_tot_def = n(),
+          .groups = "drop"
+        ) %>% 
+        drop_na() %>% 
+        ungroup() %>% 
+        rename(team = defteam),
+      by = c("season", "week", "game_id", "team")
+    ) %>% 
+    group_by(season, team) %>% 
+    arrange(season, team, week) %>% 
+    mutate(
+      n_game = row_number()
+    ) %>% 
+    mutate(
+      across(c(contains("_pen_"), contains("_tot_")), ~ cumsum(.), .names = "sum_{col}"),
+      across(c(contains("_pen_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
+      rolling_recent_off = (sum_recent_n_pen_off / sum_recent_n_tot_off),
+      rolling_recent_def = (sum_recent_n_pen_def / sum_recent_n_tot_def),
+      sum_prev_n_pen_off = sum_n_pen_off - sum_recent_n_pen_off,
+      sum_prev_n_tot_off = sum_n_tot_off - sum_recent_n_tot_off,
+      sum_prev_n_pen_def = sum_n_pen_def - sum_recent_n_pen_def,
+      sum_prev_n_tot_def = sum_n_tot_def - sum_recent_n_tot_def,
+      rolling_prev_off = (sum_prev_n_pen_off / sum_prev_n_tot_off),
+      rolling_prev_def = (sum_prev_n_pen_def / sum_prev_n_tot_def),
+      
+      # WEIGHTED PEN YARDS ---------------------------------------------------------
+      rolling_pen_yards_off =
+        case_when(
+          n_game <= 5 ~ (sum_n_pen_off / sum_n_tot_off),
+          .default = w * rolling_recent_off +
+                     (1 - w) * rolling_prev_off
+        ),
+      rolling_pen_yards_def =
+        case_when(
+          n_game <= 5 ~ (sum_n_pen_def / sum_n_tot_def),
+          .default = w * rolling_recent_def +
+                     (1 - w) * rolling_prev_def
+        ),
+      across(starts_with("rolling_") & contains("_yards_"), ~ lag(.), .names = "prior_{col}")
+    ) %>% 
+    select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>% 
+    # left_join(df_rolling_pen_yards %>% select(team, game_id, rolling_pen_yards_off, rolling_pen_yards_def), by = c("team", "game_id")) %>% 
+    ungroup()
+  
+   # Return merged data
+  rolling_merged_df = 
+    rolling_epa_df %>% 
+    left_join(rolling_pace_df, by = c("season", "team", "week", "n_game")) %>% 
+    left_join(rolling_rz_eff_df, by = c("season", "team", "week", "n_game")) %>% 
+    left_join(rolling_success_df, by = c("season", "team", "week", "n_game")) %>% 
+    left_join(rolling_exp_plays_df, by = c("season", "team", "week", "n_game")) %>% 
+    left_join(rolling_to_rate_df, by = c("season", "team", "week", "n_game")) %>% 
+    left_join(rolling_pen_yards_df, by = c("season", "team", "week", "n_game"))
+  
+  team_total_spread_rolling_df =
+    szn_all %>% 
+    filter(season > 2008) %>% 
+    distinct(season, week, game_id, home_team, away_team, total_line, total, spread_line, result, home_score, away_score) %>%
+    left_join(division_df %>% select(team, division) %>% rename(home_team = team, division_home = division), by = "home_team") %>%
+    left_join(division_df %>% select(team, division) %>% rename(away_team = team, division_away = division), by = "away_team") %>% 
+    mutate(division_game = ifelse(division_home == division_away, 1, 0)) %>%
+    pivot_longer(
+      ends_with("_team"),
+      names_to = "home_away",
+      values_to = "team"
+    ) %>% 
+    mutate(home_away = str_remove(home_away, "_team$")) %>% 
+    left_join(rolling_merged_df, by = c("season", "week", "team")) %>% 
+    left_join(qb_cont_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
+    left_join(rest_days_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
+    left_join(team_travel_df %>% select(-game_id), by = c("season", "week", "team")) %>%  
+    select(season, week, game_id, team, total_line, total, spread_line, result, home_away, home_score, away_score, division_game, starts_with("prior_"), qb_cont, rest_days, travel_km) %>%
+    mutate(
+      travel_km = 
+        case_when(
+          travel_km == 0 ~ 0,
+          .default = log(travel_km)
+        ),
+      total_team = 
+        case_when(
+          home_away == "home" ~ home_score,
+          home_away == "away" ~ away_score,
+          .default = NA
+        )
+    ) %>% 
+    ungroup()  
+
+}
+
+weights <- seq(0.1, 0.9, by = 0.05)
+
+rolling_weights_5prior_df <- map(weights, make_weighted_data_5prior)
+
+names(rolling_weights_5prior_df) <- paste0("w_", gsub("\\.", "_", weights))
 ```
 
 ## Total Mods
@@ -5214,6 +6687,195 @@ pred_total_fin_df %>%
 ctrl = trainControl(method = "repeatedcv", number = 5, repeats = 10)
 ctrl2 = trainControl(method = "cv", number = 5)
 
+nested_rolling_weights_3priors = 
+  tibble(
+    weight = weights,
+    label = names(rolling_weights_3prior_df),
+    data = rolling_weights_3prior_df
+  ) %>% 
+  rowid_to_column("data_id")
+
+nested_train_3priors_df = 
+  nested_rolling_weights_3priors %>% 
+  mutate(
+    train_df = 
+      map(
+        .x = data_id,
+        ~ nested_rolling_weights_3priors$data[[.x]] %>% 
+          left_join(
+            nested_rolling_weights_3priors$data[[.x]] %>% 
+              group_by(game_id) %>% 
+              mutate(
+                team_opp = 
+                  case_when(
+                    row_number() == 1 ~ lead(team),
+                    row_number() == 2 ~ lag(team),
+                    .default = NA
+                  )
+              ) %>% 
+              relocate(team_opp, .after = team) %>% 
+              ungroup() %>% 
+              select(game_id, team_opp, starts_with("prior_"), qb_cont, rest_days, travel_km) %>% 
+              rename_with(~ str_c(., "_opp"), everything() & -c(game_id, team_opp)) %>% 
+              rename(team = team_opp),
+            by = c("game_id", "team")
+          ) %>% 
+          filter(season != 2025) %>% 
+          # left_join(field_game_df, by = "game_id") %>%
+          select(total_team, starts_with("prior_"), qb_cont, qb_cont_opp, rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
+          drop_na()
+      )
+  )
+
+nested_rolling_weights_4priors = 
+  tibble(
+    weight = weights,
+    label = names(rolling_weights_4prior_df),
+    data = rolling_weights_4prior_df
+  ) %>% 
+  rowid_to_column("data_id")
+
+nested_train_4priors_df = 
+  nested_rolling_weights_4priors %>% 
+  mutate(
+    train_df = 
+      map(
+        .x = data_id,
+        ~ nested_rolling_weights_4priors$data[[.x]] %>% 
+          left_join(
+            nested_rolling_weights_4priors$data[[.x]] %>% 
+              group_by(game_id) %>% 
+              mutate(
+                team_opp = 
+                  case_when(
+                    row_number() == 1 ~ lead(team),
+                    row_number() == 2 ~ lag(team),
+                    .default = NA
+                  )
+              ) %>% 
+              relocate(team_opp, .after = team) %>% 
+              ungroup() %>% 
+              select(game_id, team_opp, starts_with("prior_"), qb_cont, rest_days, travel_km) %>% 
+              rename_with(~ str_c(., "_opp"), everything() & -c(game_id, team_opp)) %>% 
+              rename(team = team_opp),
+            by = c("game_id", "team")
+          ) %>% 
+          filter(season != 2025) %>% 
+          # left_join(field_game_df, by = "game_id") %>%
+          select(total_team, starts_with("prior_"), qb_cont, qb_cont_opp, rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
+          drop_na()
+      )
+  )
+
+nested_rolling_weights_5priors = 
+  tibble(
+    weight = weights,
+    label = names(rolling_weights_5prior_df),
+    data = rolling_weights_5prior_df
+  ) %>% 
+  rowid_to_column("data_id")
+
+nested_train_5priors_df = 
+  nested_rolling_weights_5priors %>% 
+  mutate(
+    train_df = 
+      map(
+        .x = data_id,
+        ~ nested_rolling_weights_5priors$data[[.x]] %>% 
+          left_join(
+            nested_rolling_weights_5priors$data[[.x]] %>% 
+              group_by(game_id) %>% 
+              mutate(
+                team_opp = 
+                  case_when(
+                    row_number() == 1 ~ lead(team),
+                    row_number() == 2 ~ lag(team),
+                    .default = NA
+                  )
+              ) %>% 
+              relocate(team_opp, .after = team) %>% 
+              ungroup() %>% 
+              select(game_id, team_opp, starts_with("prior_"), qb_cont, rest_days, travel_km) %>% 
+              rename_with(~ str_c(., "_opp"), everything() & -c(game_id, team_opp)) %>% 
+              rename(team = team_opp),
+            by = c("game_id", "team")
+          ) %>% 
+          filter(season != 2025) %>% 
+          # left_join(field_game_df, by = "game_id") %>%
+          select(total_team, starts_with("prior_"), qb_cont, qb_cont_opp, rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
+          drop_na()
+      )
+  )
+
+rmse_weight_priors_df = 
+  nested_train_3priors_df %>% 
+  select(-data) %>% 
+  mutate(
+    rmse_glm = 
+      map_dbl(
+        .x = data_id,
+        ~ sqrt(mean(
+          glm(
+            total_team ~ ., 
+            data = nested_train_3priors_df$train_df[[.x]]
+          )$residuals^2
+        ))
+      ),
+    name_prior = "3"
+  ) %>% 
+  rbind(
+    nested_train_4priors_df %>% 
+      select(-data) %>% 
+      mutate(
+        rmse_glm = 
+          map_dbl(
+            .x = data_id,
+            ~ sqrt(mean(
+              glm(
+                total_team ~ ., 
+                data = nested_train_4priors_df$train_df[[.x]]
+              )$residuals^2
+            ))
+          ),
+        name_prior = "4"
+      )
+  ) %>% 
+  rbind(
+    nested_train_5priors_df %>% 
+      select(-data) %>% 
+      mutate(
+        rmse_glm = 
+          map_dbl(
+            .x = data_id,
+            ~ sqrt(mean(
+              glm(
+                total_team ~ ., 
+                data = nested_train_5priors_df$train_df[[.x]]
+              )$residuals^2
+            ))
+          ),
+        name_prior = "5"
+      )
+  ) %>% 
+  mutate(
+    min_rmse_value = min(rmse_glm),
+    min_rmse_weight = 
+      case_when(
+        min_rmse_value == rmse_glm ~ weight,
+        .default = NA
+      )
+  ) %>% 
+  fill(min_rmse_weight, .direction = "updown")
+
+rmse_weight_priors_df %>% 
+  ggplot(aes(x = weight, y = rmse_glm, color = name_prior)) + 
+  geom_point() + 
+  geom_line() + 
+  geom_hline(yintercept = sqrt(mean(glm(total_team ~ ., data = total_team_train_df)$residuals^2)), linetype = "dashed") + 
+  geom_vline(xintercept = unique(rmse_weight_priors_df$min_rmse_weight), linetype = "dotted")
+
+sqrt(mean(glm(total_team ~ ., data = total_team_train_df)$residuals^2))
+
 total_team_train_df = 
   team_total_spread_rolling_df %>% 
   left_join(
@@ -5368,7 +7030,7 @@ bwplot(res, metric = "RMSE", main = "RMSE for Repeated 5-Fold CV Using Various M
 
 # save final SVM model:
 
-# saveRDS(mod_total_team_svm, "mod_total_team_svm.rds")
+# saveRDS(mod_total_team_svm, glue::glue("mod_total_team_svm_{format(Sys.Date(), '%Y_%m_%d')}.rds"))
 mod_total_team_svm = readRDS("mod_total_team_svm.rds")
 
 field_2025_df = 
