@@ -3308,7 +3308,7 @@ df_team_ranks =
       ), 
     by = "team"
   ) %>% 
-  mutate(qb_cont = ifelse(team == "IND", 0, qb_cont)) %>% 
+  mutate(qb_cont = ifelse(team %in% c("IND", "KC"), 0, qb_cont)) %>% 
   left_join(
     df_total_team_test_solo %>% 
       select(team, starts_with("prior_rolling")) %>% 
@@ -3342,7 +3342,7 @@ df_team_ranks =
           ), 
         by = "team"
       ) %>% 
-      mutate(qb_cont = ifelse(team == "IND", 0, qb_cont)) %>% 
+      mutate(qb_cont = ifelse(team %in% c("IND", "KC"), 0, qb_cont)) %>% 
       left_join(
         df_total_team_test_solo %>% 
           select(team, starts_with("prior_rolling")) %>% 
