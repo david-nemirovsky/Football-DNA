@@ -368,7 +368,8 @@ df_med_wr =
   ) %>% 
   unite("rank_name", rank, player_display_name, sep = ". ") %>% 
   arrange(med_pts, targets) %>% 
-  rename(player_display_name = player_name_og)
+  rename(player_display_name = player_name_og) %>% 
+  ungroup()
   
 df_med_wr_ppr = 
   df_wr_fpts %>% 
@@ -383,7 +384,8 @@ df_med_wr_ppr =
   ) %>% 
   unite("rank_name", rank, player_display_name, sep = ". ") %>% 
   arrange(med_pts, targets) %>% 
-  rename(player_display_name = player_name_og)
+  rename(player_display_name = player_name_og) %>% 
+  ungroup()
 
 df_wr_fpts_cols = 
   teams_colors_logos %>% 
@@ -665,12 +667,13 @@ df_rb_fpts %>%
 ```{r wr fan half ppr}
 df_wr_fpts %>% 
   left_join(df_med_wr) %>% 
+  left_join(df_wr_fpts_cols %>% select(player_display_name, team_color), by = "player_display_name") %>% 
   drop_na() %>% 
   # mutate(rank_name = ) %>% 
   # left_join(wr_fpts_cols %>% select(player_display_name, team_color)) %>% 
   ggplot(aes(x = fpts, y = fct_reorder(as.factor(rank_name), -rank_og))) +
-  geom_boxplot(fill = df_wr_fpts_cols$team_color, alpha = 0.75) +
-  scale_color_identity() +
+  geom_boxplot(aes(fill = team_color), alpha = 0.75) +
+  scale_fill_identity() +
   labs(
     title = glue::glue("2025 WR PPG (Min. {n_targets} Targets)"), 
     x = "Fantasy PPG", 

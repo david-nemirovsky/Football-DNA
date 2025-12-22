@@ -1358,7 +1358,7 @@ df_qb_cont =
   ) %>% 
   rows_update(
     tibble(
-      team = c("IND", "LV", "KC", "NYJ"),
+      team = c("IND", "KC", "NYJ", "MIA", "GB", "BAL"),
       qb_cont = 0
     ),
     by = "team"
@@ -2034,7 +2034,7 @@ df_pred_total_spread_fin %>%
   ) +
   coord_cartesian(
     clip = "off",
-    xlim = c(31.5, 53.5)
+    xlim = c(29.5, 55.5)
   )
 
 df_pred_total_spread_fin %>% 
@@ -2123,10 +2123,10 @@ df_pred_total_spread_fin %>%
       ),
     bet_spread = 
       case_when(
-        ind_spread_current_hit == 1 & ind_spread_hit == 1 & spread_game_adj > spread_line_current & spread_line_current < 0 & spread_line < 0 ~ str_c(team_home, " +", -spread_line_current),
-        ind_spread_current_hit == 1 & ind_spread_hit == 1 & spread_game_adj > spread_line_current & spread_line_current >= 0 & spread_line >= 0 ~ str_c(team_home, " ", -spread_line_current),
-        ind_spread_current_hit == 1 & ind_spread_hit == 1 & spread_game_adj < spread_line_current & spread_line_current < 0 & spread_line < 0 ~ str_c(team_away, " ", spread_line_current),
-        ind_spread_current_hit == 1 & ind_spread_hit == 1 & spread_game_adj < spread_line_current & spread_line_current >= 0 & spread_line >= 0 ~ str_c(team_away, " +", spread_line_current),
+        ind_spread_current_hit == 1 & ind_spread_hit == 1 & spread_game_adj > spread_line_current & spread_line_current < 0 ~ str_c(team_home, " +", -spread_line_current),
+        ind_spread_current_hit == 1 & ind_spread_hit == 1 & spread_game_adj > spread_line_current & spread_line_current >= 0 ~ str_c(team_home, " ", -spread_line_current),
+        ind_spread_current_hit == 1 & ind_spread_hit == 1 & spread_game_adj < spread_line_current & spread_line_current < 0 ~ str_c(team_away, " ", spread_line_current),
+        ind_spread_current_hit == 1 & ind_spread_hit == 1 & spread_game_adj < spread_line_current & spread_line_current >= 0 ~ str_c(team_away, " +", spread_line_current),
         .default = "NA"
       ),
     game = str_c(team_away, " @ ", team_home),
