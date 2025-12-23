@@ -2034,7 +2034,7 @@ df_pred_total_spread_fin %>%
   ) +
   coord_cartesian(
     clip = "off",
-    xlim = c(29.5, 55.5)
+    xlim = c(29.5, 56.5)
   )
 
 df_pred_total_spread_fin %>% 
