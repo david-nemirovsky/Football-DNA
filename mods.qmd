@@ -3362,7 +3362,18 @@ df_game_sims %>%
     total_mod_label = round(total_game_adj, 1),
     spread_mod_label = str_remove(spread_band_adj_label, " \\(.*"),
     stake_current_spread = round(stake_current_spread, 2),
-    stake_current_total = round(stake_current_spread, 2)
+    stake_current_total = round(stake_current_total, 2),
+    game = str_c(team_away, " @ ", team_home),
+    side_current_total = 
+      case_when(
+        stake_current_total <= 0.5 ~ NA,
+        .default = side_current_total
+      ),
+    side_current_spread = 
+      case_when(
+        stake_current_spread <= 0.5 ~ NA,
+        .default = side_current_spread
+      )
   ) %>% 
   left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_home = team, qb_cont_home = qb_cont), by = c("team_home")) %>% 
   left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_away = team, qb_cont_away = qb_cont), by = c("team_away")) %>% 
@@ -3603,7 +3614,7 @@ df_totals_profit =
       )
   )
 
-view(df_totals_profit)
+# view(df_totals_profit)
 
 df_spreads_profit =
   df_game_sims_all %>% 
