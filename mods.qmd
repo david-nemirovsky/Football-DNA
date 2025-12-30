@@ -1358,7 +1358,7 @@ df_qb_cont =
   ) %>% 
   rows_update(
     tibble(
-      team = c("IND", "KC", "NYJ", "GB", "BAL"),
+      team = c("IND", "KC", "NYJ", "GB", "CIN", "NYG", "NO", "ATL", "TEN", "LA", "LAC", "WAS", "DET"),
       qb_cont = 0
     ),
     by = "team"
@@ -3142,7 +3142,6 @@ resid_sd =
 set.seed(37564)
 df_team_sims =
   df_total_team_test %>% 
-  filter(team %nin% c("NO", "ATL", "ARI", "LA")) %>% 
   mutate(
     game = 
       case_when(
@@ -3456,7 +3455,6 @@ df_team_sims_all =
   ) %>% 
   # left_join(df_total_team_pred_bands_prior, by = c("week", "team", "team_opp")) %>%
   left_join(df_team_total_spread_rolling %>% select(game_id, week, team, total_team), by = c("week", "team", "game_id")) %>%
-  filter(!(week == 17 & team %in% c("ATL", "LA"))) %>% 
   mutate(
     mu = predict(mod_total_team_svm, .),
     sim = map(
