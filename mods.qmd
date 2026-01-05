@@ -102,6 +102,37 @@ df_roster = fast_scraper_roster(2025)
 df_schedule = 
   fast_scraper_schedules() %>% 
   filter(season == 2025) %>% 
+  rows_insert(
+    tibble(
+      game_id = "2025_19_LA_CAR",
+      season = 2025,
+      game_type = "WC",
+      week = 19,
+      gameday = "2026-01-10",
+      gametime = "16:30",
+      home_team = "CAR",
+      away_team = "LA",
+      home_rest = 7,
+      away_rest = 6,
+      location = "Home",
+      roof = "outdoors",
+      surface = "grass",
+      stadium = "Bank of America Stadium"
+    )
+  ) %>%
+  rows_update(
+    tibble(
+      game_id = c("2025_19_LA_CAR", "2025_19_GB_CHI", "2025_19_BUF_JAX", "2025_19_SF_PHI", "2025_19_LAC_NE", "2025_19_HOU_PIT"),
+      away_moneyline = c(-550, -112, -118, 180, 164, -175),
+      home_moneyline = c(410, -108, -102, -218, -198, 145),
+      spread_line = c(-9.5, -1.5, -1.5, 3.5, 3.5, -3.5),
+      away_spread_odds = c(-112, -102, -102, -110, -105, -102),
+      home_spread_odds = c(-108, -118, -118, -110, -115, -118),
+      total_line = c(46.5, 46.5, 51.5, 45.5, 46.5, 39.5),
+      under_odds = c(-110, -110, -108, -108, -110, -110),
+      over_odds = c(-110, -110, -112, -112, -110, -110)
+    )
+  ) %>% 
   mutate(
     time_start = as.integer(str_remove(gametime, ":")),
     international = ifelse(location == "Neutral", 1, 0),
@@ -427,9 +458,11 @@ df_lines_open =
   relocate(game_id)
 
 mod_total_team_svm = readRDS("mod_total_team_svm_2025_12_11.rds")
+mod_total_playoffs_team_svm = readRDS("mod_playoffs_total_team_svm_2026_01_04.rds")
 mod_total_correct_enet = readRDS("mod_total_correct_enet.rds")
 mod_spread_correct_enet = readRDS("mod_spread_correct_enet.rds")
 df_total_team_train = readRDS("total_team_train_df.rds")
+df_playoffs_total_team_train = readRDS("playoffs_total_team_train_df.rds")
 ```
 
 ```{r create datasets}
@@ -462,6 +495,47 @@ df_division =
       ),
     conf = str_extract(division, "^[A-Z]FC")
   )
+
+df_qb_starters = 
+  df_szn_pbp %>% 
+  filter(qtr == 1) %>%
+  filter(!is.na(passer_id)) %>% 
+  group_by(season, week, game_id, posteam, passer_id) %>%
+  summarise(dropbacks = n(), .groups = "drop_last") %>%
+  slice_max(order_by = dropbacks, n = 1, with_ties = F) %>%
+  ungroup() %>%
+  rename(team = posteam, qb_id = passer_id)
+
+df_starters_last_week =
+  df_szn_pbp %>% 
+  distinct(week, game_id, home_team, away_team, total_line, total, spread_line, result, home_score, away_score) %>% 
+  filter(
+    # (season < 2021 & week %in% c(16, 17)) | 
+      (week %in% c(17, 18))
+  ) %>% 
+  pivot_longer(
+    ends_with("_team"),
+    names_to = "home_away",
+    values_to = "team"
+  ) %>% 
+  filter(team %nin% c(teams_exclude)) %>% 
+  left_join(
+    df_qb_starters %>% 
+      select(game_id, team, qb_id), 
+    by = c("game_id", "team")
+  ) %>% 
+  group_by(team) %>%
+  arrange(week, .by_group = TRUE) %>%
+  mutate(
+    prev_qb = lag(qb_id),
+    qb_cont = ifelse(!is.na(prev_qb) & qb_id == prev_qb, 1, 0)
+  ) %>%
+  ungroup() %>% 
+  select(week, team, game_id, qb_cont) %>% 
+  rename(starters_played = qb_cont) %>% 
+  group_by(team) %>% 
+  slice(2) %>% 
+  ungroup()
 
 # df_rolling_epa = 
 #   df_szn_pbp %>% 
@@ -517,7 +591,9 @@ df_rolling_epa =
       rename(def_pass_epa = "1", def_rush_epa = "0", team = "defteam") %>%
       ungroup(),
     by = c("season", "week", "team")
-  ) %>%
+  ) %>% 
+  left_join(df_starters_last_week %>% select(-game_id), by = c("week", "team")) %>% 
+  filter(starters_played == 1 | is.na(starters_played)) %>%
   group_by(season, team) %>%
   arrange(season, team, week) %>%
   mutate(n_game = row_number()) %>%
@@ -577,7 +653,9 @@ df_rolling_pace =
   group_by(season, week, game_id, posteam) %>%
   summarise(n_plays = n()) %>%
   drop_na() %>%
-  rename(team = posteam) %>%
+  rename(team = posteam) %>% 
+  left_join(df_starters_last_week %>% select(-game_id), by = c("week", "team")) %>% 
+  filter(starters_played == 1 | is.na(starters_played)) %>%
   group_by(season, team) %>%
   arrange(season, team, week) %>%
   mutate(
@@ -676,7 +754,9 @@ df_rolling_rz_eff =
   ) %>%
   drop_na() %>%
   ungroup() %>%
-  rename(team = posteam) %>%
+  rename(team = posteam) %>% 
+  left_join(df_starters_last_week %>% select(-game_id), by = c("week", "team")) %>% 
+  filter(starters_played == 1 | is.na(starters_played)) %>%
   group_by(season, team) %>%
   arrange(season, team, week) %>%
   mutate(
@@ -805,7 +885,9 @@ df_rolling_success =
       ungroup() %>%
       rename(team = defteam),
     by = c("season", "week", "game_id", "team")
-  ) %>%
+  ) %>% 
+  left_join(df_starters_last_week %>% select(-game_id), by = c("week", "team")) %>% 
+  filter(starters_played == 1 | is.na(starters_played)) %>%
   group_by(season, team) %>%
   arrange(season, team, week) %>%
   mutate(
@@ -921,7 +1003,9 @@ df_rolling_exp_plays =
       ungroup() %>%
       rename(team = defteam),
     by = c("season", "week", "game_id", "team")
-  ) %>%
+  ) %>% 
+  left_join(df_starters_last_week %>% select(-game_id), by = c("week", "team")) %>% 
+  filter(starters_played == 1 | is.na(starters_played)) %>%
   group_by(season, team) %>%
   arrange(season, team, week) %>%
   mutate(
@@ -1038,7 +1122,9 @@ df_rolling_to_rate =
       ungroup() %>%
       rename(team = defteam),
     by = c("season", "week", "game_id", "team")
-  ) %>%
+  ) %>% 
+  left_join(df_starters_last_week %>% select(-game_id), by = c("week", "team")) %>% 
+  filter(starters_played == 1 | is.na(starters_played)) %>%
   group_by(season, team) %>%
   arrange(season, team, week) %>%
   mutate(
@@ -1140,7 +1226,9 @@ df_rolling_pen_yards =
       ungroup() %>%
       rename(team = defteam),
     by = c("season", "week", "game_id", "team")
-  ) %>%
+  ) %>% 
+  left_join(df_starters_last_week %>% select(-game_id), by = c("week", "team")) %>% 
+  filter(starters_played == 1 | is.na(starters_played)) %>%
   group_by(season, team) %>%
   arrange(season, team, week) %>%
   mutate(
@@ -1172,16 +1260,6 @@ df_rolling_pen_yards =
   select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
   # left_join(df_rolling_pen_yards %>% select(team, game_id, rolling_pen_yards_off, rolling_pen_yards_def), by = c("team", "game_id")) %>%
   ungroup()
-
-df_qb_starters = 
-  df_szn_pbp %>% 
-  filter(qtr == 1) %>%
-  filter(!is.na(passer_id)) %>% 
-  group_by(season, week, game_id, posteam, passer_id) %>%
-  summarise(dropbacks = n(), .groups = "drop_last") %>%
-  slice_max(order_by = dropbacks, n = 1, with_ties = F) %>%
-  ungroup() %>%
-  rename(team = posteam, qb_id = passer_id)
 
 df_qb_cont_old =
   df_szn_pbp %>%
@@ -1359,7 +1437,7 @@ df_qb_cont =
   rows_update(
     tibble(
       team = c("IND", "KC", "NYJ", "GB", "CIN", "NYG", "NO", "ATL", "TEN", "LA", "LAC", "WAS", "DET"),
-      qb_cont = 0
+      qb_cont = 1
     ),
     by = "team"
   )
@@ -1517,20 +1595,31 @@ df_total_team_test =
       rename_with(~ str_c(., "_opp"), everything() & -c(team_opp)) %>% 
       rename(team = team_opp),
     by = "team"
-  )
+  ) %>% 
+  drop_na(team_opp)
 
 df_pred_total_spread = 
   df_total_team_test %>% 
   drop_na(rest_days, prior_rolling_off_rush_epa, prior_rolling_off_rush_epa_opp) %>% 
   mutate(
-    pred_total_team_svm = predict(mod_total_team_svm, newdata = .)
+    pred_total_team_svm =
+      case_when(
+        week <= 18 ~ predict(mod_total_team_svm, newdata = .),
+        week > 18 ~ predict(mod_total_playoffs_team_svm, newdata = .)
+      ),
+    # pred_total_team_svm = predict(mod_total_playoffs_team_svm, newdata = .)
   ) %>% 
   relocate(pred_total_team_svm, .after = team) %>% 
   left_join(
     df_total_team_test %>% 
       drop_na(rest_days, prior_rolling_off_rush_epa, prior_rolling_off_rush_epa_opp) %>% 
       mutate(
-        pred_total_team_svm = predict(mod_total_team_svm, newdata = .)
+        pred_total_team_svm =
+          case_when(
+            week <= 18 ~ predict(mod_total_team_svm, newdata = .),
+            week > 18 ~ predict(mod_total_playoffs_team_svm, newdata = .)
+          ),
+        # pred_total_team_svm = predict(mod_total_playoffs_team_svm, newdata = .)
       ) %>% 
       select(team, pred_total_team_svm) %>% 
       rename(
@@ -1609,7 +1698,15 @@ df_pred_total_spread_adj =
   ) %>% 
   left_join(df_division %>% select(team, division) %>% rename(team_home = team), by = "team_home") %>% 
   left_join(df_division %>% select(team, division) %>% rename(team_away = team, division_opp = division), by = "team_away") %>% 
-  mutate(division_game = ifelse(division == division_opp, 1, 0)) %>%
+  mutate(
+    # division_game = ifelse(division == division_opp, 1, 0),
+    division_game = 
+      case_when(
+        week <= 18 & division == division_opp ~ 1,
+        week > 18 ~ 1,
+        .default = 0
+      )
+  ) %>%
   mutate(
     total_adjust = predict(mod_total_correct_enet, newdata = .),
     total_game_adj = total_game + total_adjust,
@@ -1625,7 +1722,7 @@ df_pred_total_spread_adj =
   relocate(spread_game, spread_adjust, spread_game_adj, spread_adj_label, .after = total_game_adj)
 
 # set.seed(37564)
-# boot_splits_total = bootstraps(df_total_team_train, times = 200)
+# boot_splits_total = bootstraps(df_playoffs_total_team_train, times = 200)
 # 
 # # 2. Predict for each bootstrap model
 # boot_preds_total = map(boot_splits_total$splits, ~ {
@@ -1638,8 +1735,8 @@ df_pred_total_spread_adj =
 #     method = "svmRadial",
 #     trControl = trainControl(method = "none"),  # already tuned
 #     tuneGrid = tibble(
-#       sigma = mod_total_team_svm$bestTune[[1]],
-#       C = mod_total_team_svm$bestTune[[2]]
+#       sigma = mod_total_playoffs_team_svm$bestTune[[1]],
+#       C = mod_total_playoffs_team_svm$bestTune[[2]]
 #     )
 #   )
 # 
@@ -2034,7 +2131,7 @@ df_pred_total_spread_fin %>%
   ) +
   coord_cartesian(
     clip = "off",
-    xlim = c(29.5, 56.5)
+    xlim = c(37.5, 52.5)
   )
 
 df_pred_total_spread_fin %>% 
@@ -3130,10 +3227,19 @@ df_spreads_hit_rate %>%
 ### **EV-Based Approach**
 
 ```{r ev mods}
+# resid_sd = 
+#   df_total_team_train %>%
+#   mutate(
+#     pred = predict(mod_total_team_svm, .),
+#     resid = .data[["total_team"]] - pred
+#   ) %>%
+#   summarise(sd = sd(resid, na.rm = TRUE)) %>%
+#   pull(sd)
+
 resid_sd = 
-  df_total_team_train %>%
+  df_playoffs_total_team_train %>%
   mutate(
-    pred = predict(mod_total_team_svm, .),
+    pred = predict(mod_total_playoffs_team_svm, .),
     resid = .data[["total_team"]] - pred
   ) %>%
   summarise(sd = sd(resid, na.rm = TRUE)) %>%
@@ -3159,7 +3265,7 @@ df_team_sims =
         team == lag(team_opp) ~ lag(game_id),
         .default = game_id
       ),
-    mu = predict(mod_total_team_svm, .)
+    mu = predict(mod_total_playoffs_team_svm, .)
   ) %>% 
   relocate(game_id) %>%
   mutate(
@@ -3219,10 +3325,10 @@ df_game_sims %>%
             .default = NA
           ),
         total_line_label = total_line,
-        over_odds = -110,
-        under_odds = -110,
-        home_odds = -110,
-        away_odds = -110
+        over_odds = -112,
+        under_odds = -112,
+        home_odds = -112,
+        away_odds = -112
       ),
     by = "team_home"
   ) %>%
@@ -3364,6 +3470,8 @@ df_game_sims %>%
     spread_mod_label = str_remove(spread_band_adj_label, " \\(.*"),
     stake_current_spread = round(stake_current_spread, 2),
     stake_current_total = round(stake_current_total, 2),
+    stake_spread = round(stake_spread, 2),
+    stake_total = round(stake_total, 2),
     game = str_c(team_away, " @ ", team_home),
     side_current_total = 
       case_when(
@@ -3374,16 +3482,40 @@ df_game_sims %>%
       case_when(
         stake_current_spread <= 0.5 ~ "NA",
         .default = side_current_spread
+      ),
+    side_total = 
+      case_when(
+        stake_total <= 0.5 ~ "NA",
+        .default = side_total
+      ),
+    side_spread = 
+      case_when(
+        stake_spread <= 0.5 ~ "NA",
+        .default = side_spread
       )
   ) %>% 
   ungroup() %>% 
-  left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_home = team, qb_cont_home = qb_cont), by = c("team_home")) %>% 
-  left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_away = team, qb_cont_away = qb_cont), by = c("team_away")) %>% 
-  filter(qb_cont_home == 1 & qb_cont_away == 1) %>% 
-  filter(stake_current_total >= 0.5 | stake_current_spread >= 0.5) %>% # != "No Bet") %>% 
+  # left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_home = team, qb_cont_home = qb_cont), by = c("team_home")) %>% 
+  # left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_away = team, qb_cont_away = qb_cont), by = c("team_away")) %>% 
+  # filter(qb_cont_home == 1 & qb_cont_away == 1) %>% 
+  # filter(stake_total >= 0.5 | stake_spread >= 0.5) %>%
+  filter(stake_current_total >= 0.5 | stake_current_spread >= 0.5) %>%# != "No Bet") %>%
   # select(game, side_current_total, stake_current_total, total_line_current_label, stake_current_spread, side_current_spread, spread_line_current_label, contains("current"), starts_with("total_line"), total_adjust, total_game_adj, starts_with("spread_line"), spread_game_adj) %>% 
-  arrange(desc(side_current_total), desc(side_current_spread)) %>% 
-  select(game, total_line_current_label, total_mod_label, side_current_total, stake_current_total, spread_line_current_label, spread_mod_label, side_current_spread, stake_current_spread) %>% 
+  # arrange(desc(side_total), desc(side_spread)) %>%
+  # select(game, total_line_label, total_mod_label, side_total, stake_total, spread_line_label, spread_mod_label, side_spread, stake_spread) %>%
+  # labelled::set_variable_labels(
+  #   game = "Game",
+  #   total_line_label = "Opening Total Line",
+  #   total_mod_label = "Predicted Total",
+  #   side_total = "Total to Bet",
+  #   stake_total = "Stake for Total",
+  #   spread_line_label = "Opening Spread Line",
+  #   spread_mod_label = "Predicted Spread",
+  #   side_spread = "Spread to Bet",
+  #   stake_spread = "Stake for Spread"
+  # ) %>%
+  arrange(desc(side_current_total), desc(side_current_spread)) %>%
+  select(game, total_line_current_label, total_mod_label, side_current_total, stake_current_total, spread_line_current_label, spread_mod_label, side_current_spread, stake_current_spread) %>%
   labelled::set_variable_labels(
     game = "Game",
     total_line_current_label = "Current Total Line",
@@ -3394,9 +3526,10 @@ df_game_sims %>%
     spread_mod_label = "Predicted Spread",
     side_current_spread = "Spread to Bet",
     stake_current_spread = "Stake for Spread"
-  ) %>% 
+  ) %>%
   gtreg::tbl_listing() %>% 
-  gtsummary::modify_caption("**Bets to Take, Updated for Current Odds**")
+  gtsummary::modify_caption("**Bets to Take, Updated for Current Odds**")# %>%
+  # gtsummary::modify_caption("**Bets to Take, Based on Opening Odds**")
 
 # SD calibration:
 # 
@@ -3456,7 +3589,8 @@ df_team_sims_all =
     by = c("game_id", "team", "week")
   ) %>% 
   # left_join(df_total_team_pred_bands_prior, by = c("week", "team", "team_opp")) %>%
-  left_join(df_team_total_spread_rolling %>% select(game_id, week, team, total_team), by = c("week", "team", "game_id")) %>%
+  left_join(df_team_total_spread_rolling %>% select(game_id, week, team, total_team), by = c("week", "team", "game_id")) %>% 
+  drop_na(prior_rolling_off_rush_epa, prior_rolling_off_rush_epa_opp) %>% 
   mutate(
     mu = predict(mod_total_team_svm, .),
     sim = map(
@@ -3510,7 +3644,7 @@ df_totals_profit =
       ),
     by = "game_id"
   ) %>% 
-  left_join(df_lines_open %>% distinct(game_id, total_line) %>% mutate(over_odds = -110, under_odds = -110), by = "game_id") %>% 
+  left_join(df_lines_open %>% distinct(game_id, total_line) %>% mutate(over_odds = -112, under_odds = -112), by = "game_id") %>% 
   group_by(game_id) %>% 
   mutate(
     p_over = map_dbl(total_sim_adj, ~ mean(.x > total_line)),
@@ -3652,7 +3786,7 @@ df_spreads_profit =
       ),
     by = "game_id"
   ) %>%
-  left_join(df_lines_open %>% distinct(game_id, spread_line) %>% mutate(home_odds = -110, away_odds = -110), by = "game_id") %>% 
+  left_join(df_lines_open %>% distinct(game_id, spread_line) %>% mutate(home_odds = -112, away_odds = -112), by = "game_id") %>% 
   mutate(
     p_home = map_dbl(spread_sim_adj, ~ mean(.x > spread_line)),
     p_away = 1 - p_home,
@@ -4181,7 +4315,7 @@ df_totals %>%
 ## **Team Rankings**
 
 ```{r rankings}
-df_team_ranks_prior  = 
+df_team_ranks_prior = 
   readRDS(glue::glue("df_team_ranks_{week_n-1}.rds")) %>% 
   select(-prior_rank) %>% 
   rename(prior_rank = week_rank)

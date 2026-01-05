@@ -146,11 +146,14 @@ teams_colors_logos = teams_colors_logos %>% filter(team_abbr %nin% c("OAK", "SD"
 
 future::plan("multisession")
 szn_all = 
-  load_pbp(2007:2024) %>%  
+  load_pbp(2009:2024) %>%  
   filter(season_type == "REG")
 
+szn_all_playoffs = 
+  load_pbp(2009:2024)
+
 roster_all_df = 
-  fast_scraper_roster(2007:2025) %>% 
+  fast_scraper_roster(2009:2025) %>% 
   rows_update(
     tibble(
       season = 2025,
@@ -8300,6 +8303,940 @@ correction_features_resid %>%
   geom_point() + 
   geom_smooth() + 
   coord_cartesian(x = c(0, 20), y = c(-25, 25))
+```
+
+## Playoffs
+
+```{r playoffs}
+# create indicator dataset for teams resting starters last week of season: 
+  
+qb_starters = 
+  szn_all_playoffs %>% 
+  filter(qtr == 1) %>%
+  filter(!is.na(passer_id)) %>% 
+  group_by(season, week, game_id, posteam, passer_id) %>%
+  summarise(dropbacks = n(), .groups = "drop_last") %>%
+  slice_max(order_by = dropbacks, n = 1, with_ties = F) %>%
+  ungroup() %>%
+  rename(team = posteam, qb_id = passer_id)
+
+starters_last_week_df = 
+  szn_all_playoffs %>% 
+  distinct(season, week, game_id, home_team, away_team, total_line, total, spread_line, result, home_score, away_score) %>% 
+  filter(
+    (season < 2021 & week %in% c(16, 17)) | 
+      (season >= 2021 & week %in% c(17, 18))
+  ) %>% 
+  pivot_longer(
+    ends_with("_team"),
+    names_to = "home_away",
+    values_to = "team"
+  ) %>% 
+  left_join(
+    qb_starters %>% 
+      select(game_id, team, qb_id), 
+    by = c("game_id", "team")
+  ) %>% 
+  group_by(season, team) %>%
+  arrange(week, .by_group = TRUE) %>%
+  mutate(
+    prev_qb = lag(qb_id),
+    qb_cont = ifelse(!is.na(prev_qb) & qb_id == prev_qb, 1, 0)
+  ) %>%
+  ungroup() %>% 
+  select(season, week, team, game_id, qb_cont) %>% 
+  rename(starters_played = qb_cont) %>% 
+  group_by(season, team) %>% 
+  slice(2) %>% 
+  ungroup()
+
+playoffs_rolling_epa_df =
+  szn_all_playoffs %>% 
+  filter(rush == 1 | pass == 1, !is.na(epa), !is.na(posteam), posteam != "") %>%
+  select(season, week, posteam, pass, epa) %>%
+  group_by(season, week, posteam, pass) %>%
+  summarize(epa = mean(epa)) %>%
+  pivot_wider(names_from = pass, values_from = epa) %>%
+  rename(off_pass_epa = "1", off_rush_epa = "0", team = "posteam") %>%
+  ungroup() %>%
+  left_join(
+    szn_all_playoffs %>%
+      filter(rush == 1 | pass == 1, !is.na(epa), !is.na(defteam), defteam != "") %>%
+      select(season, week, defteam, pass, epa) %>%
+      group_by(season, week, defteam, pass) %>%
+      summarize(epa = mean(epa)) %>%
+      pivot_wider(names_from = pass, values_from = epa) %>%
+      rename(def_pass_epa = "1", def_rush_epa = "0", team = "defteam") %>%
+      ungroup(),
+    by = c("season", "week", "team")
+  ) %>% 
+  left_join(starters_last_week_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  filter(starters_played == 1 | is.na(starters_played)) %>%
+  group_by(season, team) %>%
+  arrange(season, team, week) %>%
+  mutate(n_game = row_number()) %>%
+  mutate(
+    across(ends_with("_epa"), ~ cumsum(.), .names = "sum_{col}"),
+    across(ends_with("_epa"), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
+    across(starts_with("sum_recent_"), ~ . / 5, .names = "rolling_{col}_recent"),
+    sum_prev_off_rush_epa = sum_off_rush_epa - sum_recent_off_rush_epa,
+    sum_prev_off_pass_epa = sum_off_pass_epa - sum_recent_off_pass_epa,
+    sum_prev_def_rush_epa = sum_def_rush_epa - sum_recent_def_pass_epa,
+    sum_prev_def_pass_epa = sum_def_pass_epa - sum_recent_def_pass_epa,
+    across(starts_with("sum_prev_"), ~ . / (n_game - 5), .names = "rolling_{col}_prev"),
+    rolling_off_rush_epa =
+      case_when(
+        n_game <= 5 ~ sum_off_rush_epa / n_game,
+        .default = 0.65 * rolling_sum_recent_off_rush_epa_recent + 0.35 * rolling_sum_prev_off_rush_epa_prev
+      ),
+    rolling_off_pass_epa =
+      case_when(
+        n_game <= 5 ~ sum_off_pass_epa / n_game,
+        .default = 0.65 * rolling_sum_recent_off_pass_epa_recent + 0.35 * rolling_sum_prev_off_pass_epa_prev
+      ),
+    rolling_def_rush_epa =
+      case_when(
+        n_game <= 5 ~ sum_def_rush_epa / n_game,
+        .default = 0.65 * rolling_sum_recent_def_rush_epa_recent + 0.35 * rolling_sum_prev_def_rush_epa_prev
+      ),
+    rolling_def_pass_epa =
+      case_when(
+        n_game <= 5 ~ sum_def_pass_epa / n_game,
+        .default = 0.65 * rolling_sum_recent_def_pass_epa_recent + 0.35 * rolling_sum_prev_def_pass_epa_prev
+      ),
+    across(starts_with("rolling_"), ~ lag(.), .names = "prior_{col}")
+  ) %>%
+  select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
+  ungroup()
+
+playoffs_rolling_pace_df =
+  szn_all_playoffs %>%
+  group_by(season, week, game_id, posteam) %>%
+  summarise(n_plays = n()) %>%
+  drop_na() %>%
+  rename(team = posteam) %>% 
+  left_join(starters_last_week_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  filter(starters_played == 1 | is.na(starters_played)) %>%
+  group_by(season, team) %>%
+  arrange(season, team, week) %>%
+  mutate(
+    n_game = row_number(),
+    sum_plays = cumsum(n_plays),
+    sum_recent = n_plays + lag(n_plays) + lag(lag(n_plays)) + lag(lag(lag(n_plays))) + lag(lag(lag(lag(n_plays)))),
+    rolling_recent = sum_recent / 5,
+    sum_prev = sum_plays - sum_recent,
+    rolling_prev = sum_prev / (n_game - 5),
+    rolling_pace =
+      case_when(
+        n_game <= 5 ~ sum_plays / n_game,
+        .default = 0.65 * rolling_recent + 0.35 * rolling_prev
+      ),
+    across(starts_with("rolling_"), ~ lag(.), .names = "prior_{col}")#,
+    # rolling_pace = cumsum(n_plays) / n_game
+  ) %>%
+  select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
+  ungroup()
+
+playoffs_rolling_rz_eff_df =
+  szn_all_playoffs %>%
+  group_by(season, week, game_id, posteam) %>%
+  mutate(
+    redzone =
+      case_when(
+        yardline_100 <= 20 & two_point_attempt == 1 ~ NA,
+        yardline_100 <= 20 & extra_point_attempt == 1 ~ NA,
+        yardline_100 <= 20 ~ 1,
+        yardline_100 > 20 ~ 0,
+        .default = NA
+      )
+  ) %>%
+  select(season, week, game_id, drive, posteam, yardline_100, redzone, touchdown, extra_point_attempt, two_point_attempt) %>%
+  ungroup() %>%
+  group_by(season, week, game_id, posteam, drive) %>%
+  mutate(
+    n_drive = row_number(),
+    n_drive_rz = ifelse(redzone == 1, n_drive, NA),
+    redzone_start = ifelse(n_drive_rz == min(n_drive_rz, na.rm = T), 1, 0)
+  ) %>%
+  ungroup() %>%
+  group_by(season, week, game_id, posteam) %>%
+  summarise(
+    redzone_trips = sum(redzone_start == 1, na.rm = T),
+    redzone_tds = sum(redzone == 1 & touchdown == 1, na.rm = T)
+  ) %>%
+  drop_na() %>%
+  ungroup() %>%
+  rename(team = posteam) %>% 
+  left_join(starters_last_week_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  filter(starters_played == 1 | is.na(starters_played)) %>%
+  group_by(season, team) %>%
+  arrange(season, team, week) %>%
+  mutate(
+    n_game = row_number(),
+    across(starts_with("redzone_"), ~ cumsum(.), .names = "sum_{col}"),
+    across(starts_with("redzone_"), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
+    rolling_recent = (sum_recent_redzone_tds / sum_recent_redzone_trips),
+    sum_prev_redzone_trips = sum_redzone_trips - sum_recent_redzone_trips,
+    sum_prev_redzone_tds = sum_redzone_tds - sum_recent_redzone_tds,
+    rolling_prev = (sum_prev_redzone_tds / sum_prev_redzone_trips),
+    rolling_rz_eff =
+      case_when(
+        n_game <= 5 ~ (sum_redzone_tds / sum_redzone_trips),
+        .default = 0.65 * rolling_recent + 0.35 * rolling_prev
+      ),
+    across(starts_with("rolling_"), ~ lag(.), .names = "prior_{col}")
+  ) %>%
+  select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
+  ungroup()
+
+playoffs_rolling_success_df =
+  szn_all_playoffs %>%
+  filter(down %in% c(1:4) & !is.na(yards_gained)) %>%
+  group_by(season, week, game_id, posteam) %>%
+  mutate(
+    success =
+      case_when(
+        down == 1 & yards_gained >= 0.4 * ydstogo ~ 1,
+        down == 2 & yards_gained >= 0.6 * ydstogo ~ 1,
+        down %in% c(3:4) & yards_gained >= ydstogo ~ 1,
+        .default = 0
+      )
+  ) %>%
+  summarise(
+    sum_success_off = sum(success, na.rm = T),
+    n_success_off = n(),
+    .groups = "drop"
+  ) %>%
+  drop_na() %>%
+  ungroup() %>%
+  rename(team = posteam) %>%
+  left_join(
+    szn_all_playoffs %>%
+      filter(down %in% c(1:4) & !is.na(yards_gained)) %>%
+      group_by(season, week, game_id, defteam) %>%
+      mutate(
+        success =
+          case_when(
+            down == 1 & yards_gained >= 0.4 * ydstogo ~ 1,
+            down == 2 & yards_gained >= 0.6 * ydstogo ~ 1,
+            down %in% c(3:4) & yards_gained >= ydstogo ~ 1,
+            .default = 0
+          )
+      ) %>%
+      summarise(
+        sum_success_def = sum(success, na.rm = T),
+        n_success_def = n(),
+        .groups = "drop"
+      ) %>%
+      drop_na() %>%
+      ungroup() %>%
+      rename(team = defteam),
+    by = c("season", "week", "game_id", "team")
+  ) %>% 
+  left_join(starters_last_week_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  filter(starters_played == 1 | is.na(starters_played)) %>%
+  group_by(season, team) %>%
+  arrange(season, team, week) %>%
+  mutate(
+    n_game = row_number()
+  ) %>%
+  mutate(
+    across(contains("_success_"), ~ cumsum(.), .names = "sum_{col}"),
+    across(starts_with("_success_"), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
+    rolling_recent_off = (sum_sum_success_off / sum_n_success_off),
+    rolling_recent_def = (sum_sum_success_def / sum_n_success_def),
+    sum_prev_sum_success_off = sum_success_off - sum_sum_success_off,
+    sum_prev_n_success_off = n_success_off - sum_n_success_off,
+    sum_prev_sum_success_def = sum_success_def - sum_sum_success_def,
+    sum_prev_n_success_def = n_success_def - sum_n_success_def,
+    rolling_prev_off = (sum_prev_sum_success_off / sum_prev_n_success_off),
+    rolling_prev_def = (sum_prev_sum_success_def / sum_prev_n_success_def),
+    rolling_success_off_rate =
+      case_when(
+        n_game <= 5 ~ (sum_sum_success_off / sum_n_success_off),
+        .default = 0.65 * rolling_recent_off + 0.35 * rolling_prev_off
+      ),
+    rolling_success_def_rate =
+      case_when(
+        n_game <= 5 ~ (sum_sum_success_def / sum_n_success_def),
+        .default = 0.65 * rolling_recent_def + 0.35 * rolling_prev_def
+      ),
+    across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
+  ) %>%
+  select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
+  ungroup()
+
+playoffs_rolling_exp_plays_df =
+  szn_all_playoffs %>%
+  filter(!is.na(posteam)) %>%
+  group_by(season, week, game_id, posteam) %>%
+  mutate(
+    explosive = ifelse(yards_gained >= 20, 1, 0)
+  ) %>%
+  summarise(
+    n_exp_off = sum(explosive, na.rm = T),
+    n_tot_off = n(),
+    .groups = "drop"
+  ) %>%
+  drop_na() %>%
+  ungroup() %>%
+  rename(team = posteam) %>%
+  left_join(
+    szn_all_playoffs %>%
+      filter(!is.na(defteam)) %>%
+      group_by(season, week, game_id, defteam) %>%
+      mutate(
+        explosive = ifelse(yards_gained >= 20, 1, 0)
+      ) %>%
+      summarise(
+        n_exp_def = sum(explosive, na.rm = T),
+        n_tot_def = n(),
+        .groups = "drop"
+      ) %>%
+      drop_na() %>%
+      ungroup() %>%
+      rename(team = defteam),
+    by = c("season", "week", "game_id", "team")
+  ) %>% 
+  left_join(starters_last_week_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  filter(starters_played == 1 | is.na(starters_played)) %>%
+  group_by(season, team) %>%
+  arrange(season, team, week) %>%
+  mutate(
+    n_game = row_number()
+  ) %>%
+  mutate(
+    across(c(contains("_exp_"), contains("_tot_")), ~ cumsum(.), .names = "sum_{col}"),
+    across(c(contains("_exp_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
+    rolling_recent_off = (sum_recent_n_exp_off / sum_recent_n_tot_off),
+    rolling_recent_def = (sum_recent_n_exp_def / sum_recent_n_tot_def),
+    sum_prev_n_exp_off = sum_n_exp_off - sum_recent_n_exp_off,
+    sum_prev_n_tot_off = sum_n_tot_off - sum_recent_n_tot_off,
+    sum_prev_n_exp_def = sum_n_exp_def - sum_recent_n_exp_def,
+    sum_prev_n_tot_def = sum_n_tot_def - sum_recent_n_tot_def,
+    rolling_prev_off = (sum_prev_n_exp_off / sum_prev_n_tot_off),
+    rolling_prev_def = (sum_prev_n_exp_def / sum_prev_n_tot_def),
+    rolling_exp_off_rate =
+      case_when(
+        n_game <= 5 ~ (sum_n_exp_off / sum_n_tot_off),
+        .default = 0.65 * rolling_recent_off + 0.35 * rolling_prev_off
+      ),
+    rolling_exp_def_rate =
+      case_when(
+        n_game <= 5 ~ (sum_n_exp_def / sum_n_tot_def),
+        .default = 0.65 * rolling_recent_def + 0.35 * rolling_prev_def
+      ),
+    across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
+  ) %>%
+  # left_join(df_rolling_exp_plays %>% select(team, game_id, rolling_exp_off_rate, rolling_exp_def_rate), by = c("team", "game_id")) %>%
+  ungroup()
+
+playoffs_rolling_to_rate_df =
+  szn_all_playoffs %>%
+  filter(!is.na(posteam)) %>%
+  group_by(season, week, game_id, posteam) %>%
+  mutate(
+    turnover = ifelse(interception == 1 | fumble == 1, 1, 0)
+  ) %>%
+  summarise(
+    n_to_off = sum(turnover, na.rm = T),
+    n_tot_off = n(),
+    .groups = "drop"
+  ) %>%
+  drop_na() %>%
+  ungroup() %>%
+  rename(team = posteam) %>%
+  left_join(
+    szn_all_playoffs %>%
+      filter(!is.na(defteam)) %>%
+      group_by(season, week, game_id, defteam) %>%
+      mutate(
+        turnover = ifelse(interception == 1 | fumble == 1, 1, 0)
+      ) %>%
+      summarise(
+        n_to_def = sum(turnover, na.rm = T),
+        n_tot_def = n(),
+        .groups = "drop"
+      ) %>%
+      drop_na() %>%
+      ungroup() %>%
+      rename(team = defteam),
+    by = c("season", "week", "game_id", "team")
+  ) %>% 
+  left_join(starters_last_week_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  filter(starters_played == 1 | is.na(starters_played)) %>%
+  group_by(season, team) %>%
+  arrange(season, team, week) %>%
+  mutate(
+    n_game = row_number()
+  ) %>%
+  mutate(
+    across(c(contains("_to_"), contains("_tot_")), ~ cumsum(.), .names = "sum_{col}"),
+    across(c(contains("_to_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
+    rolling_recent_off = (sum_recent_n_to_off / sum_recent_n_tot_off),
+    rolling_recent_def = (sum_recent_n_to_def / sum_recent_n_tot_def),
+    sum_prev_n_to_off = sum_n_to_off - sum_recent_n_to_off,
+    sum_prev_n_tot_off = sum_n_tot_off - sum_recent_n_tot_off,
+    sum_prev_n_to_def = sum_n_to_def - sum_recent_n_to_def,
+    sum_prev_n_tot_def = sum_n_tot_def - sum_recent_n_tot_def,
+    rolling_prev_off = (sum_prev_n_to_off / sum_prev_n_tot_off),
+    rolling_prev_def = (sum_prev_n_to_def / sum_prev_n_tot_def),
+    rolling_to_off_rate =
+      case_when(
+        n_game <= 5 ~ (sum_n_to_off / sum_n_tot_off),
+        .default = 0.65 * rolling_recent_off + 0.35 * rolling_prev_off
+      ),
+    rolling_to_def_rate =
+      case_when(
+        n_game <= 5 ~ (sum_n_to_def / sum_n_tot_def),
+        .default = 0.65 * rolling_recent_def + 0.35 * rolling_prev_def
+      ),
+    across(starts_with("rolling_") & ends_with("_rate"), ~ lag(.), .names = "prior_{col}")
+  ) %>%
+  # left_join(df_rolling_to_rate %>% select(team, game_id, rolling_to_off_rate, rolling_to_def_rate), by = c("team", "game_id")) %>%
+  ungroup()
+  
+playoffs_rolling_pen_yards_df = 
+  szn_all_playoffs %>% 
+  filter(!is.na(posteam)) %>%
+  group_by(season, week, game_id, posteam) %>%
+  summarise(
+    n_pen_off = sum(penalty_yards, na.rm = T),
+    n_tot_off = n(),
+    .groups = "drop"
+  ) %>% 
+  drop_na() %>% 
+  ungroup() %>% 
+  rename(team = posteam) %>% 
+  left_join(
+    szn_all_playoffs %>% 
+      filter(!is.na(defteam)) %>%
+      group_by(season, week, game_id, defteam) %>%
+      summarise(
+        n_pen_def = sum(penalty_yards, na.rm = T),
+        n_tot_def = n(),
+        .groups = "drop"
+      ) %>% 
+      drop_na() %>% 
+      ungroup() %>% 
+      rename(team = defteam),
+    by = c("season", "week", "game_id", "team")
+  ) %>% 
+  left_join(starters_last_week_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  filter(starters_played == 1 | is.na(starters_played)) %>% 
+  group_by(season, team) %>% 
+  arrange(season, team, week) %>% 
+  mutate(
+    n_game = row_number()
+  ) %>% 
+  mutate(
+    across(c(contains("_pen_"), contains("_tot_")), ~ cumsum(.), .names = "sum_{col}"),
+    across(c(contains("_pen_"), contains("_tot_"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
+    rolling_recent_off = (sum_recent_n_pen_off / sum_recent_n_tot_off),
+    rolling_recent_def = (sum_recent_n_pen_def / sum_recent_n_tot_def),
+    sum_prev_n_pen_off = sum_n_pen_off - sum_recent_n_pen_off,
+    sum_prev_n_tot_off = sum_n_tot_off - sum_recent_n_tot_off,
+    sum_prev_n_pen_def = sum_n_pen_def - sum_recent_n_pen_def,
+    sum_prev_n_tot_def = sum_n_tot_def - sum_recent_n_tot_def,
+    rolling_prev_off = (sum_prev_n_pen_off / sum_prev_n_tot_off),
+    rolling_prev_def = (sum_prev_n_pen_def / sum_prev_n_tot_def),
+    rolling_pen_yards_off =
+      case_when(
+        n_game <= 5 ~ (sum_n_pen_off / sum_n_tot_off),
+        .default = 0.65 * rolling_recent_off + 0.35 * rolling_prev_off
+      ),
+    rolling_pen_yards_def =
+      case_when(
+        n_game <= 5 ~ (sum_n_pen_def / sum_n_tot_def),
+        .default = 0.65 * rolling_recent_def + 0.35 * rolling_prev_def
+      ),
+    across(starts_with("rolling_") & contains("_yards_"), ~ lag(.), .names = "prior_{col}")
+  ) %>% 
+  select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>% 
+  # left_join(df_rolling_pen_yards %>% select(team, game_id, rolling_pen_yards_off, rolling_pen_yards_def), by = c("team", "game_id")) %>% 
+  ungroup()
+
+playoffs_qb_cont_df = 
+  szn_all_playoffs %>% 
+  distinct(season, week, game_id, home_team, away_team, total_line, total, spread_line, result, home_score, away_score) %>%
+  pivot_longer(
+    ends_with("_team"),
+    names_to = "home_away",
+    values_to = "team"
+  ) %>% 
+  left_join(
+    qb_starters %>% 
+      select(game_id, team, qb_id), 
+    by = c("game_id", "team")
+  ) %>%
+  group_by(season, team) %>%
+  arrange(week, .by_group = TRUE) %>%
+  mutate(
+    prev_qb = lag(qb_id),
+    qb_cont = ifelse(!is.na(prev_qb) & qb_id == prev_qb, 1, 0)
+  ) %>%
+  ungroup() %>% 
+  select(season, week, team, game_id, qb_cont)
+
+# view(qb_cont_df)
+
+playoffs_rest_days_df = 
+  szn_all_playoffs %>% 
+  mutate(date_game = as.Date(game_date)) %>% 
+  distinct(season, week, game_id, home_team, away_team, date_game) %>%
+  pivot_longer(
+    ends_with("_team"),
+    names_to = "home_away",
+    values_to = "team"
+  ) %>% 
+  group_by(season, team) %>%
+  arrange(date_game, .by_group = TRUE) %>% 
+  mutate(
+    prev_date_game = lag(date_game),
+    rest_days = as.integer(date_game - prev_date_game)
+  ) %>%
+  ungroup() %>% 
+  select(season, week, team, game_id, rest_days)
+
+stadium_coords_df = 
+  tibble::tribble(
+    ~team,    ~stadium,                        ~lat,      ~lon,
+    # --- Current Teams ---
+    "ARI",    "State Farm Stadium",            33.5273,  -112.2639,
+    "ATL",    "Mercedes-Benz Stadium",         33.7558,   -84.4018,
+    "BAL",    "M&T Bank Stadium",              39.2781,   -76.6228,
+    "BUF",    "Highmark Stadium",              42.7735,   -78.7869,
+    "CAR",    "Bank of America Stadium",       35.2258,   -80.8528,
+    "CHI",    "Soldier Field",                 41.8625,   -87.6167,
+    "CIN",    "Paycor Stadium",                39.0954,   -84.5160,
+    "CLE",    "Cleveland Browns Stadium",      41.5061,   -81.6994,
+    "DAL",    "AT&T Stadium",                  32.7473,   -97.0945,
+    "DEN",    "Empower Field",                 39.7439,  -105.0200,
+    "DET",    "Ford Field",                    42.3400,   -83.0456,
+    "GB",     "Lambeau Field",                 44.5013,   -88.0622,
+    "HOU",    "NRG Stadium",                   29.6849,   -95.4108,
+    "IND",    "Lucas Oil Stadium",             39.7601,   -86.1638,
+    "JAX",    "EverBank Stadium",              30.3239,   -81.6373,
+    "KC",     "Arrowhead Stadium",             39.0489,   -94.4839,
+    "LA",     "SoFi Stadium",                  33.9536,  -118.3396,
+    "LAC",    "SoFi Stadium",                  33.9536,  -118.3396,
+    "LV",     "Allegiant Stadium",             36.0908,  -115.1839,
+    "MIA",    "Hard Rock Stadium",             25.9580,   -80.2389,
+    "MIN",    "U.S. Bank Stadium",             44.9738,   -93.2581,
+    "NE",     "Gillette Stadium",              42.0909,   -71.2643,
+    "NO",     "Caesars Superdome",             29.9508,   -90.0811,
+    "NYG",    "MetLife Stadium",               40.8135,   -74.0745,
+    "NYJ",    "MetLife Stadium",               40.8135,   -74.0745,
+    "PHI",    "Lincoln Financial Field",       39.9008,   -75.1675,
+    "PIT",    "Acrisure Stadium",              40.4468,   -80.0158,
+    "SEA",    "Lumen Field",                   47.5951,  -122.3323,
+    "SF",     "Levi's Stadium",                37.4030,  -121.9700,
+    "TB",     "Raymond James Stadium",         27.9758,   -82.5033,
+    "TEN",    "Nissan Stadium",                36.1665,   -86.7713,
+    "WAS",    "FedExField",                    38.9078,   -76.8644,
+    
+    # --- Old Stadiums / Relocated Teams ---
+    "SD",     "Qualcomm Stadium",              32.7831,  -117.1195,  # San Diego Chargers (1967–2016)
+    "STL",    "Edward Jones Dome",             38.6329,   -90.1885,  # St. Louis Rams (1995–2015)
+    "OAK",    "Oakland Coliseum",              37.7516,  -122.2005,  # Oakland Raiders (1966–2019)
+  
+    # --- International / Neutral ---
+    "INTL_LON",   "Wembley Stadium",      51.5560,   -0.2796,
+    "INTL_LON",   "Tottenham Stadium",     51.6043,   -0.0664,
+    "INTL_MEX",   "Azteca Stadium",  19.3029,  -99.1505,
+    "INTL_GER",   "Allianz Arena",        48.2188,   11.6247,
+    "INTL_GER",   "Deutsche Bank Park",50.0686,    8.6456
+) %>%
+  add_row(
+    team = "INTL_BRA", 
+    stadium = "Arena Corinthians", 
+    lat = -23.5450, 
+    lon = -46.4734
+  ) %>%
+  add_row(
+    team    = "INTL_TWICKENHAM",
+    stadium = "Twickenham Stadium",
+    lat     = 51.4560,
+    lon     = -0.3415
+  ) %>%
+  add_row(
+    team    = "INTL_TOR",
+    stadium = "Rogers Centre",
+    lat     = 43.6414,
+    lon     = -79.3894
+  )
+
+# view(stadium_coords_df)
+
+schedules_szn_all = 
+  fast_scraper_schedules() %>% 
+  filter(season > 2008)
+
+# view(schedules_szn_all)
+
+games_coords_df = 
+  schedules_szn_all %>% 
+  rename(stadium_old = stadium) %>% 
+  filter(location != "Neutral") %>% 
+  left_join(
+    stadium_coords_df %>% 
+      rename(home_team = team),
+    by = "home_team"
+  ) %>% 
+  rbind(
+    schedules_szn_all %>% 
+      filter(location == "Neutral") %>% 
+      left_join(
+        stadium_coords_df %>% 
+          select(-team),
+        by = "stadium"
+      ) %>% 
+      mutate(
+        lat = 
+          case_when(
+            is.na(lat) & game_type == "REG" ~ stadium_coords_df %>% filter(stadium == "Wembley Stadium") %>% pull(lat), 
+            game_type == "REG" ~ stadium_coords_df %>% filter(stadium == "Wembley Stadium") %>% pull(lat), 
+            .default = lat
+          ),
+        lon = 
+          case_when(
+            is.na(lon) & game_type == "REG" ~ stadium_coords_df %>% filter(stadium == "Wembley Stadium") %>% pull(lon), 
+            game_type == "REG" ~ stadium_coords_df %>% filter(stadium == "Wembley Stadium") %>% pull(lon), 
+            .default = lon
+          ),
+        stadium_old = NA
+      )
+  ) %>% 
+  drop_na(lat, lon) %>% 
+  rename(
+    game_lat = lat,
+    game_lon = lon
+  ) %>% 
+  select(game_id, home_team, location, stadium, game_lat, game_lon) %>% 
+  distinct()
+
+team_coords_df = 
+  games_coords_df %>%
+  distinct(home_team, .keep_all = TRUE) %>%
+  select(-game_id) %>% 
+  rename(
+    team = home_team,
+    home_lat = game_lat, 
+    home_lon = game_lon
+  )
+
+# Function to compute haversine distance (km)
+haversine <- function(lat1, lon1, lat2, lon2) {
+  R <- 6371  # km
+  dlat <- (lat2 - lat1) * pi/180
+  dlon <- (lon2 - lon1) * pi/180
+  a <- sin(dlat/2)^2 + cos(lat1*pi/180) * cos(lat2*pi/180) * sin(dlon/2)^2
+  c <- 2 * atan2(sqrt(a), sqrt(1-a))
+  R * c
+}
+
+team_travel_df =
+  szn_all_playoffs %>% 
+  distinct(season, week, game_id, home_team, away_team) %>% 
+  mutate(
+    home_team = 
+      case_when(
+        season < 2017 & home_team == "LA" ~ "STL",
+        season < 2017 & home_team == "LAC" ~ "SD",
+        season < 2020 & home_team == "LV" ~ "OAK",
+        .default = home_team
+      ),
+    away_team = 
+      case_when(
+        season < 2017 & away_team == "LA" ~ "STL",
+        season < 2017 & away_team == "LAC" ~ "SD",
+        season < 2020 & away_team == "LV" ~ "OAK",
+        .default = away_team
+      )
+  ) %>% 
+  pivot_longer(
+    ends_with("_team"),
+    names_to = "home_away",
+    values_to = "team"
+  ) %>% 
+  left_join(games_coords_df %>% select(game_id, location, stadium, game_lat, game_lon), by = "game_id") %>% 
+  left_join(team_coords_df %>% select(-location), by = "team") %>% 
+  mutate(
+    travel_km = ifelse(home_away == "home" & location != "Neutral", 0, haversine(home_lat, home_lon, game_lat, game_lon)),
+    team = 
+      case_when(
+        season < 2017 & team == "LA" ~ "STL",
+        season < 2017 & team == "SD" ~ "LAC",
+        season < 2020 & team == "OAK" ~ "LV",
+        .default = team
+      )
+  ) %>% 
+  select(season, week, team, game_id, travel_km)
+
+# view(team_travel_df)
+
+teams_df = 
+  szn_all_playoffs %>% 
+  tibble() %>% 
+  distinct(home_team) %>% 
+  rename(team = home_team) %>% 
+  arrange(team) %>% 
+  rowid_to_column("team_id")
+
+division_df = 
+  teams_df %>% 
+  mutate(
+    division = 
+      case_match(
+        team,
+        c("BUF", "MIA", "NE", "NYJ") ~ "AFC East",
+        c("PIT", "CIN", "BAL", "CLE") ~ "AFC North",
+        c("IND", "JAX", "TEN", "HOU") ~ "AFC South",
+        c("LAC", "KC", "DEN", "LV") ~ "AFC West",
+        c("NYG", "DAL", "WAS", "PHI") ~ "NFC East",
+        c("GB", "MIN", "CHI", "DET") ~ "NFC North",
+        c("NO", "ATL", "CAR", "TB") ~ "NFC South",
+        c("SF", "ARI", "SEA", "LA") ~ "NFC West"
+      ),
+    conf = str_extract(division, "^[A-Z]FC")
+  )
+
+playoffs_team_total_spread_rolling_df =
+  szn_all_playoffs %>% 
+  filter(season > 2008) %>% 
+  distinct(season, week, game_id, home_team, away_team, total_line, total, spread_line, result, home_score, away_score) %>%
+  left_join(division_df %>% select(team, division) %>% rename(home_team = team, division_home = division), by = "home_team") %>%
+  left_join(division_df %>% select(team, division) %>% rename(away_team = team, division_away = division), by = "away_team") %>% 
+  mutate(division_game = ifelse(division_home == division_away, 1, 0)) %>%
+  pivot_longer(
+    ends_with("_team"),
+    names_to = "home_away",
+    values_to = "team"
+  ) %>% 
+  mutate(home_away = str_remove(home_away, "_team$")) %>% 
+  left_join(playoffs_rolling_epa_df, by = c("season", "week", "team")) %>% 
+  left_join(playoffs_rolling_pace_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  left_join(playoffs_rolling_rz_eff_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  left_join(playoffs_rolling_success_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  left_join(playoffs_rolling_exp_plays_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  left_join(playoffs_rolling_to_rate_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  left_join(playoffs_rolling_pen_yards_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  left_join(playoffs_qb_cont_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  left_join(playoffs_rest_days_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  left_join(team_travel_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  select(season, week, game_id, team, total_line, total, spread_line, result, home_away, home_score, away_score, division_game, starts_with("prior_"), qb_cont, rest_days, travel_km) %>%
+  mutate(
+    travel_km = 
+      case_when(
+        travel_km == 0 ~ 0,
+        .default = log(travel_km)
+      ),
+    total_team = 
+      case_when(
+        home_away == "home" ~ home_score,
+        home_away == "away" ~ away_score,
+        .default = NA
+      )
+  ) %>% 
+  ungroup()
+
+# view(team_total_spread_rolling_df)
+
+field_game_df = 
+  szn_all %>% 
+  distinct(game_id, home_team, away_team, roof, surface, wind, temp, start_time, total) %>% 
+  # pull(roof) %>% table(useNA = "ifany")
+  mutate(
+    time_start = 
+      as.integer(str_remove(str_remove(str_extract(start_time, "\\d+:\\d+:\\d+$"), ":\\d+$"), ":")),
+    international = ifelse(surface == "", 1, 0),
+    enclosed_field = 
+      case_when(
+        roof %in% c("closed", "dome") ~ 1,
+        roof %in% c("open", "outdoors") ~ 0,
+        .default = NA
+      ),
+    turf_field = 
+      case_when(
+        str_detect(surface, "turf") | surface == "" | str_detect(surface, "astro") ~ 1,
+        str_detect(surface, "grass") ~ 0, 
+        .default = NA
+      ),
+    wind = 
+      case_when(
+        is.na(wind) & enclosed_field == 1 ~ 0,
+        .default = wind
+      ),
+    temp = 
+      case_when(
+        is.na(temp) & enclosed_field == 1 ~ 72,
+        .default = temp
+      )
+  ) %>% 
+  # tbl_summary(by = turf_field, include = total) %>% add_p()
+  # ggplot(aes(x = as.factor(turf_field), y = total)) + 
+  # geom_boxplot()
+  select(game_id, home_team, away_team, ends_with("_field"), international, time_start, wind, temp) %>%
+  left_join(division_df %>% select(team, division) %>% rename(home_team = team, division_home = division), by = "home_team") %>%
+  left_join(division_df %>% select(team, division) %>% rename(away_team = team, division_away = division), by = "away_team") %>% 
+  mutate(division_game = ifelse(division_home == division_away, 1, 0))
+
+ctrl = trainControl(method = "repeatedcv", number = 5, repeats = 10)
+ctrl2 = trainControl(method = "cv", number = 5)
+
+playoffs_total_team_train_df =
+  playoffs_team_total_spread_rolling_df %>% 
+  left_join(
+    playoffs_team_total_spread_rolling_df %>% 
+      group_by(game_id) %>% 
+      mutate(
+        team_opp = 
+          case_when(
+            row_number() == 1 ~ lead(team),
+            row_number() == 2 ~ lag(team),
+            .default = NA
+          )
+      ) %>% 
+      relocate(team_opp, .after = team) %>% 
+      ungroup() %>% 
+      select(game_id, team_opp, starts_with("prior_"), qb_cont, rest_days, travel_km) %>% 
+      rename_with(~ str_c(., "_opp"), everything() & -c(game_id, team_opp)) %>% 
+      rename(team = team_opp),
+    by = c("game_id", "team")
+  ) %>% 
+  filter(season != 2025) %>% 
+  left_join(
+    szn_all_playoffs %>% 
+      distinct(game_id, season_type),
+    by = "game_id"
+  ) %>% 
+  filter(division_game == 1 | season_type == "POST") %>% 
+  filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
+  select(total_team, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
+  drop_na()
+
+# saveRDS(playoffs_total_team_train_df, "playoffs_total_team_train_df.rds")
+
+# GLM
+set.seed(37564)
+mod_playoffs_total_team_glm = train(total_team ~ .,
+                na.action = na.exclude, 
+                data = playoffs_total_team_train_df, 
+                #subset = season,
+                method = "glm", 
+                trControl = ctrl)
+mod_playoffs_total_team_glm
+
+# ENET
+set.seed(37564)
+mod_playoffs_total_team_enet = train(total_team ~ .,
+                 na.action = na.exclude, 
+                 data = playoffs_total_team_train_df, 
+                 method = "glmnet", 
+                 tuneGrid = expand.grid(#alpha = seq(0, 1, by = 0.2),
+                                        alpha = 0,
+                                        lambda = exp(seq(-2, 2, length = 50))),
+                 trControl = ctrl)
+ggplot(mod_playoffs_total_team_enet, highlight = T) + 
+  ggtitle("ENET") +
+  theme(plot.title = element_text(hjust = 0.5))
+mod_playoffs_total_team_enet$bestTune
+min(mod_playoffs_total_team_enet$results$RMSE)
+
+# KNN
+set.seed(37564)
+mod_playoffs_total_team_knn = train(total_team ~ .,
+                na.action = na.exclude, 
+                data = playoffs_total_team_train_df, 
+                method = "knn", 
+                preProcess = c("center","scale"),
+                tuneGrid = data.frame(k = seq(100, 130, by = 2)), 
+                trControl = ctrl)
+ggplot(mod_playoffs_total_team_knn, highlight = T) + 
+  ggtitle("KNN") +
+  theme(plot.title = element_text(hjust = 0.5))
+mod_playoffs_total_team_knn$bestTune
+min(mod_playoffs_total_team_knn$results$RMSE)
+
+# MARS
+set.seed(37564)
+mod_playoffs_total_team_mars = train(total_team ~ .,
+                 na.action = na.exclude, 
+                 data = playoffs_total_team_train_df, 
+                 method = "earth", 
+                 tuneGrid = expand.grid(degree = 1:3, nprune = 1:10), 
+                 trControl = ctrl)
+ggplot(mod_playoffs_total_team_mars, highlight = T) + 
+  ggtitle("MARS") +
+  theme(plot.title = element_text(hjust = 0.5))
+mod_playoffs_total_team_mars$bestTune
+min(mod_playoffs_total_team_mars$results$RMSE)
+#mod_mars$finalModel %>% summary
+
+# Boost
+set.seed(37564)
+mod_playoffs_total_team_boost = train(total_team ~ .,
+                  na.action = na.exclude, 
+                  data = playoffs_total_team_train_df, 
+                  method = "gbm", 
+                  tuneGrid = expand.grid(n.trees = c(1000, 4000, 7000),
+                                         interaction.depth = 1:3,
+                                         shrinkage = c(0.01, 0.03, 0.05), 
+                                         n.minobsinnode = 10), 
+                  trControl = ctrl2,
+                  verbose = F)
+ggplot(mod_playoffs_total_team_boost, highlight = T) + 
+  ggtitle("Boost") +
+  theme(plot.title = element_text(hjust = 0.5))
+mod_playoffs_total_team_boost$bestTune
+min(mod_playoffs_total_team_boost$results$RMSE)
+
+#boost = tibble(wins_boost = predict(mod_boost, newdata = test_df))
+
+# SVM
+set.seed(37564)
+mod_playoffs_total_team_svm = train(total_team ~ .,
+                na.action = na.exclude, 
+                data = playoffs_total_team_train_df,
+                preProcess = c("scale", "center"),
+                method = "svmRadialSigma",
+                tuneGrid = expand.grid(C = #c(0.03877421, 0.08208500),
+                                         exp(seq(-4, -1, len = 5)),
+                                       sigma = #c(0.014264234, 0.030197383)),
+                                         exp(seq(-5, -2, len = 5))),
+                trControl = ctrl)
+ggplot(mod_playoffs_total_team_svm, highlight = T) + 
+  ggtitle("SVM Radial") +
+  theme(plot.title = element_text(hjust = 0.5))
+mod_playoffs_total_team_svm$bestTune
+min(mod_playoffs_total_team_svm$results$RMSE)
+
+set.seed(37564)
+vip(
+  mod_playoffs_total_team_boost, 
+  method = "permute", 
+  train = playoffs_total_team_train_df,
+  target = "total_team",
+  metric = "rmse",
+  nsim = 50,
+  pred_wrapper = predict,
+  geom = "boxplot", 
+  all_permutations = T,
+  mapping = aes_string(fill = "Variable", alpha = 0.75),
+  num_features = 40L
+)
+
+coef(mod_total_team_enet$finalModel, mod_total_team_enet$bestTune$lambda)
+
+set.seed(37564)
+res = resamples(list(GLM = mod_total_team_glm, ENET = mod_total_team_enet, MARS = mod_total_team_mars, KNN = mod_total_team_knn, BOOST = mod_total_team_boost, SVM = mod_total_team_svm))
+summary(res)
+bwplot(res, metric = "RMSE", main = "RMSE for Repeated 5-Fold CV Using Various Models")
+
+# save final SVM model:
+
+# saveRDS(mod_playoffs_total_team_svm, glue::glue("mod_playoffs_total_team_svm_{format(Sys.Date(), '%Y_%m_%d')}.rds"))
+
 ```
 
 ## Fantasy
