@@ -4,7 +4,6 @@ project:
   render:
     - index.qmd
     - mods.qmd
-    - fantasy.qmd
 
 website:
   title: "Football DNA"

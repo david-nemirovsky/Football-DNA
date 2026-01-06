@@ -3905,9 +3905,9 @@ df_spreads_profit =
 #   mutate(
 #     stake_bucket =
 #       case_when(
-#         between(stake, 0, 1) ~ "0-1",
-#         between(stake, 1.000001, 2) ~ "1-2",
-#         between(stake, 2.000001, 3) ~ "2-3",
+#         between(stake_total, 0, 1) ~ "0-1",
+#         between(stake_total, 1.000001, 2) ~ "1-2",
+#         between(stake_total, 2.000001, 3) ~ "2-3",
 #         .default = NA
 #       )
 #   ) %>%
@@ -3917,9 +3917,9 @@ df_spreads_profit =
 #   mutate(
 #     stake_bucket =
 #       case_when(
-#         between(stake, 0, 1) ~ "0-1",
-#         between(stake, 1.000001, 2) ~ "1-2",
-#         between(stake, 2.000001, 3) ~ "2-3",
+#         between(stake_spread, 0, 1) ~ "0-1",
+#         between(stake_spread, 1.000001, 2) ~ "1-2",
+#         between(stake_spread, 2.000001, 3) ~ "2-3",
 #         .default = NA
 #       )
 #   ) %>%

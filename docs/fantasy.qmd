@@ -1,0 +1,712 @@
+---
+title: ""
+format: 
+  html:
+    echo: false
+    message: false
+    warning: false
+    fig-width: 10
+    fig-height: 8
+    fig-align: center
+    dpi: 300
+editor: source
+---
+
+```{r setup}
+#| include: false
+
+library(tidyverse)
+library(nflfastR)
+library(nflreadr)
+library(ggimage)
+# library(plotly)
+# library(ggrepel)
+library(patchwork)
+library(caret)
+# library(vip)
+# library(plotly)
+# library(Rcpp)
+# library(RcppParallel)
+library(rsample)
+# library(gbm)
+# library(e1071)
+# library(gtsummary)
+
+knitr::opts_chunk$set(
+  fig.width = 7,
+  fig.asp = .6,
+  out.width = "95%"
+)
+
+theme_set(theme_minimal() + theme(legend.position = "bottom"))
+
+# options(
+#   ggplot2.continuous.colour = "viridis",
+#   ggplot2.continuous.fill = "viridis"
+# )
+# 
+# scale_colour_discrete = scale_colour_viridis_d
+# scale_fill_discrete = scale_fill_viridis_d
+
+`%nin%` = Negate(`%in%`)
+
+set.seed(37564)
+
+teams_colors_logos = teams_colors_logos %>% filter(team_abbr %nin% c("OAK", "SD", "STL", "LAR"))
+```
+
+```{r load data and mods}
+#| include: false
+
+# week_n = ceiling(as.integer(Sys.Date() - as.Date("2025-09-07")) / 7)
+week_n = ceiling(as.integer(Sys.Date() - as.Date("2025-09-07")) / 7)
+n_targets = round(week_n * 4, -1)
+n_touches = round(week_n * 8, -1)
+n_att = week_n * 15
+n_rec = round(week_n * 3, -1)
+
+# Load 2025 data
+df_szn_pbp = 
+  load_pbp(2025) %>%  
+  filter(season_type == "REG")
+
+df_roster = fast_scraper_roster(2025)
+
+df_fantasy = 
+  df_szn_pbp %>% 
+  calculate_player_stats(weekly = T) %>% 
+  mutate(
+    fpts = fantasy_points + 0.5 * receptions,
+    fpts_ppr = fantasy_points + 1 * receptions
+  ) %>% 
+  rename(posteam = recent_team) %>% 
+  mutate(
+    player_name = ifelse(player_name == "B.Robinson" & posteam == "ATL", "Bi.Robinson", player_name),
+    player_name = ifelse(player_name == "B.Robinson" & posteam == "WAS", "Br.Robinson", player_name)
+    )
+```
+
+## **Fantasy Football Stats**
+
+::: panel-tabset
+
+### **PPR**
+
+::: panel-tabset
+
+#### **QB**
+
+```{r fan qb ppr}
+df_qb_att = 
+  df_szn_pbp %>% 
+  filter(pass_attempt == 1 & sack == 0) %>% 
+  group_by(posteam, passer) %>% 
+  summarize(n_att = n()) %>% 
+  drop_na(passer) %>% 
+  rename(player_name = passer)
+
+df_qb_fpts = 
+  df_fantasy %>% 
+  left_join(df_qb_att) %>% 
+  filter(n_att >= n_att) %>% 
+  inner_join(
+    fast_scraper_roster(2025) %>% 
+    filter(position == "QB") %>% 
+    select(gsis_id),
+      by = c("player_id" = "gsis_id")
+  ) %>% 
+  select(posteam, week, player_name, player_display_name, fpts)
+
+df_med_qb = 
+  df_qb_fpts %>% 
+  group_by(player_display_name, posteam) %>% 
+  summarize(med_pts = median(fpts)) %>% 
+  arrange(-med_pts) %>% 
+  rowid_to_column("rank") %>% 
+  filter(rank <= 20) %>% 
+  mutate(player_name_og = player_display_name) %>% 
+  unite("rank_name", rank, player_display_name, sep = ". ") %>% 
+  arrange(med_pts) %>% 
+  rename(player_display_name = player_name_og)
+
+df_qb_fpts = 
+  df_qb_fpts %>% 
+  left_join(df_med_qb) %>% 
+  group_by(med_pts, posteam) %>% 
+  mutate(rank_name = fct_reorder(as.factor(rank_name), med_pts))
+
+df_qb_fpts_cols = 
+  teams_colors_logos %>% 
+  mutate(posteam = team_abbr) %>% 
+  left_join(df_med_qb) %>% 
+  group_by(med_pts, posteam) %>% 
+  mutate(player_display_name = fct_reorder(as.factor(player_display_name), med_pts)) %>% 
+  arrange(med_pts) %>% 
+  drop_na(player_display_name)
+
+df_qb_fpts %>% 
+  drop_na() %>% 
+  ggplot(aes(x = fpts, y = rank_name)) +
+  geom_boxplot(fill = df_qb_fpts_cols$team_color, alpha = 0.75) +
+  labs(
+    title = glue::glue("2025 QB PPG (Min. {n_att} Passing Attempts)"), 
+    x = "Fantasy PPG", 
+    y = "QB"
+  ) + 
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.y = element_text(size = 8)
+  )
+```
+
+#### **RB**
+
+```{r rb fan ppr}
+df_rb_att = 
+  df_szn_pbp %>% 
+  filter(rush_attempt == 1) %>% 
+  group_by(posteam, rusher) %>% 
+  summarize(n_att = n()) %>% 
+  drop_na(rusher) %>% 
+  rename(player_name = rusher) %>% 
+  mutate(
+    player_name = ifelse(player_name == "B.Robinson" & posteam == "ATL", "Bi.Robinson", player_name),
+    player_name = ifelse(player_name == "B.Robinson" & posteam == "WAS", "Br.Robinson", player_name)
+  )
+
+df_rb_fpts = 
+  df_fantasy %>% 
+  group_by(player_id) %>% 
+  mutate(n_rec = sum(receptions)) %>% 
+  ungroup() %>% 
+  left_join(df_rb_att) %>% 
+  mutate(
+    touches = n_att + n_rec
+  ) %>% 
+  filter(touches >= n_touches) %>% 
+  inner_join(
+    fast_scraper_roster(2025) %>% 
+    filter(position == "RB") %>% 
+    select(gsis_id),
+      by = c("player_id" = "gsis_id")
+  ) %>% 
+  select(posteam, week, player_name, player_display_name, fpts, fpts_ppr, touches)
+
+df_med_rb = 
+  df_rb_fpts %>% 
+  group_by(player_display_name, posteam, touches) %>% 
+  summarize(med_pts = median(fpts)) %>% 
+  arrange(-med_pts, -touches) %>% 
+  rowid_to_column("rank") %>% 
+  filter(rank <= 40) %>% 
+  mutate(
+    player_name_og = player_display_name,
+    rank_og = rank
+  ) %>% 
+  unite("rank_name", rank, player_display_name, sep = ". ") %>% 
+  arrange(med_pts, touches) %>% 
+  rename(player_display_name = player_name_og)
+
+df_med_rb_ppr = 
+  df_rb_fpts %>% 
+  group_by(player_display_name, posteam, touches) %>% 
+  summarize(med_pts = median(fpts_ppr)) %>% 
+  arrange(-med_pts, -touches) %>% 
+  rowid_to_column("rank") %>% 
+  filter(rank <= 40) %>% 
+  mutate(
+    player_name_og = player_display_name,
+    rank_og = rank
+  ) %>% 
+  unite("rank_name", rank, player_display_name, sep = ". ") %>% 
+  arrange(med_pts, touches) %>% 
+  rename(player_display_name = player_name_og)
+
+# rb_fpts = 
+#   rb_fpts %>% 
+#   left_join(med_rb) %>% 
+#   group_by(med_pts, posteam) %>% 
+#   mutate(rank_name = fct_reorder(as.factor(rank_name), med_pts))
+
+df_rb_fpts_cols = 
+  teams_colors_logos %>% 
+  mutate(posteam = team_abbr) %>% 
+  left_join(df_med_rb, by = "posteam") %>% 
+  group_by(med_pts, posteam) %>% 
+  mutate(player_display_name = fct_reorder(as.factor(player_display_name), med_pts)) %>% 
+  arrange(med_pts, touches) %>% 
+  drop_na(player_display_name)
+
+df_rb_fpts_ppr_cols = 
+  teams_colors_logos %>% 
+  mutate(posteam = team_abbr) %>% 
+  left_join(df_med_rb_ppr, by = "posteam") %>% 
+  group_by(med_pts, posteam) %>% 
+  mutate(player_display_name = fct_reorder(as.factor(player_display_name), med_pts)) %>% 
+  arrange(med_pts, touches) %>% 
+  drop_na(player_display_name)
+
+df_rb_fpts %>% 
+  left_join(df_med_rb_ppr) %>% 
+  drop_na() %>% 
+  ggplot(aes(x = fpts_ppr, y = fct_reorder(as.factor(rank_name), -rank_og))) +
+  geom_boxplot(fill = df_rb_fpts_ppr_cols$team_color, alpha = 0.75) +
+  labs(
+    title = glue::glue("2025 RB PPG (Min. {n_touches} Touches)"),     
+    x = "PPR Fantasy PPG", 
+    y = "RB"
+  ) + 
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.y = element_text(size = 8)
+  )
+
+```
+
+#### **WR**
+
+```{r wr fan ppr}
+df_wr_tar = 
+  df_roster %>% 
+  filter(position == "WR") %>% 
+  mutate(receiver_id = gsis_id) %>% 
+  select(receiver_id, position) %>% 
+  inner_join(df_szn_pbp, by = "receiver_id") %>% 
+  filter(pass_attempt == 1) %>% 
+  rename(team_abbr = posteam) %>% 
+  group_by(team_abbr, receiver) %>% 
+  summarize(
+    targets = n()#,
+    #mean_epa = mean(epa)
+  ) %>% 
+  filter(receiver %nin% NA) %>% 
+  ungroup()
+
+df_wr_epa = 
+  df_roster %>% 
+  filter(position == "WR") %>% 
+  mutate(receiver_id = gsis_id) %>% 
+  select(receiver_id, position) %>% 
+  inner_join(df_szn_pbp, by = "receiver_id") %>% 
+  filter(complete_pass == 1) %>% 
+  rename(team_abbr = posteam) %>% 
+  group_by(team_abbr, receiver) %>% 
+  summarize(
+    epa = epa,
+    mean_epa = mean(epa),
+    med_epa = median(epa),
+    n_rec = n()
+  ) %>% 
+  filter(receiver %nin% NA) %>% 
+  ungroup() %>% 
+  left_join(df_wr_tar) %>% 
+  drop_na(targets) %>% 
+  mutate(receiver = fct_reorder(receiver, epa, median))
+
+df_wr_epa_cols = 
+  df_wr_epa %>% 
+  group_by(team_abbr, receiver) %>% 
+  summarize(
+    med_epa = median(epa)
+  ) %>% 
+  left_join(teams_colors_logos, by = "team_abbr") %>% 
+  group_by(med_epa, team_abbr) %>% 
+  mutate(receiver = fct_reorder(as.factor(receiver), med_epa)) %>% 
+  arrange(med_epa) %>% 
+  drop_na(receiver)
+
+df_fantasy = 
+  df_szn_pbp %>% 
+  calculate_player_stats(weekly = T) %>% 
+  mutate(
+    fpts = fantasy_points + 0.5 * receptions,
+    fpts_ppr = fantasy_points + 1 * receptions
+  ) %>% 
+  rename(posteam = recent_team) %>% 
+  mutate(
+    player_name = ifelse(player_name == "B.Robinson" & posteam == "ATL", "Bi.Robinson", player_name),
+    player_name = ifelse(player_name == "B.Robinson" & posteam == "WAS", "Br.Robinson", player_name)
+    )
+
+# WR
+df_wr_rec = 
+  df_szn_pbp %>% 
+  filter(complete_pass == 1) %>% 
+  group_by(posteam, receiver) %>% 
+  summarize(n_rec = n()) %>% 
+  drop_na(receiver) %>% 
+  rename(player_name = receiver) %>% 
+  mutate(
+    player_name = ifelse(player_name == "B.Robinson" & posteam == "ATL", "Bi.Robinson", player_name),
+    player_name = ifelse(player_name == "B.Robinson" & posteam == "WAS", "Br.Robinson", player_name)
+  )
+
+df_wr_fpts = 
+  df_fantasy %>% 
+  group_by(posteam, player_name, player_id) %>% 
+  mutate(targets = sum(targets)) %>% 
+  filter(targets >= n_targets) %>% 
+  left_join(df_wr_rec) %>% 
+  inner_join(
+    fast_scraper_roster(2025) %>% 
+    filter(position == "WR") %>% 
+    select(gsis_id),
+      by = c("player_id" = "gsis_id")
+  ) %>% 
+  select(posteam, week, player_name, player_display_name, player_id, fpts, fpts_ppr, targets)
+
+df_med_wr = 
+  df_wr_fpts %>% 
+  group_by(player_display_name, posteam, targets) %>% 
+  summarize(med_pts = median(fpts)) %>%  
+  arrange(-med_pts, -targets) %>% 
+  rowid_to_column("rank") %>% 
+  filter(rank <= 40) %>% 
+  mutate(
+    player_name_og = player_display_name,
+    rank_og = rank
+  ) %>% 
+  unite("rank_name", rank, player_display_name, sep = ". ") %>% 
+  arrange(med_pts, targets) %>% 
+  rename(player_display_name = player_name_og) %>% 
+  ungroup()
+  
+df_med_wr_ppr = 
+  df_wr_fpts %>% 
+  group_by(player_display_name, posteam, targets) %>% 
+  summarize(med_pts = median(fpts_ppr)) %>%  
+  arrange(-med_pts, -targets) %>% 
+  rowid_to_column("rank") %>% 
+  filter(rank <= 40) %>% 
+  mutate(
+    player_name_og = player_display_name,
+    rank_og = rank
+  ) %>% 
+  unite("rank_name", rank, player_display_name, sep = ". ") %>% 
+  arrange(med_pts, targets) %>% 
+  rename(player_display_name = player_name_og) %>% 
+  ungroup()
+
+df_wr_fpts_cols = 
+  teams_colors_logos %>% 
+  mutate(posteam = team_abbr) %>% 
+  left_join(df_med_wr, by = "posteam") %>% 
+  # right_join(wr_fpts) %>% 
+  group_by(med_pts, posteam) %>% 
+  # mutate(player_name = fct_reorder(as.factor(player_name), med_pts)) %>% 
+  arrange(med_pts, targets) %>% 
+  drop_na(player_display_name)
+
+df_wr_fpts_ppr_cols = 
+  teams_colors_logos %>% 
+  mutate(posteam = team_abbr) %>% 
+  left_join(df_med_wr_ppr, by = "posteam") %>% 
+  # right_join(wr_fpts) %>% 
+  group_by(med_pts, posteam) %>% 
+  # mutate(player_name = fct_reorder(as.factor(player_name), med_pts)) %>% 
+  arrange(med_pts, targets) %>% 
+  drop_na(player_display_name)
+
+df_wr_fpts %>% 
+  left_join(df_med_wr_ppr) %>% 
+  left_join(df_wr_fpts_cols %>% select(player_display_name, team_color), by = "player_display_name") %>% 
+  drop_na() %>% 
+  # mutate(rank_name = ) %>% 
+  # left_join(wr_fpts_cols %>% select(player_display_name, team_color)) %>% 
+  ggplot(aes(x = fpts_ppr, y = fct_reorder(as.factor(rank_name), -rank_og))) +
+  geom_boxplot(aes(fill = team_color), alpha = 0.75) +
+  scale_fill_identity() +
+  labs(
+    title = glue::glue("2025 WR PPG (Min. {n_targets} Targets)"), 
+    x = "PPR Fantasy PPG", 
+    y = "WR"
+  ) + 
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.y = element_text(size = 8)
+  )
+
+df_wr_mean_fpts = 
+  df_wr_fpts %>% 
+  group_by(posteam, player_name) %>% 
+  mutate(sum_pts = sum(fpts), n_weeks = n()) %>% 
+  distinct(posteam, player_name, sum_pts, targets, n_weeks) %>% 
+  ungroup() %>% 
+  mutate(
+    mean_pts = sum_pts / n_weeks, 
+    mean_tar = targets / n_weeks
+  ) %>% 
+  left_join(df_med_wr) %>% 
+  filter(as.integer(str_extract(rank_name, "^[0-9]+")) <= 40)
+
+# PPG by Targets
+
+# wr_fpts %>% 
+#   left_join(med_wr) %>% 
+#   drop_na() %>% 
+#   ungroup() %>% 
+#   group_by(posteam, player_name) %>% 
+#   mutate(n_weeks = n()) %>% 
+#   ungroup() %>% 
+#   distinct(posteam, player_name, med_pts, targets, n_weeks) %>% 
+#   mutate(tar_gm = targets / n_weeks) %>% 
+#   # left_join(wr_fpts_cols %>% select(player_name, team_color)) %>% 
+#   arrange(med_pts, player_name) %>% 
+#   ggplot(aes(x = tar_gm, y = med_pts)) +
+#   geom_point(color = wr_fpts_cols$team_color, alpha = 0.75, size = 3) +
+#   geom_text_repel(aes(label = player_name), alpha = 4) +
+#   geom_hline(yintercept = mean(wr_mean_fpts$mean_pts), color = "black", linetype = "dashed") + 
+#   geom_vline(xintercept = mean(wr_mean_fpts$mean_tar), color = "black", linetype = "dashed") + 
+#   geom_rect(aes(xmin = -Inf, xmax = Inf, ymin = mean(wr_mean_fpts$mean_pts) - qnorm(0.975)*sd(wr_mean_fpts$mean_pts)/sqrt(length(wr_mean_fpts$mean_pts)), ymax = mean(wr_mean_fpts$mean_pts) + qnorm(0.975)*sd(wr_mean_fpts$mean_pts)/sqrt(length(wr_mean_fpts$mean_pts))), alpha = 0.005, fill = "yellow") + 
+#   geom_rect(aes(ymin = -Inf, ymax = Inf, xmin = mean(wr_mean_fpts$mean_tar) - qnorm(0.975)*sd(wr_mean_fpts$mean_tar)/sqrt(length(wr_mean_fpts$mean_tar)), xmax = mean(wr_mean_fpts$mean_tar) + qnorm(0.975)*sd(wr_mean_fpts$mean_tar)/sqrt(length(wr_mean_fpts$mean_tar))), alpha = 0.005, fill = "yellow") + 
+#   scale_y_continuous(breaks = seq(0, 25, by = 5)) +
+#   # geom_smooth() +
+#   labs(
+#     title = "2025 WR Median Fantasy PPG vs Targets/Game (Min. 40 Targets)",
+#     x = "Targets/Game",
+#     y = "Median Fantasy PPG"
+#   ) + 
+#   theme(
+#     legend.position = "none",
+#     plot.title = element_text(hjust = 0.42)
+#   )
+# 
+# # Fantasy PPG and EPA
+# wr_fpts %>% 
+#   left_join(med_wr) %>% 
+#   drop_na() %>% 
+#   left_join(
+#     wr_epa %>% 
+#       distinct(team_abbr, receiver, mean_epa) %>% 
+#       rename(
+#         posteam = team_abbr,
+#         player_name = receiver
+#       ),
+#     by = c("posteam", "player_name")
+#   ) %>% 
+#   distinct(posteam, player_name, mean_epa, med_pts, targets) %>% 
+#   arrange(med_pts) %>% 
+#   ggplot(aes(x = mean_epa, y = med_pts)) +
+#   geom_point(aes(size = targets / 10), color = wr_fpts_cols$team_color, alpha = 0.75) +
+#   geom_text_repel(aes(label = player_name), alpha = 4) + 
+#   geom_smooth() +
+#   labs(
+#     title = "2025 WR Median Fantasy PPG vs EPA/Catch (Min. 40 Targets)",
+#     x = "Mean EPA/Catch",
+#     y = "Median Fantasy PPG"
+#   ) + 
+#   theme(
+#     legend.position = "none",
+#     plot.title = element_text(hjust = 0.42)
+#   )
+# 
+# # Fantasy PPG and EPA
+# wr_fpts %>% 
+#   left_join(med_wr) %>% 
+#   left_join(wr_adot) %>% 
+#   drop_na() %>% 
+#   left_join(
+#     wr_epa %>% 
+#       distinct(team_abbr, receiver, mean_epa) %>% 
+#       rename(
+#         posteam = team_abbr,
+#         player_name = receiver
+#       ),
+#     by = c("posteam", "player_name")
+#   ) %>% 
+#   distinct(posteam, player_name, adot, med_pts, targets) %>% 
+#   arrange(med_pts) %>% 
+#   ggplot(aes(x = adot, y = med_pts)) +
+#   geom_point(aes(size = targets / 10), color = wr_fpts_cols$team_color, alpha = 0.75) +
+#   geom_text_repel(aes(label = player_name), alpha = 4) + 
+#   geom_smooth() +
+#   labs(
+#     title = "2025 WR Median Fantasy PPG vs ADOT (Min. 40 Targets)",
+#     x = "ADOT",
+#     y = "Median Fantasy PPG"
+#   ) + 
+#   theme(
+#     legend.position = "none",
+#     plot.title = element_text(hjust = 0.42)
+#   )
+```
+
+#### **TE**
+
+```{r te fan ppr}
+# TE
+df_te_rec = 
+  df_szn_pbp %>% 
+  filter(complete_pass == 1) %>% 
+  group_by(posteam, receiver) %>% 
+  summarize(n_rec = n()) %>% 
+  drop_na(receiver) %>% 
+  rename(player_name = receiver)
+
+df_te_fpts = 
+  df_fantasy %>% 
+  left_join(df_te_rec) %>% 
+  filter(n_rec >= n_rec) %>% 
+  inner_join(
+    fast_scraper_roster(2025) %>% 
+    filter(position == "TE") %>% 
+    select(gsis_id),
+      by = c("player_id" = "gsis_id")
+  ) %>% 
+  select(posteam, week, player_name, player_display_name, fpts, fpts_ppr)
+
+df_med_te = 
+  df_te_fpts %>% 
+  group_by(player_display_name, posteam) %>% 
+  summarize(med_pts = median(fpts)) %>% 
+  arrange(-med_pts) %>% 
+  rowid_to_column("rank") %>% 
+  mutate(player_name_og = player_display_name) %>% 
+  filter(rank <= 20) %>% 
+  unite("rank_name", rank, player_display_name, sep = ". ") %>% 
+  arrange(med_pts) %>% 
+  rename(player_display_name = player_name_og)
+
+df_med_te_ppr = 
+  df_te_fpts %>% 
+  group_by(player_display_name, posteam) %>% 
+  summarize(med_pts = median(fpts_ppr)) %>% 
+  arrange(-med_pts) %>% 
+  rowid_to_column("rank") %>% 
+  mutate(player_name_og = player_display_name) %>% 
+  filter(rank <= 20) %>% 
+  unite("rank_name", rank, player_display_name, sep = ". ") %>% 
+  arrange(med_pts) %>% 
+  rename(player_display_name = player_name_og)
+
+df_te_fpts_cols = 
+  teams_colors_logos %>% 
+  mutate(posteam = team_abbr) %>% 
+  left_join(df_med_te, by = "posteam") %>% 
+  group_by(med_pts, posteam) %>% 
+  mutate(player_display_name = fct_reorder(as.factor(player_display_name), med_pts)) %>% 
+  arrange(med_pts) %>% 
+  drop_na(player_display_name)
+
+df_te_fpts_ppr_cols = 
+  teams_colors_logos %>% 
+  mutate(posteam = team_abbr) %>% 
+  left_join(df_med_te_ppr, by = "posteam") %>% 
+  group_by(med_pts, posteam) %>% 
+  mutate(player_display_name = fct_reorder(as.factor(player_display_name), med_pts)) %>% 
+  arrange(med_pts) %>% 
+  drop_na(player_display_name)
+
+df_te_fpts %>% 
+  left_join(df_med_te_ppr) %>% 
+  group_by(med_pts, posteam) %>% 
+  drop_na() %>% 
+  mutate(rank_name = fct_reorder(as.factor(rank_name), med_pts)) %>% 
+  ggplot(aes(x = fpts_ppr, y = rank_name)) +
+  geom_boxplot(fill = df_te_fpts_ppr_cols$team_color, alpha = 0.75) +
+  labs(
+    title = glue::glue("2025 TE PPG (Min. {n_rec} Receptions)"), 
+    x = "PPR Fantasy PPG", 
+    y = "TE"
+  ) + 
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.y = element_text(size = 8)
+  )
+
+# fan_rb + fan_wr
+# fan_qb + fan_te
+# (fan_rb + fan_wr) / (fan_qb + fan_te) + plot_layout(heights = c(0.65, 0.35))
+# (fan_rb_ppr + fan_wr_ppr) / (fan_qb + fan_te_ppr) + plot_layout(heights = c(0.65, 0.35))
+```
+
+:::
+
+### **0.5 PPR**
+
+::: panel-tabset
+
+#### **QB**
+
+```{r fan qb half ppr}
+df_qb_fpts %>% 
+  drop_na() %>% 
+  ggplot(aes(x = fpts, y = rank_name)) +
+  geom_boxplot(fill = df_qb_fpts_cols$team_color, alpha = 0.75) +
+  labs(
+    title = glue::glue("2025 QB PPG (Min. {n_att} Passing Attempts)"), 
+    x = "Fantasy PPG", 
+    y = "QB"
+  ) + 
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.y = element_text(size = 8)
+  )
+```
+
+#### **RB**
+
+```{r rb fan half ppr}
+df_rb_fpts %>% 
+  left_join(df_med_rb) %>% 
+  drop_na() %>% 
+  ggplot(aes(x = fpts, y = fct_reorder(as.factor(rank_name), -rank_og))) +
+  geom_boxplot(fill = df_rb_fpts_cols$team_color, alpha = 0.75) +
+  labs(
+    title = glue::glue("2025 RB PPG (Min. {n_touches} Touches)"), 
+    x = "Fantasy PPG", 
+    y = "RB"
+  ) + 
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.y = element_text(size = 8)
+  )
+```
+
+#### **WR**
+
+```{r wr fan half ppr}
+df_wr_fpts %>% 
+  left_join(df_med_wr) %>% 
+  left_join(df_wr_fpts_cols %>% select(player_display_name, team_color), by = "player_display_name") %>% 
+  drop_na() %>% 
+  # mutate(rank_name = ) %>% 
+  # left_join(wr_fpts_cols %>% select(player_display_name, team_color)) %>% 
+  ggplot(aes(x = fpts, y = fct_reorder(as.factor(rank_name), -rank_og))) +
+  geom_boxplot(aes(fill = team_color), alpha = 0.75) +
+  scale_fill_identity() +
+  labs(
+    title = glue::glue("2025 WR PPG (Min. {n_targets} Targets)"), 
+    x = "Fantasy PPG", 
+    y = "WR"
+  ) + 
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.y = element_text(size = 8)
+  )
+```
+
+#### **TE**
+
+```{r te fan half ppr}
+df_te_fpts %>% 
+  left_join(df_med_te) %>% 
+  group_by(med_pts, posteam) %>% 
+  drop_na() %>% 
+  mutate(rank_name = fct_reorder(as.factor(rank_name), med_pts)) %>% 
+  ggplot(aes(x = fpts, y = rank_name)) +
+  geom_boxplot(fill = df_te_fpts_cols$team_color, alpha = 0.75) +
+  labs(
+    title = glue::glue("2025 TE PPG (Min. {n_rec} Receptions)"), 
+    x = "Fantasy PPG", 
+    y = "TE"
+  ) + 
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    axis.text.y = element_text(size = 8)
+  )
+```
+
+:::
+
+:::
