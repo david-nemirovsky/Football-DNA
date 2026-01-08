@@ -457,7 +457,7 @@ df_lines_open =
   ) %>% 
   relocate(game_id)
 
-mod_total_team_svm = readRDS("mod_total_team_svm_2025_12_11.rds")
+mod_total_team_svm = readRDS("mod_total_team_svm_2026_01_08.rds")
 mod_total_playoffs_team_svm = readRDS("mod_playoffs_total_team_svm_2026_01_04.rds")
 mod_total_correct_enet = readRDS("mod_total_correct_enet.rds")
 mod_spread_correct_enet = readRDS("mod_spread_correct_enet.rds")
