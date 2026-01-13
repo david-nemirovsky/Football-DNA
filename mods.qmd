@@ -71,8 +71,8 @@ week_n = ceiling(as.integer(Sys.Date() - as.Date("2025-09-07")) / 7) + 1
 
 # Load 2025 data
 df_szn_pbp = 
-  load_pbp(2025) %>%  
-  filter(season_type == "REG")
+  load_pbp(2025)# %>%  
+  #filter(season_type == "REG")
 
 df_roster = fast_scraper_roster(2025)
 
@@ -104,35 +104,36 @@ df_schedule =
   filter(season == 2025) %>% 
   # rows_insert(
   #   tibble(
-  #     game_id = "2025_19_LA_CAR",
+  #     game_id = c("2025_20_LA_CHI", "2025_20_SF_SEA", "2025_20_BUF_DEN"),
   #     season = 2025,
-  #     game_type = "WC",
-  #     week = 19,
-  #     gameday = "2026-01-10",
-  #     gametime = "16:30",
-  #     home_team = "CAR",
-  #     away_team = "LA",
-  #     home_rest = 7,
-  #     away_rest = 6,
+  #     game_type = "DIV",
+  #     week = 20,
+  #     gameday = c("2026-01-18", "2026-01-17", "2026-01-17"),
+  #     gametime = c("13:00", "16:30", "20:15"),
+  #     home_team = c("CHI", "SEA", "DEN"),
+  #     away_team = c("LA", "SF", "BUF"),
+  #     home_rest = c(8, 14, 13),
+  #     away_rest = c(8, 6, 6),
   #     location = "Home",
   #     roof = "outdoors",
-  #     surface = "grass",
-  #     stadium = "Bank of America Stadium"
-  #   )
-  # ) %>%
-  # rows_update(
-  #   tibble(
-  #     game_id = c("2025_19_LA_CAR", "2025_19_GB_CHI", "2025_19_BUF_JAX", "2025_19_SF_PHI", "2025_19_LAC_NE", "2025_19_HOU_PIT"),
-  #     away_moneyline = c(-550, -112, -118, 180, 164, -175),
-  #     home_moneyline = c(410, -108, -102, -218, -198, 145),
-  #     spread_line = c(-9.5, -1.5, -1.5, 3.5, 3.5, -3.5),
-  #     away_spread_odds = c(-112, -102, -102, -110, -105, -102),
-  #     home_spread_odds = c(-108, -118, -118, -110, -115, -118),
-  #     total_line = c(46.5, 46.5, 51.5, 45.5, 46.5, 39.5),
-  #     under_odds = c(-110, -110, -108, -108, -110, -110),
-  #     over_odds = c(-110, -110, -112, -112, -110, -110)
+  #     surface = c("grass", "fieldturf", "grass"),
+  #     stadium = c("Soldier Field", "Lumen Field", "Empower Field at Mile High")
   #   )
   # ) %>% 
+  # rows_update(
+  #   tibble(
+  #     game_id = c("2025_20_LA_CHI", "2025_20_SF_SEA", "2025_20_BUF_DEN"),
+  #     # away_moneyline = c(-192, 270, -112),
+  #     # home_moneyline = c(160, -340, -108),
+  #     # spread_line = c(-4.5, 7, -1.5),
+  #     # away_spread_odds = c(-110, -110, 102),
+  #     # home_spread_odds = c(-110, -110, -122),
+  #     # total_line = c(51.5, 46.5, 46.5),
+  #     # under_odds = c(-115, -110, -110),
+  #     # over_odds = c(-105, -110, -110)
+  #     gametime = c("16:30", "16:30", "16:30")
+  #   )
+  # ) %>%
   mutate(
     time_start = as.integer(str_remove(gametime, ":")),
     international = ifelse(location == "Neutral", 1, 0),
@@ -384,6 +385,7 @@ get_weather <- function(
 df_weather_last = 
   df_schedule %>% 
   filter(week == week_n - 1) %>% 
+  # filter(between(week, 2, week_n - 1)) %>% 
   select(game_id, gameday, weekday, gametime) %>% 
   left_join(df_games_coords, by = "game_id") %>% 
   mutate(
@@ -401,7 +403,8 @@ df_weather_last =
       get_weather(game_lat, game_lon, date_time)
     ),
     temp = as.integer(weather$temperature_2m * (9 / 5) + 32),
-    wind  = as.integer(weather$windspeed_10m)
+    wind  = as.integer(weather$windspeed_10m)#,
+    # precip = weather$windspeed_10m
   ) %>% 
   ungroup() %>% 
   mutate(
@@ -2131,7 +2134,7 @@ df_pred_total_spread_fin %>%
   ) +
   coord_cartesian(
     clip = "off",
-    xlim = c(37.5, 52.5)
+    xlim = c(41.5, 54.5)
   )
 
 df_pred_total_spread_fin %>% 
@@ -2771,6 +2774,7 @@ df_totals_hit_rate =
     pred_lower = pred_lower_90,
     pred_upper = pred_upper_90
   ) %>% 
+  filter(week <= 18) %>% 
   select(week, game_id, total_team, starts_with("prior_"), qb_cont, qb_cont_opp, rest_days, rest_days_opp, travel_km, travel_km_opp, pred_upper, pred_lower) %>% 
   drop_na() %>% 
   mutate(
@@ -2890,6 +2894,7 @@ df_spreads_hit_rate =
     pred_lower = pred_lower_90,
     pred_upper = pred_upper_90
   ) %>% 
+  filter(week <= 18) %>% 
   select(week, game_id, total_team, starts_with("prior_"), qb_cont, qb_cont_opp, rest_days, rest_days_opp, travel_km, travel_km_opp, pred_upper, pred_lower) %>% 
   drop_na() %>% 
   mutate(
@@ -3052,32 +3057,32 @@ df_totals_hit_rate %>%
   gtreg::tbl_listing() %>% 
   gtsummary::modify_caption("**Hit Rates by Week**")
 
-# df_totals_hit_rate %>% 
-#   # filter(qb_cont == 1) %>% 
-#   group_by(week) %>% 
+# df_totals_hit_rate %>%
+#   # filter(qb_cont == 1) %>%
+#   group_by(week) %>%
 #   summarise(
 #     n_hit_tot = sum(ind_bet_hit_close, na.rm = T),
 #     n_total_tot = n(),
 #     hit_rate_tot = round(n_hit_tot / n_total_tot * 100, 0)
-#   ) %>% 
+#   ) %>%
 #   left_join(
-#     df_spreads_hit_rate %>% 
-#       # filter(qb_cont == 1) %>% 
-#       group_by(week) %>% 
+#     df_spreads_hit_rate %>%
+#       # filter(qb_cont == 1) %>%
+#       group_by(week) %>%
 #       summarise(
 #         n_hit_spread = sum(ind_bet_hit_close, na.rm = T),
 #         n_total_spread = n(),
 #         hit_rate_spread = round(n_hit_spread / n_total_spread * 100, 0)
 #       ),
 #     by = "week"
-#   ) %>% 
+#   ) %>%
 #   mutate(
 #     across(everything(), ~ replace_na(., 0)),
 #     week = as.character(week),
 #     n_hit_ovr = n_hit_tot + n_hit_spread,
 #     n_total_ovr = n_total_tot + n_total_spread,
 #     hit_rate_ovr = round(n_hit_ovr / n_total_ovr * 100, 0)
-#   ) %>% 
+#   ) %>%
 #   rows_insert(
 #     tibble(
 #       week = "Season",
@@ -3088,19 +3093,19 @@ df_totals_hit_rate %>%
 #       n_total_spread = sum(.$n_total_spread, na.rm = T),
 #       n_total_ovr = sum(.$n_total_ovr, na.rm = T)
 #     )
-#   ) %>% 
+#   ) %>%
 #   mutate(
-#     hit_rate_tot = 
+#     hit_rate_tot =
 #       case_when(
 #         is.na(hit_rate_tot) ~ round(n_hit_tot / n_total_tot * 100, 0),
 #         .default = hit_rate_tot
 #       ),
-#     hit_rate_spread = 
+#     hit_rate_spread =
 #       case_when(
 #         is.na(hit_rate_spread) ~ round(n_hit_spread / n_total_spread * 100, 0),
 #         .default = hit_rate_spread
 #       ),
-#     hit_rate_ovr = 
+#     hit_rate_ovr =
 #       case_when(
 #         is.na(hit_rate_ovr) ~ round(n_hit_ovr / n_total_ovr * 100, 0),
 #         .default = hit_rate_ovr
@@ -3108,15 +3113,15 @@ df_totals_hit_rate %>%
 #     hit_rate_totals = str_c(n_hit_tot, "/", n_total_tot, " (", hit_rate_tot, "%)"),
 #     hit_rate_spreads = str_c(n_hit_spread, "/", n_total_spread, " (", hit_rate_spread, "%)"),
 #     hit_rate_all = str_c(n_hit_ovr, "/", n_total_ovr, " (", hit_rate_ovr, "%)")
-#   ) %>% 
-#   select(week, hit_rate_totals, hit_rate_spreads, hit_rate_all) %>% 
+#   ) %>%
+#   select(week, hit_rate_totals, hit_rate_spreads, hit_rate_all) %>%
 #   labelled::set_variable_labels(
 #     week = "Week",
 #     hit_rate_totals = "Totals",
 #     hit_rate_spreads = "Spreads",
 #     hit_rate_all = "Overall"
-#   ) %>% 
-#   gtreg::tbl_listing() %>% 
+#   ) %>%
+#   gtreg::tbl_listing() %>%
 #   gtsummary::modify_caption("**Hit Rates by Week, Using Both Open and Closing Lines**")
 
 df_totals_hit_rate %>% 
@@ -3227,21 +3232,415 @@ df_spreads_hit_rate %>%
   ) %>% 
   gtreg::tbl_listing() %>% 
   gtsummary::modify_caption("**Betting Spreads by Week**")
+
+df_totals_hit_rate_playoffs =
+  df_total_team_test_solo_boot_prior %>% 
+  left_join(
+    df_total_team_test_solo_boot_prior %>% 
+      group_by(game_id) %>% 
+      mutate(
+        team_opp = 
+          case_when(
+            row_number() == 1 ~ lead(team),
+            row_number() == 2 ~ lag(team),
+            .default = NA
+          )
+      ) %>% 
+      relocate(team_opp, .after = team) %>% 
+      ungroup() %>% 
+      select(game_id, week, team_opp, starts_with("prior_"), qb_cont, rest_days, travel_km) %>% 
+      rename_with(~ str_c(., "_opp"), everything() & -c(game_id, team_opp, week)) %>% 
+      rename(team = team_opp),
+    by = c("game_id", "team", "week")
+  ) %>% 
+  left_join(df_total_team_pred_bands_prior, by = c("week", "team")) %>%
+  left_join(df_team_total_spread_rolling %>% select(game_id, week, team, total_team), by = c("week", "team", "game_id")) %>% 
+  rename(
+    pred_lower = pred_lower_90,
+    pred_upper = pred_upper_90
+  ) %>% 
+  filter(week > 18) %>% 
+  select(week, game_id, total_team, starts_with("prior_"), qb_cont, qb_cont_opp, rest_days, rest_days_opp, travel_km, travel_km_opp, pred_upper, pred_lower) %>% 
+  drop_na() %>% 
+  mutate(
+    pred_total_team = predict(mod_total_team_svm, newdata = .)
+  ) %>% 
+  group_by(game_id) %>% 
+  summarise(
+    pred_total = sum(pred_total_team),
+    pred_total_upper = sum(pred_upper),
+    pred_total_lower = sum(pred_lower),
+    actual_total = sum(total_team)
+  ) %>% 
+  left_join(df_field_game, by = c("game_id")) %>% 
+  select(game_id, ends_with("_field"), division_game, international, wind, temp, actual_total, pred_total, pred_total_upper, pred_total_lower) %>% 
+  drop_na() %>% 
+  mutate(
+    pred_total_adj = predict(mod_total_correct_enet, newdata = .)
+  ) %>% 
+  left_join(df_szn_pbp %>% distinct(game_id, total_line) %>% rename(total_line_close = total_line), by = "game_id") %>%
+  left_join(df_lines_open %>% distinct(game_id, total_line), by = "game_id") %>%
+  mutate(
+    across(c(pred_total, pred_total_upper, pred_total_lower), ~ . + pred_total_adj, .names = "{col}_adj"),
+    ind_total_hit = 
+      case_when(
+        total_line > pred_total_upper_adj ~ "Bet Under",
+        total_line < pred_total_lower_adj ~ "Bet Over",
+        .default = "No Bet"
+      ),
+    ind_total_hit_close = 
+      case_when(
+        total_line_close > pred_total_upper_adj ~ "Bet Under",
+        total_line_close < pred_total_lower_adj ~ "Bet Over",
+        .default = "No Bet"
+      )
+  ) %>% 
+  # filter(ind_total_hit_close != "No Bet") %>% 
+  filter(ind_total_hit != "No Bet") %>%
+  # filter(ind_total_hit != "No Bet" & ind_total_hit == ind_total_hit_close) %>%
+  mutate(
+    ind_bet_hit =
+      case_when(
+        ind_total_hit == "Bet Under" & actual_total < total_line ~ 1,
+        ind_total_hit == "Bet Over" & actual_total > total_line ~ 1,
+        ind_total_hit == "Bet Under" & actual_total == total_line ~ NA,
+        ind_total_hit == "Bet Over" & actual_total == total_line ~ NA,
+        .default = 0
+      ),
+    ind_bet_hit_close = 
+      case_when(
+        ind_total_hit == "Bet Under" & actual_total < total_line_close ~ 1,
+        ind_total_hit == "Bet Over" & actual_total > total_line_close ~ 1,
+        ind_total_hit == "Bet Under" & actual_total == total_line_close ~ NA,
+        ind_total_hit == "Bet Over" & actual_total == total_line_close ~ NA,
+        .default = 0
+      ),
+    # ind_bet_hit_open = 
+    #   case_when(
+    #     ind_total_hit == "Bet Under" & actual_total < total_line ~ 1,
+    #     ind_total_hit == "Bet Over" & actual_total > total_line ~ 1,
+    #     ind_total_hit == "Bet Under" & actual_total == total_line ~ NA,
+    #     ind_total_hit == "Bet Over" & actual_total == total_line ~ NA,
+    #     .default = 0
+    #   ),
+    # ind_bet_hit = 
+    #   case_when(
+    #     ind_bet_hit_open == 1 | ind_bet_hit_close == 1 ~ 1,
+    #     is.na(ind_bet_hit_open) | is.na(ind_bet_hit_close) ~ NA,
+    #     .default = 0
+    #   ),
+    week = as.integer(str_remove(str_extract(game_id, "^2025_[0-9]+"), "^[0-9]+_"))
+  ) %>% 
+  left_join(df_qb_cont_old %>% select(game_id, week, qb_cont), by = c("game_id", "week")) %>%
+  group_by(game_id) %>%
+  filter(sum(qb_cont) == 2) %>%
+  ungroup() %>%
+  distinct()
+
+df_spreads_hit_rate_playoffs =
+  df_total_team_test_solo_boot_prior %>% 
+  left_join(
+    df_total_team_test_solo_boot_prior %>% 
+      group_by(game_id) %>% 
+      mutate(
+        team_opp = 
+          case_when(
+            row_number() == 1 ~ lead(team),
+            row_number() == 2 ~ lag(team),
+            .default = NA
+          )
+      ) %>% 
+      relocate(team_opp, .after = team) %>% 
+      ungroup() %>% 
+      select(game_id, week, team_opp, starts_with("prior_"), qb_cont, rest_days, travel_km) %>% 
+      rename_with(~ str_c(., "_opp"), everything() & -c(game_id, team_opp, week)) %>% 
+      rename(team = team_opp),
+    by = c("game_id", "team", "week")
+  ) %>% 
+  left_join(df_total_team_pred_bands_prior, by = c("week", "team")) %>%
+  left_join(df_team_total_spread_rolling %>% select(game_id, week, team, total_team), by = c("week", "team", "game_id")) %>% 
+  rename(
+    pred_lower = pred_lower_90,
+    pred_upper = pred_upper_90
+  ) %>% 
+  filter(week > 18) %>% 
+  select(week, game_id, total_team, starts_with("prior_"), qb_cont, qb_cont_opp, rest_days, rest_days_opp, travel_km, travel_km_opp, pred_upper, pred_lower) %>% 
+  drop_na() %>% 
+  mutate(
+    pred_total_team = predict(mod_total_team_svm, newdata = .)
+  ) %>% 
+  group_by(game_id) %>% 
+  summarise(
+    pred_spread = pred_total_team - lead(pred_total_team),
+    pred_spread_upper = pred_upper - lead(pred_lower),
+    pred_spread_lower = pred_lower - lead(pred_upper),
+    actual_spread = total_team - lead(total_team)
+  ) %>% 
+  left_join(df_field_game, by = c("game_id")) %>% 
+  select(game_id, ends_with("_field"), division_game, wind, temp, actual_spread, pred_spread, pred_spread_upper, pred_spread_lower) %>% 
+  drop_na() %>% 
+  ungroup() %>% 
+  mutate(
+    pred_spread_adj = predict(mod_spread_correct_enet, newdata = .)
+  ) %>% 
+  left_join(df_szn_pbp %>% distinct(game_id, spread_line) %>% rename(spread_line_close = spread_line), by = "game_id") %>%
+  left_join(df_lines_open %>% distinct(game_id, spread_line), by = "game_id") %>%
+  mutate(
+    across(c(pred_spread, pred_spread_upper, pred_spread_lower), ~ . + pred_spread_adj, .names = "{col}_adj"),
+    ind_spread_hit = 
+      case_when(
+        spread_line > pred_spread_upper_adj ~ "Bet Away",
+        spread_line < pred_spread_lower_adj ~ "Bet Home",
+        .default = "No Bet"
+      ),
+    ind_spread_hit_close = 
+      case_when(
+        spread_line_close > pred_spread_upper_adj ~ "Bet Away",
+        spread_line_close < pred_spread_lower_adj ~ "Bet Home",
+        .default = "No Bet"
+      )
+  ) %>% 
+  # filter(ind_spread_hit_close != "No Bet") %>% 
+  filter(ind_spread_hit != "No Bet") %>%
+  # filter(ind_spread_hit != "No Bet" & ind_spread_hit == ind_spread_hit_close) %>%
+  mutate(
+    ind_bet_hit =
+      case_when(
+        ind_spread_hit == "Bet Away" & actual_spread < spread_line ~ 1,
+        ind_spread_hit == "Bet Home" & actual_spread > spread_line ~ 1,
+        ind_spread_hit == "Bet Away" & actual_spread == spread_line ~ NA,
+        ind_spread_hit == "Bet Home" & actual_spread == spread_line ~ NA,
+        .default = 0
+      ),
+    ind_bet_hit_close = 
+      case_when(
+        ind_spread_hit == "Bet Away" & actual_spread < spread_line_close ~ 1,
+        ind_spread_hit == "Bet Home" & actual_spread > spread_line_close ~ 1,
+        ind_spread_hit == "Bet Away" & actual_spread == spread_line_close ~ NA,
+        ind_spread_hit == "Bet Home" & actual_spread == spread_line_close ~ NA,
+        .default = 0
+      ),
+    # ind_bet_hit_open = 
+    #   case_when(
+    #     ind_spread_hit == "Bet Away" & actual_spread < spread_line ~ 1,
+    #     ind_spread_hit == "Bet Home" & actual_spread > spread_line ~ 1,
+    #     ind_spread_hit == "Bet Away" & actual_spread == spread_line ~ NA,
+    #     ind_spread_hit == "Bet Home" & actual_spread == spread_line ~ NA,
+    #     .default = 0
+    #   ),
+    # ind_bet_hit = 
+    #   case_when(
+    #     ind_bet_hit_open == 1 | ind_bet_hit_close == 1 ~ 1,
+    #     is.na(ind_bet_hit_open) | is.na(ind_bet_hit_close) ~ NA,
+    #     .default = 0
+    #   ),
+    week = as.integer(str_remove(str_extract(game_id, "^2025_[0-9]+"), "^[0-9]+_"))
+  ) %>% 
+  left_join(df_qb_cont_old %>% select(game_id, week, qb_cont), by = c("game_id", "week")) %>%
+  group_by(game_id) %>%
+  filter(sum(qb_cont) == 2) %>%
+  ungroup() %>%
+  distinct()
+
+# df_totals_hit_rate_playoffs %>% 
+#   # filter(qb_cont == 1) %>% 
+#   group_by(week) %>% 
+#   summarise(
+#     n_hit_tot = sum(ind_bet_hit, na.rm = T),
+#     n_total_tot = n(),
+#     hit_rate_tot = round(n_hit_tot / n_total_tot * 100, 0)
+#   ) %>% 
+#   left_join(
+#     df_spreads_hit_rate_playoffs %>% 
+#       # filter(qb_cont == 1) %>% 
+#       group_by(week) %>% 
+#       summarise(
+#         n_hit_spread = sum(ind_bet_hit, na.rm = T),
+#         n_total_spread = n(),
+#         hit_rate_spread = round(n_hit_spread / n_total_spread * 100, 0)
+#       ),
+#     by = "week"
+#   ) %>% 
+#   mutate(
+#     across(everything(), ~ replace_na(., 0)),
+#     week = 
+#       case_when(
+#         week == 19 ~ "WC",
+#         week == 20 ~ "DIV",
+#         week == 21 ~ "CON",
+#         week == 22 ~ "SB",
+#         .default = NA
+#       ),
+#     # week = as.character(week),
+#     n_hit_ovr = n_hit_tot + n_hit_spread,
+#     n_total_ovr = n_total_tot + n_total_spread,
+#     hit_rate_ovr = round(n_hit_ovr / n_total_ovr * 100, 0)
+#   ) %>% 
+#   rows_insert(
+#     tibble(
+#       week = "Post-Season",
+#       n_hit_tot = sum(.$n_hit_tot, na.rm = T),
+#       n_hit_spread = sum(.$n_hit_spread, na.rm = T),
+#       n_hit_ovr = sum(.$n_hit_ovr, na.rm = T),
+#       n_total_tot = sum(.$n_total_tot, na.rm = T),
+#       n_total_spread = sum(.$n_total_spread, na.rm = T),
+#       n_total_ovr = sum(.$n_total_ovr, na.rm = T)
+#     ),
+#     by = "week"
+#   ) %>% 
+#   mutate(
+#     hit_rate_tot = 
+#       case_when(
+#         is.na(hit_rate_tot) ~ round(n_hit_tot / n_total_tot * 100, 0),
+#         .default = hit_rate_tot
+#       ),
+#     hit_rate_spread = 
+#       case_when(
+#         is.na(hit_rate_spread) ~ round(n_hit_spread / n_total_spread * 100, 0),
+#         .default = hit_rate_spread
+#       ),
+#     hit_rate_ovr = 
+#       case_when(
+#         is.na(hit_rate_ovr) ~ round(n_hit_ovr / n_total_ovr * 100, 0),
+#         .default = hit_rate_ovr
+#       ),
+#     hit_rate_totals = str_c(n_hit_tot, "/", n_total_tot, " (", hit_rate_tot, "%)"),
+#     hit_rate_spreads = str_c(n_hit_spread, "/", n_total_spread, " (", hit_rate_spread, "%)"),
+#     hit_rate_all = str_c(n_hit_ovr, "/", n_total_ovr, " (", hit_rate_ovr, "%)")
+#   ) %>% 
+#   select(week, hit_rate_totals, hit_rate_spreads, hit_rate_all) %>% 
+#   labelled::set_variable_labels(
+#     week = "Week",
+#     hit_rate_totals = "Totals",
+#     hit_rate_spreads = "Spreads",
+#     hit_rate_all = "Overall"
+#   ) %>% 
+#   gtreg::tbl_listing() %>% 
+#   gtsummary::modify_caption("**Hit Rates by Week**")
+# 
+# df_totals_hit_rate_playoffs %>% 
+#   group_by(week, ind_total_hit) %>% 
+#   summarise(
+#     n_hit = sum(ind_bet_hit),
+#     n_total = n(),
+#     hit_rate = round(n_hit / n_total * 100, 0)
+#   ) %>% 
+#   pivot_wider(
+#     id_cols = week,
+#     names_from = ind_total_hit,
+#     values_from = c(n_hit, n_total, hit_rate)
+#   ) %>% 
+#   rename_with(~ str_remove(., "Bet "), everything()) %>% 
+#   janitor::clean_names() %>% 
+#   mutate(
+#     week = as.character(week),
+#     across(everything(), ~ replace_na(., 0))
+#   ) %>% 
+#   rows_insert(
+#     tibble(
+#       week = "Season",
+#       n_hit_under = sum(.$n_hit_under, na.rm = T),
+#       n_hit_over = sum(.$n_hit_over, na.rm = T),
+#       n_total_under = sum(.$n_total_under, na.rm = T),
+#       n_total_over = sum(.$n_total_over, na.rm = T)
+#     )
+#   ) %>% 
+#   mutate(
+#     across(starts_with("n_"), ~ replace_na(., 0)),
+#     hit_rate_under = 
+#       case_when(
+#         is.na(hit_rate_under) ~ round(n_hit_under / n_total_under * 100, 0),
+#         .default = hit_rate_under
+#       ),
+#     hit_rate_over = 
+#       case_when(
+#         is.na(hit_rate_over) ~ round(n_hit_over / n_total_over * 100, 0),
+#         .default = hit_rate_over
+#       ),
+#     hit_rate_totals = str_c(n_hit_under + n_hit_over, "/", n_total_under + n_total_over, " (", round((n_hit_under + n_hit_over) / (n_total_under + n_total_over) * 100, 0), "%)"),
+#     hit_rate_totals_under = str_c(n_hit_under, "/", n_total_under, " (", hit_rate_under, "%)"),
+#     hit_rate_totals_over = str_c(n_hit_over, "/", n_total_over, " (", hit_rate_over, "%)")
+#   ) %>% 
+#   ungroup() %>% 
+#   select(week, starts_with("hit_rate_totals")) %>% 
+#   relocate(hit_rate_totals, .after = last_col()) %>% 
+#   labelled::set_variable_labels(
+#     week = "Week",
+#     hit_rate_totals = "Totals",
+#     hit_rate_totals_under = "Under Bets",
+#     hit_rate_totals_over = "Over Bets"
+#   ) %>% 
+#   gtreg::tbl_listing() %>% 
+#   gtsummary::modify_caption("**Betting Totals by Week**")
+# 
+# df_spreads_hit_rate_playoffs %>% 
+#   group_by(week, ind_spread_hit) %>% 
+#   summarise(
+#     n_hit = sum(ind_bet_hit),
+#     n_total = n(),
+#     hit_rate = round(n_hit / n_total * 100, 0)
+#   ) %>% 
+#   pivot_wider(
+#     id_cols = week,
+#     names_from = ind_spread_hit,
+#     values_from = c(n_hit, n_total, hit_rate)
+#   ) %>% 
+#   rename_with(~ str_remove(., "Bet "), everything()) %>% 
+#   janitor::clean_names() %>% 
+#   mutate(
+#     across(everything(), ~ replace_na(., 0)),
+#     week = as.character(week)
+#   ) %>% 
+#   rows_insert(
+#     tibble(
+#       week = "Season",
+#       n_hit_home = sum(.$n_hit_home, na.rm = T),
+#       n_hit_away = sum(.$n_hit_away, na.rm = T),
+#       n_total_home = sum(.$n_total_home, na.rm = T),
+#       n_total_away = sum(.$n_total_away, na.rm = T)
+#     )
+#   ) %>% 
+#   mutate(
+#     hit_rate_home = 
+#       case_when(
+#         is.na(hit_rate_home) ~ round(n_hit_home / n_total_home * 100, 0),
+#         .default = hit_rate_home
+#       ), 
+#     hit_rate_away = 
+#       case_when(
+#         is.na(hit_rate_away) ~ round(n_hit_away / n_total_away * 100, 0),
+#         .default = hit_rate_away
+#       ),
+#     hit_rate_spreads = str_c(n_hit_away + n_hit_home, "/", n_total_away + n_total_home, " (", round((n_hit_away + n_hit_home) / (n_total_away + n_total_home) * 100, 0), "%)"),
+#     hit_rate_spreads_away = str_c(n_hit_away, "/", n_total_away, " (", hit_rate_away, "%)"),
+#     hit_rate_spreads_home = str_c(n_hit_home, "/", n_total_home, " (", hit_rate_home, "%)")
+#   ) %>% 
+#   ungroup() %>% 
+#   select(week, starts_with("hit_rate_spreads")) %>% 
+#   relocate(hit_rate_spreads, .after = last_col()) %>% 
+#   labelled::set_variable_labels(
+#     week = "Week",
+#     hit_rate_spreads = "Spreads",
+#     hit_rate_spreads_away = "Away Bets",
+#     hit_rate_spreads_home = "Home Bets"
+#   ) %>% 
+#   gtreg::tbl_listing() %>% 
+#   gtsummary::modify_caption("**Betting Spreads by Week**")
 ```
 
 ### **EV-Based Approach**
 
 ```{r ev mods}
-# resid_sd = 
-#   df_total_team_train %>%
-#   mutate(
-#     pred = predict(mod_total_team_svm, .),
-#     resid = .data[["total_team"]] - pred
-#   ) %>%
-#   summarise(sd = sd(resid, na.rm = TRUE)) %>%
-#   pull(sd)
+resid_sd =
+  df_total_team_train %>%
+  mutate(
+    pred = predict(mod_total_team_svm, .),
+    resid = .data[["total_team"]] - pred
+  ) %>%
+  summarise(sd = sd(resid, na.rm = TRUE)) %>%
+  pull(sd)
 
-resid_sd = 
+resid_sd_playoffs = 
   df_playoffs_total_team_train %>%
   mutate(
     pred = predict(mod_total_playoffs_team_svm, .),
@@ -3276,7 +3675,7 @@ df_team_sims =
   mutate(
     sim = map(
       mu,
-      ~ rnorm(10000, mean = .x, sd = resid_sd)
+      ~ rnorm(10000, mean = .x, sd = resid_sd_playoffs)
     )
   )
 
@@ -3596,6 +3995,7 @@ df_team_sims_all =
   # left_join(df_total_team_pred_bands_prior, by = c("week", "team", "team_opp")) %>%
   left_join(df_team_total_spread_rolling %>% select(game_id, week, team, total_team), by = c("week", "team", "game_id")) %>% 
   drop_na(prior_rolling_off_rush_epa, prior_rolling_off_rush_epa_opp) %>% 
+  filter(week <= 18) %>% 
   mutate(
     mu = predict(mod_total_team_svm, .),
     sim = map(
@@ -3608,6 +4008,7 @@ df_game_sims_all =
   df_team_sims_all %>% 
   select(week, game_id, team, sim) %>% 
   left_join(df_field_game, by = c("game_id")) %>% 
+  drop_na(wind, temp) %>% 
   mutate(
     total_adjust = predict(mod_total_correct_enet, .),
     spread_adjust = predict(mod_spread_correct_enet, .)
@@ -3631,6 +4032,7 @@ df_totals_profit =
       ) %>% 
       ungroup() %>% 
       left_join(df_field_game, by = c("game_id")) %>% 
+      drop_na(wind, temp) %>% 
       mutate(
         total_adjust = predict(mod_total_correct_enet, .),
         total_game_adj = total_game + total_adjust
@@ -3772,6 +4174,7 @@ df_spreads_profit =
       ) %>% 
       ungroup() %>% 
       left_join(df_field_game, by = c("game_id")) %>% 
+      drop_na(wind, temp) %>% 
       mutate(
         spread_adjust = predict(mod_spread_correct_enet, .),
         spread_game_adj = spread_game + spread_adjust
@@ -4160,6 +4563,487 @@ df_spreads_profit %>%
 #   ) %>%
 #   select(clv_spread, profit) %>%
 #   cor()
+
+# Playoff hit rates:
+
+set.seed(37564)
+df_team_sims_all_playoffs = 
+  df_total_team_test_solo_boot_prior %>% 
+  left_join(
+    df_total_team_test_solo_boot_prior %>% 
+      group_by(game_id) %>% 
+      mutate(
+        team_opp = 
+          case_when(
+            row_number() == 1 ~ lead(team),
+            row_number() == 2 ~ lag(team),
+            .default = NA
+          )
+      ) %>% 
+      relocate(team_opp, .after = team) %>% 
+      ungroup() %>% 
+      select(game_id, week, team_opp, starts_with("prior_"), qb_cont, rest_days, travel_km) %>% 
+      rename_with(~ str_c(., "_opp"), everything() & -c(game_id, team_opp, week)) %>% 
+      rename(team = team_opp),
+    by = c("game_id", "team", "week")
+  ) %>% 
+  # left_join(df_total_team_pred_bands_prior, by = c("week", "team", "team_opp")) %>%
+  left_join(df_team_total_spread_rolling %>% select(game_id, week, team, total_team), by = c("week", "team", "game_id")) %>% 
+  drop_na(prior_rolling_off_rush_epa, prior_rolling_off_rush_epa_opp) %>% 
+  filter(week > 18) %>% 
+  mutate(
+    mu = predict(mod_total_playoffs_team_svm, .),
+    sim = map(
+      mu,
+      ~ rnorm(10000, mean = .x, sd = resid_sd_playoffs)
+    )
+  )
+
+df_game_sims_all_playoffs = 
+  df_team_sims_all_playoffs %>% 
+  select(week, game_id, team, sim) %>% 
+  left_join(df_field_game, by = c("game_id")) %>% 
+  drop_na(wind, temp) %>% 
+  mutate(
+    total_adjust = predict(mod_total_correct_enet, .),
+    spread_adjust = predict(mod_spread_correct_enet, .)
+  ) %>%
+  group_by(week, game_id) %>% 
+  summarise(
+    total_sim_adj = list(sim[[1]] + sim[[2]] + total_adjust),
+    spread_sim_adj = list(sim[[1]] - sim[[2]] + spread_adjust)
+  )
+  
+df_totals_profit_playoffs =
+  df_game_sims_all_playoffs %>% 
+  ungroup() %>% 
+  left_join(
+    df_team_sims_all_playoffs %>% 
+      select(week, game_id, team, mu, total_team) %>%
+      group_by(week, game_id) %>% 
+      mutate(
+        total_game = sum(mu),
+        actual_total = sum(total_team)
+      ) %>% 
+      ungroup() %>% 
+      left_join(df_field_game, by = c("game_id")) %>% 
+      drop_na(wind, temp) %>% 
+      mutate(
+        total_adjust = predict(mod_total_correct_enet, .),
+        total_game_adj = total_game + total_adjust
+      ) %>% 
+      distinct(game_id, total_game, total_adjust, total_game_adj, actual_total),
+    by = "game_id"
+  ) %>% 
+  # left_join(df_szn_pbp %>% distinct(game_id, total_line, od) %>% rename(total_line_close = total_line), by = "game_id") %>%
+  left_join(
+    df_schedule %>% 
+      select(game_id, total_line, over_odds, under_odds) %>% 
+      rename(
+        total_line_current = total_line,
+        over_odds_current = over_odds, 
+        under_odds_current = under_odds
+      ),
+    by = "game_id"
+  ) %>% 
+  left_join(df_lines_open %>% distinct(game_id, total_line) %>% mutate(over_odds = -112, under_odds = -112), by = "game_id") %>% 
+  group_by(game_id) %>% 
+  mutate(
+    p_over = map_dbl(total_sim_adj, ~ mean(.x > total_line)),
+    p_under = 1 - p_over,
+    p_over_current  = map_dbl(total_sim_adj, ~ mean(.x > total_line_current)),
+    p_under_current = 1 - p_over_current,
+    odds_over_current_dec =
+      if_else(
+        over_odds_current < 0,
+        1 + 100 / abs(over_odds_current),
+        1 + over_odds_current / 100
+      ),
+    odds_under_current_dec =
+      if_else(
+        under_odds_current < 0,
+        1 + 100 / abs(under_odds_current),
+        1 + under_odds_current / 100
+      ),
+    odds_over_dec =
+      if_else(
+        over_odds < 0,
+        1 + 100 / abs(over_odds),
+        1 + over_odds / 100
+      ),
+    odds_under_dec =
+      if_else(
+        under_odds < 0,
+        1 + 100 / abs(under_odds),
+        1 + under_odds / 100
+      ),
+    ev_over_current  = p_over_current  * (odds_over_current_dec  - 1) - (1 - p_over_current),
+    ev_under_current = p_under_current * (odds_under_current_dec - 1) - (1 - p_under_current),
+    ev_over  = p_over  * (odds_over_dec - 1) - (1 - p_over),
+    ev_under = p_under * (odds_under_dec - 1) - (1 - p_under),
+    bet_total =
+      case_when(
+        ev_over  > 0.03 ~ "Bet Over",
+        ev_under > 0.03 ~ "Bet Under",
+        .default = "No Bet"
+      ),
+    bet_current_total =
+      case_when(
+        ev_over_current  > 0.03 ~ "Bet Over",
+        ev_under_current > 0.03 ~ "Bet Under",
+        .default = "No Bet"
+      ),
+    ev_max_total = pmax(ev_over, ev_under),
+    ev_max_current_total = pmax(ev_over_current, ev_under_current),
+    side_total = case_when(
+      p_over  * odds_over_dec  > p_under * odds_under_dec  ~ "Over",
+      p_under * odds_under_dec > p_over  * odds_over_dec  ~ "Under",
+      .default = NA
+    ),
+    side_current_total = case_when(
+      p_over_current  * odds_over_current_dec  > p_under_current * odds_under_current_dec  ~ "Over",
+      p_under_current * odds_under_current_dec > p_over_current  * odds_over_current_dec  ~ "Under",
+      .default = NA
+    ),
+    p_total = if_else(side_total == "Over",  p_over,  p_under),
+    p_current_total = if_else(side_current_total == "Over",  p_over_current,  p_under_current),
+    dec_odds_total = if_else(side_total == "Over", odds_over_dec, odds_under_dec),
+    dec_odds_current_total = if_else(side_current_total == "Over", odds_over_current_dec, odds_under_current_dec),
+    kelly_total = (p_total * dec_odds_total - 1) / (dec_odds_total - 1),
+    kelly_current_total = (p_current_total * dec_odds_current_total - 1) / (dec_odds_current_total - 1),
+    stake_frac_total = pmin(0.03, 0.05 * pmax(kelly_total, 0)),
+    stake_total = stake_frac_total * 100,
+    stake_frac_current_total = pmin(0.03, 0.05 * pmax(kelly_current_total, 0)),
+    stake_current_total = stake_frac_current_total * 100
+  ) %>% 
+  ungroup() %>% 
+  left_join(df_qb_cont_old %>% select(game_id, week, qb_cont), by = c("game_id", "week")) %>% 
+  group_by(game_id) %>%
+  filter(sum(qb_cont) == 2) %>%
+  ungroup() %>%
+  distinct() %>%
+  filter(stake_total >= 0.5) %>%
+  # filter(stake_current_total >= 0.5) %>%
+  # filter(ind_total_hit != "No Bet") %>% 
+  mutate(
+    ind_bet_hit =
+      case_when(
+        side_total == "Under" & actual_total < total_line ~ 1,
+        side_total == "Over" & actual_total > total_line ~ 1,
+        side_total == "Under" & actual_total == total_line ~ NA,
+        side_total == "Over" & actual_total == total_line ~ NA,
+        .default = 0
+      ),
+    ind_bet_hit_current =
+      case_when(
+        side_current_total == "Under" & actual_total < total_line_current ~ 1,
+        side_current_total == "Over" & actual_total > total_line_current ~ 1,
+        side_current_total == "Under" & actual_total == total_line_current ~ NA,
+        side_current_total == "Over" & actual_total == total_line_current ~ NA,
+        .default = 0
+      ),
+    profit =
+      case_when(
+        ind_bet_hit == 1 ~ stake_total * (dec_odds_total - 1),
+        ind_bet_hit == 0 ~ -stake_total
+      ),
+    profit_current =
+      case_when(
+        ind_bet_hit_current == 1 ~ stake_current_total * (dec_odds_current_total - 1),
+        ind_bet_hit_current == 0 ~ -stake_current_total
+      )
+  )
+
+# view(df_totals_profit)
+
+df_spreads_profit_playoffs =
+  df_game_sims_all_playoffs %>% 
+  ungroup() %>% 
+  left_join(
+    df_team_sims_all_playoffs %>% 
+      select(week, game_id, team, mu, total_team) %>%
+      group_by(week, game_id) %>% 
+      mutate(
+        spread_game = mu - lead(mu),
+        actual_spread = total_team - lead(total_team)
+      ) %>% 
+      ungroup() %>% 
+      left_join(df_field_game, by = c("game_id")) %>% 
+      drop_na(wind, temp) %>% 
+      mutate(
+        spread_adjust = predict(mod_spread_correct_enet, .),
+        spread_game_adj = spread_game + spread_adjust
+      ) %>% 
+      distinct(game_id, spread_game, spread_adjust, spread_game_adj, actual_spread) %>% 
+      drop_na(spread_game_adj),
+    by = "game_id"
+  ) %>% 
+  # left_join(df_szn_pbp %>% distinct(game_id, total_line) %>% rename(total_line_close = total_line), by = "game_id")%>%
+  left_join(
+    df_schedule %>% 
+      select(game_id, spread_line, home_spread_odds, away_spread_odds) %>% 
+      rename(
+        spread_line_current = spread_line,
+        home_odds_current = home_spread_odds, 
+        away_odds_current = away_spread_odds
+      ),
+    by = "game_id"
+  ) %>%
+  left_join(df_lines_open %>% distinct(game_id, spread_line) %>% mutate(home_odds = -112, away_odds = -112), by = "game_id") %>% 
+  group_by(game_id) %>% 
+  mutate(
+    p_home = map_dbl(spread_sim_adj, ~ mean(.x > spread_line)),
+    p_away = 1 - p_home,
+    p_home_current = map_dbl(spread_sim_adj, ~ mean(.x > spread_line_current)),
+    p_away_current = 1 - p_home_current,
+    odds_home_dec =
+      if_else(
+        home_odds < 0,
+        1 + 100 / abs(home_odds),
+        1 + home_odds / 100
+      ),
+    odds_away_dec =
+      if_else(
+        away_odds < 0,
+        1 + 100 / abs(away_odds),
+        1 + away_odds / 100
+      ),
+    odds_home_current_dec =
+      if_else(
+        home_odds_current < 0,
+        1 + 100 / abs(home_odds_current),
+        1 + home_odds_current / 100
+      ),
+    odds_away_current_dec =
+      if_else(
+        away_odds_current < 0,
+        1 + 100 / abs(away_odds_current),
+        1 + away_odds_current / 100
+      ),
+    ev_home  = p_home  * (odds_home_dec  - 1) - (1 - p_home),
+    ev_away = p_away * (odds_away_dec - 1) - (1 - p_away),
+    ev_home_current  = p_home_current  * (odds_home_current_dec  - 1) - (1 - p_home_current),
+    ev_away_current = p_away_current * (odds_away_current_dec - 1) - (1 - p_away_current),
+    bet_spread =
+      case_when(
+        ev_home  > 0.03 ~ "Bet Home",
+        ev_away > 0.03 ~ "Bet Away",
+        .default = "No Bet"
+      ),
+    bet_spread_current =
+      case_when(
+        ev_home_current  > 0.03 ~ "Bet Home",
+        ev_away_current > 0.03 ~ "Bet Away",
+        .default = "No Bet"
+      ),
+    ev_max_spread = pmax(ev_home, ev_away),
+    ev_max_current_spread = pmax(ev_home_current, ev_away_current),
+    side_spread = case_when(
+      p_home  * odds_home_dec  > p_away * odds_away_dec  ~ "Home",
+      p_away * odds_away_dec > p_home  * odds_home_dec  ~ "Away",
+      .default = NA
+    ),
+    side_current_spread = case_when(
+      p_home_current  * odds_home_current_dec  > p_away_current * odds_away_current_dec  ~ "Home",
+      p_away_current * odds_away_current_dec > p_home_current  * odds_home_current_dec  ~ "Away",
+      .default = NA
+    ),
+    p_spread = if_else(side_spread == "Home",  p_home,  p_away),
+    p_current_spread = if_else(side_current_spread == "Home",  p_home_current,  p_away_current),
+    dec_odds_spread = if_else(side_spread == "Home", odds_home_dec, odds_away_dec),
+    dec_odds_current_spread = if_else(side_current_spread == "Home", odds_home_current_dec, odds_away_current_dec),
+    kelly_spread = (p_spread * dec_odds_spread - 1) / (dec_odds_spread - 1),
+    kelly_current_spread = (p_current_spread * dec_odds_current_spread - 1) / (dec_odds_current_spread - 1),
+    stake_frac_spread = pmin(0.03, 0.05 * pmax(kelly_spread, 0)),
+    stake_frac_current_spread = pmin(0.03, 0.05 * pmax(kelly_current_spread, 0)),
+    stake_spread = stake_frac_spread * 100,
+    stake_current_spread = stake_frac_current_spread * 100
+  ) %>% 
+  ungroup() %>% 
+  left_join(df_qb_cont_old %>% select(game_id, week, qb_cont), by = c("game_id", "week")) %>% 
+  group_by(game_id) %>%
+  filter(sum(qb_cont) == 2) %>%
+  ungroup() %>%
+  distinct() %>%
+  filter(stake_spread >= 0.5) %>%
+  # filter(stake_current_spread >= 0.5) %>%
+  mutate(
+    ind_bet_hit =
+      case_when(
+        side_spread == "Away" & actual_spread < spread_line ~ 1,
+        side_spread == "Home" & actual_spread > spread_line ~ 1,
+        side_spread == "Away" & actual_spread == spread_line ~ NA,
+        side_spread == "Home" & actual_spread == spread_line ~ NA,
+        .default = 0
+      ),
+    ind_bet_hit_current =
+      case_when(
+        side_current_spread == "Away" & actual_spread < spread_line_current ~ 1,
+        side_current_spread == "Home" & actual_spread > spread_line_current ~ 1,
+        side_current_spread == "Away" & actual_spread == spread_line_current ~ NA,
+        side_current_spread == "Home" & actual_spread == spread_line_current ~ NA,
+        .default = 0
+      ),
+    profit =
+      case_when(
+        ind_bet_hit == 1 ~ stake_spread * (dec_odds_spread - 1),
+        ind_bet_hit == 0 ~ -stake_spread
+      ),
+    profit_current =
+      case_when(
+        ind_bet_hit_current == 1 ~ stake_current_spread * (dec_odds_current_spread - 1),
+        ind_bet_hit_current == 0 ~ -stake_current_spread
+      )
+  )
+
+df_totals_profit_playoffs %>% 
+  group_by(week) %>% 
+  summarise(
+    profit_tot = sum(profit)
+  ) %>% 
+  left_join(
+    df_spreads_profit_playoffs %>% 
+      group_by(week) %>% 
+      summarise(
+        profit_spread = sum(profit)
+      ),
+    by = "week"
+  ) %>% 
+  mutate(
+    across(everything(), ~ replace_na(., 0)),
+    week = 
+      case_when(
+        week == 19 ~ "WC",
+        week == 20 ~ "DIV",
+        week == 21 ~ "CON",
+        week == 22 ~ "SB",
+        .default = NA
+      ),
+    profit_ovr = profit_tot + profit_spread
+  ) %>% 
+  rows_insert(
+    tibble(
+      week = "Season",
+      profit_tot = sum(.$profit_tot, na.rm = T),
+      profit_spread = sum(.$profit_spread, na.rm = T),
+      profit_ovr = sum(.$profit_ovr, na.rm = T)
+    ),
+    by = "week"
+  ) %>% 
+  mutate(across(starts_with("profit_"), ~ round(., 1))) %>% 
+  select(week, profit_tot, profit_spread, profit_ovr) %>% 
+  labelled::set_variable_labels(
+    week = "Week",
+    profit_tot = "Totals",
+    profit_spread = "Spreads",
+    profit_ovr = "Overall"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  gtsummary::modify_caption("**Betting Profit by Playoff Week (Units)**")
+
+df_totals_profit_playoffs %>% 
+  group_by(week, side_total) %>% 
+  summarise(
+    profit_part = sum(profit)
+  ) %>% 
+  ungroup() %>% 
+  rows_insert(
+    tibble(
+      week = 18,
+      side_total = "Under",
+      profit_part = 0
+    )
+  ) %>% 
+  mutate(
+    week = ifelse(side_total == "Under" & week == 18, 19, week)
+  ) %>% 
+  pivot_wider(
+    id_cols = week,
+    names_from = side_total,
+    values_from = c(profit_part)
+  ) %>% 
+  janitor::clean_names() %>% 
+  mutate(
+    week = 
+      case_when(
+        week == 19 ~ "WC",
+        week == 20 ~ "DIV",
+        week == 21 ~ "CON",
+        week == 22 ~ "SB",
+        .default = NA
+      ),
+    across(is.numeric, ~ round(replace_na(., 0), 1)),
+    total = over + under
+  ) %>% 
+  rows_insert(
+    tibble(
+      week = "Season",
+      under = sum(.$under, na.rm = T),
+      over = sum(.$over, na.rm = T),
+      total = sum(.$total, na.rm = T)
+    )
+  ) %>% 
+  select(week, under, over, total) %>% 
+  labelled::set_variable_labels(
+    week = "Week",
+    total = "Total",
+    under = "Unders",
+    over = "Overs"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  gtsummary::modify_caption("**Profit of Betting Totals by Playoff Week (Units)**")
+
+df_spreads_profit_playoffs %>% 
+  group_by(week, side_spread) %>% 
+  summarise(
+    profit_part = sum(profit)
+  ) %>% 
+  ungroup() %>% 
+  rows_insert(
+    tibble(
+      week = 18,
+      side_spread = "Away",
+      profit_part = 0
+    )
+  ) %>% 
+  mutate(
+    week = ifelse(side_spread == "Away" & week == 18, 19, week)
+  ) %>% 
+  pivot_wider(
+    id_cols = week,
+    names_from = side_spread,
+    values_from = c(profit_part)
+  ) %>% 
+  janitor::clean_names() %>% 
+  mutate(
+    week = 
+      case_when(
+        week == 19 ~ "WC",
+        week == 20 ~ "DIV",
+        week == 21 ~ "CON",
+        week == 22 ~ "SB",
+        .default = NA
+      ),
+    across(is.numeric, ~ round(replace_na(., 0), 1)),
+    total = home + away
+  ) %>% 
+  rows_insert(
+    tibble(
+      week = "Post-Season",
+      away = sum(.$away, na.rm = T),
+      home = sum(.$home, na.rm = T),
+      total = sum(.$total, na.rm = T)
+    )
+  ) %>% 
+  select(week, away, home, total) %>% 
+  labelled::set_variable_labels(
+    week = "Week",
+    total = "Total",
+    away = "Away",
+    home = "Home"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  gtsummary::modify_caption("**Profit of Betting Spreads by Playoff Week (Units)**")
 ```
 
 :::
