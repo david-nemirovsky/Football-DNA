@@ -9117,6 +9117,39 @@ playoffs_total_team_train_df =
 
 # saveRDS(playoffs_total_team_train_df, "playoffs_total_team_train_df.rds")
 
+id_playoffs_total_team_train_df =
+  playoffs_team_total_spread_rolling_df %>% 
+  left_join(
+    playoffs_team_total_spread_rolling_df %>% 
+      group_by(game_id) %>% 
+      mutate(
+        team_opp = 
+          case_when(
+            row_number() == 1 ~ lead(team),
+            row_number() == 2 ~ lag(team),
+            .default = NA
+          )
+      ) %>% 
+      relocate(team_opp, .after = team) %>% 
+      ungroup() %>% 
+      select(game_id, team_opp, starts_with("prior_"), qb_cont, rest_days, travel_km) %>% 
+      rename_with(~ str_c(., "_opp"), everything() & -c(game_id, team_opp)) %>% 
+      rename(team = team_opp),
+    by = c("game_id", "team")
+  ) %>% 
+  filter(season != 2025) %>% 
+  left_join(
+    szn_all_playoffs %>% 
+      distinct(game_id, season_type),
+    by = "game_id"
+  ) %>% 
+  filter(division_game == 1 | season_type == "POST") %>% 
+  filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
+  select(game_id, team, total_team, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
+  drop_na()
+
+# saveRDS(id_playoffs_total_team_train_df, "id_playoffs_total_team_train_df.rds")
+
 # GLM
 set.seed(37564)
 mod_playoffs_total_team_glm = train(total_team ~ .,

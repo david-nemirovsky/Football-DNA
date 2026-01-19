@@ -1439,8 +1439,8 @@ df_qb_cont =
   ) %>% 
   rows_update(
     tibble(
-      team = c("IND", "KC", "NYJ", "GB", "CIN", "NYG", "NO", "ATL", "TEN", "LA", "LAC", "WAS", "DET"),
-      qb_cont = 1
+      team = c("DEN"),
+      qb_cont = 0
     ),
     by = "team"
   )
@@ -1599,7 +1599,8 @@ df_total_team_test =
       rename(team = team_opp),
     by = "team"
   ) %>% 
-  drop_na(team_opp)
+  drop_na(team_opp) %>% 
+  filter(qb_cont == 1 & qb_cont_opp == 1)
 
 df_pred_total_spread = 
   df_total_team_test %>% 
@@ -2248,11 +2249,12 @@ df_pred_total_spread_fin %>%
   gtsummary::modify_caption("**Bets to Take, Updated for Current Odds**")
 
 # df_total_team_train_id = readRDS("id_total_team_train_df.rds")
+#
 # 
 # df_win_prob_resid =
 #   df_total_team_train_id %>%
 #   mutate(
-#     pred_team_total = 
+#     pred_team_total =
 #       case_when(
 #         week <= 18 ~ predict(mod_total_team_svm, newdata = .),
 #         week > 18 ~ predict(mod_total_playoffs_team_svm, newdata = .)
@@ -2354,59 +2356,220 @@ df_pred_total_spread_fin %>%
 #         win_prob_home - vegas_home_wp < 0 ~ away_moneyline,
 #         .default = NA
 #       )
-#   ) %>% 
+#   ) %>%
 #   mutate(
-#     ind_money_line_hit_new = 
+#     ind_money_line_hit_new =
 #       case_when(
-#         money_line_hit < 0 & money_line_hit == home_moneyline & abs(win_prob_home - (-home_moneyline / (-home_moneyline + 100))) > 0.1 ~ 1, 
+#         money_line_hit < 0 & money_line_hit == home_moneyline & abs(win_prob_home - (-home_moneyline / (-home_moneyline + 100))) > 0.1 ~ 1,
 #         money_line_hit > 0 & money_line_hit == home_moneyline & abs(win_prob_home - (100 / (100 + home_moneyline))) > 0.1 ~ 1,
-#         money_line_hit < 0 & money_line_hit == away_moneyline & abs(win_prob_away - (-away_moneyline / (-away_moneyline + 100))) > 0.1 ~ 1, 
+#         money_line_hit < 0 & money_line_hit == away_moneyline & abs(win_prob_away - (-away_moneyline / (-away_moneyline + 100))) > 0.1 ~ 1,
 #         money_line_hit > 0 & money_line_hit == away_moneyline & abs(win_prob_away - (100 / (100 + away_moneyline))) > 0.1 ~ 1,
 #         .default = 0
 #       )
-#   ) %>% 
-#   filter(ind_money_line_hit_new == 1) %>% 
-#   left_join(df_pred_total_spread_fin %>% select(game, team_home, team_away), by = "team_home") %>% 
-#   left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_home = team), by = "team_home") %>% 
-#   left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_away = team), by = "team_away") %>% 
-#   filter(qb_cont.x == 1 & qb_cont.y == 1) %>% 
+#   ) %>%
+#   filter(ind_money_line_hit_new == 1) %>%
+#   left_join(df_pred_total_spread_fin %>% select(game, team_home, team_away), by = "team_home") %>%
+#   left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_home = team), by = "team_home") %>%
+#   left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_away = team), by = "team_away") %>%
+#   filter(qb_cont.x == 1 & qb_cont.y == 1) %>%
 #   mutate(
-#     team_ml_hit = 
+#     team_ml_hit =
 #       case_when(
 #         money_line_hit == home_moneyline ~ team_home,
 #         money_line_hit == away_moneyline ~ team_away,
 #         .default = NA
 #       ),
-#     team_ml_hit_label = 
+#     team_ml_hit_label =
 #       case_when(
 #         money_line_hit > 0 ~ str_c(team_ml_hit, " +", money_line_hit),
 #         money_line_hit < 0 ~ str_c(team_ml_hit, " ", money_line_hit),
 #         .default = NA
 #       ),
 #     game = str_c(team_away, " @ ", team_home),
-#     win_prob_model_label = 
+#     win_prob_model_label =
 #       case_when(
 #         team_ml_hit == team_home ~ str_c(round(win_prob_home, 3) * 100, "%"),
 #         team_ml_hit == team_away ~ str_c(round(1 - win_prob_home, 3) * 100, "%"),
 #         .default = NA
 #       ),
-#     win_prob_vegas_label = 
+#     win_prob_vegas_label =
 #       case_when(
 #         team_ml_hit == team_home ~ str_c(round(vegas_home_wp, 3) * 100, "%"),
 #         team_ml_hit == team_away ~ str_c(round(1 - vegas_home_wp, 3) * 100, "%"),
 #         .default = NA
 #       )
-#   ) %>% 
-#   # arrange(desc(bet_total), desc(bet_spread)) %>% 
-#   select(game, team_ml_hit_label, win_prob_model_label, win_prob_vegas_label) %>% 
+#   ) %>%
+#   # arrange(desc(bet_total), desc(bet_spread)) %>%
+#   select(game, team_ml_hit_label, win_prob_model_label, win_prob_vegas_label) %>%
 #   labelled::set_variable_labels(
 #     game = "Game",
 #     win_prob_model_label = "Model Win Prob.",
 #     win_prob_vegas_label = "Vegas Win Prob.",
 #     team_ml_hit_label = "Moneyline to Bet"
-#   ) %>% 
-#   gtreg::tbl_listing() %>% 
+#   ) %>%
+#   gtreg::tbl_listing() %>%
 #   gtsummary::modify_caption("**Moneyline Bets to Consider, Updated for Current Odds**")
+
+df_playoffs_total_team_train_id = readRDS("id_playoffs_total_team_train_df.rds")
+
+df_win_prob_resid =
+  df_playoffs_total_team_train_id %>%
+  mutate(
+    pred_team_total =
+      # case_when(
+      #   week <= 18 ~ predict(mod_total_team_svm, newdata = .),
+      #   week > 18 ~ predict(mod_total_playoffs_team_svm, newdata = .)
+      # )
+    predict(mod_total_playoffs_team_svm, newdata = .)
+  ) %>%
+  group_by(game_id) %>%
+  mutate(
+    home_away =
+      case_when(
+        row_number() == 1 ~ "home",
+        row_number() == 2 ~ "away",
+        .default = NA
+      )
+  ) %>%
+  summarise(
+    resid_home = ifelse(home_away == "home", total_team - pred_team_total, NA)[1],
+    resid_away = ifelse(home_away == "away", total_team - pred_team_total, NA)[2]
+  ) %>%
+  drop_na()
+
+df_test_win_prob =
+  df_total_team_test %>%
+  drop_na(rest_days, prior_rolling_off_rush_epa, prior_rolling_off_rush_epa_opp) %>%
+  mutate(
+    pred_total_team_svm = predict(mod_total_playoffs_team_svm, newdata = .)
+  ) %>%
+  relocate(pred_total_team_svm, .after = team) %>%
+  select(team, team_opp, team_home, pred_total_team_svm) %>%
+  mutate(
+    home_away =
+      case_when(
+        team == team_home ~ "home",
+      .default = "away"
+    ),
+    game_id = rep(seq(1:c(nrow(.) / 2)), each = 2)
+  ) %>%
+  pivot_wider(
+    id_cols = c(game_id, team_home),
+    names_from = home_away,
+    values_from = pred_total_team_svm,
+    names_prefix = "pred_"
+  ) %>%
+  group_by(game_id) %>%
+  fill(pred_away, .direction = "up") %>%
+  drop_na() %>%
+  ungroup()
+
+B <- 10000
+n_new <- nrow(df_test_win_prob)
+set.seed(37564)
+pred_total_draws <- array(NA, dim = c(B, n_new))  # optional: store totals
+win_prob <- numeric(n_new)
+
+for(i in seq_len(n_new)) {
+  # sample B paired residuals
+  idx <- sample(nrow(df_win_prob_resid), size = B, replace = TRUE)
+  draws <- df_win_prob_resid[idx, c("resid_home", "resid_away")]
+
+  home_draws <- df_test_win_prob$pred_home[i] + draws$resid_home
+  away_draws <- df_test_win_prob$pred_away[i] + draws$resid_away
+
+  wins <- mean(home_draws > away_draws)        # home win prob
+  win_prob[i] <- wins
+  pred_total_draws[, i] <- home_draws + away_draws
+}
+
+df_test_win_prob %>%
+  mutate(win_prob_home = win_prob) %>%
+  left_join(
+    df_schedule %>%
+      filter(week == week_n) %>%
+      mutate(
+        home_wp_implied =
+          case_when(
+            home_moneyline < 0 ~ abs(home_moneyline) / (abs(home_moneyline) + 100),
+            home_moneyline >= 0 ~ 100 / (home_moneyline + 100),
+            .default = NA
+          ),
+        away_wp_implied =
+          case_when(
+            away_moneyline < 0 ~ abs(away_moneyline) / (abs(away_moneyline) + 100),
+            away_moneyline >= 0 ~ 100 / (away_moneyline + 100),
+            .default = NA
+          ),
+        vegas_home_wp = home_wp_implied / (home_wp_implied + away_wp_implied),
+        vegas_away_wp = away_wp_implied / (home_wp_implied + away_wp_implied)
+      ) %>%
+      select(home_team, vegas_home_wp, home_moneyline, away_moneyline) %>%
+      rename(team_home = home_team),
+    by = "team_home"
+  ) %>%
+  filter(abs(win_prob_home - vegas_home_wp) > 0.1) %>%
+  mutate(
+    win_prob_away = 1 - win_prob_home,
+    money_line_hit =
+      case_when(
+        win_prob_home - vegas_home_wp > 0 ~ home_moneyline,
+        win_prob_home - vegas_home_wp < 0 ~ away_moneyline,
+        .default = NA
+      )
+  ) %>%
+  mutate(
+    ind_money_line_hit_new =
+      case_when(
+        money_line_hit < 0 & money_line_hit == home_moneyline & abs(win_prob_home - (-home_moneyline / (-home_moneyline + 100))) > 0.1 ~ 1,
+        money_line_hit > 0 & money_line_hit == home_moneyline & abs(win_prob_home - (100 / (100 + home_moneyline))) > 0.1 ~ 1,
+        money_line_hit < 0 & money_line_hit == away_moneyline & abs(win_prob_away - (-away_moneyline / (-away_moneyline + 100))) > 0.1 ~ 1,
+        money_line_hit > 0 & money_line_hit == away_moneyline & abs(win_prob_away - (100 / (100 + away_moneyline))) > 0.1 ~ 1,
+        .default = 0
+      )
+  ) %>%
+  filter(ind_money_line_hit_new == 1) %>%
+  left_join(df_pred_total_spread_fin %>% select(game, team_home, team_away), by = "team_home") %>%
+  left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_home = team), by = "team_home") %>%
+  left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_away = team), by = "team_away") %>%
+  filter(qb_cont.x == 1 & qb_cont.y == 1) %>%
+  mutate(
+    team_ml_hit =
+      case_when(
+        money_line_hit == home_moneyline ~ team_home,
+        money_line_hit == away_moneyline ~ team_away,
+        .default = NA
+      ),
+    team_ml_hit_label =
+      case_when(
+        money_line_hit > 0 ~ str_c(team_ml_hit, " +", money_line_hit),
+        money_line_hit < 0 ~ str_c(team_ml_hit, " ", money_line_hit),
+        .default = NA
+      ),
+    game = str_c(team_away, " @ ", team_home),
+    win_prob_model_label =
+      case_when(
+        team_ml_hit == team_home ~ str_c(round(win_prob_home, 3) * 100, "%"),
+        team_ml_hit == team_away ~ str_c(round(1 - win_prob_home, 3) * 100, "%"),
+        .default = NA
+      ),
+    win_prob_vegas_label =
+      case_when(
+        team_ml_hit == team_home ~ str_c(round(vegas_home_wp, 3) * 100, "%"),
+        team_ml_hit == team_away ~ str_c(round(1 - vegas_home_wp, 3) * 100, "%"),
+        .default = NA
+      )
+  ) %>%
+  # arrange(desc(bet_total), desc(bet_spread)) %>%
+  select(game, team_ml_hit_label, win_prob_model_label, win_prob_vegas_label) %>%
+  labelled::set_variable_labels(
+    game = "Game",
+    win_prob_model_label = "Model Win Prob.",
+    win_prob_vegas_label = "Vegas Win Prob.",
+    team_ml_hit_label = "Moneyline to Bet"
+  ) %>%
+  gtreg::tbl_listing() %>%
+  gtsummary::modify_caption("**Moneyline Bets to Consider, Updated for Current Odds**")
 ```
 
 ### **Projected Team Scores**
