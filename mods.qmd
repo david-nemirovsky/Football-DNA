@@ -5072,6 +5072,14 @@ df_totals_profit_playoffs %>%
       ),
     by = "week"
   ) %>% 
+  rows_insert(
+    tibble(
+      week = 21,
+      profit_tot = 0,
+      profit_spread = 0
+    ),
+    by = "week"
+  ) %>% 
   mutate(
     across(everything(), ~ replace_na(., 0)),
     week = 
@@ -5115,7 +5123,16 @@ df_totals_profit_playoffs %>%
       week = 18,
       side_total = "Under",
       profit_part = 0
-    )
+    ),
+    by = "week"
+  ) %>% 
+  rows_insert(
+    tibble(
+      week = 21,
+      side_total = c("Under", "Over"),
+      profit_part = 0
+    ),
+    by = "week"
   ) %>% 
   mutate(
     week = ifelse(side_total == "Under" & week == 18, 19, week)
@@ -5168,6 +5185,14 @@ df_spreads_profit_playoffs %>%
       side_spread = "Away",
       profit_part = 0
     )
+  ) %>% 
+  rows_insert(
+    tibble(
+      week = 21,
+      side_spread = c("Away", "Home"),
+      profit_part = 0
+    ),
+    by = "week"
   ) %>% 
   mutate(
     week = ifelse(side_spread == "Away" & week == 18, 19, week)
