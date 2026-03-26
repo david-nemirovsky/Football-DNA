@@ -58,8 +58,8 @@ teams_colors_logos = teams_colors_logos %>% filter(team_abbr %nin% c("OAK", "SD"
 ```{r load data and mods}
 #| include: false
 
-# week_n = ceiling(as.integer(Sys.Date() - as.Date("2025-09-07")) / 7)
-week_n = ceiling(as.integer(Sys.Date() - as.Date("2025-09-07")) / 7)
+week_n = ifelse(ceiling(as.integer(Sys.Date() - as.Date("2025-09-07")) / 7) > 18, 18, ceiling(as.integer(Sys.Date() - as.Date("2025-09-07")) / 7))
+# week_n = 18
 n_targets = round(week_n * 4, -1)
 n_touches = round(week_n * 8, -1)
 n_att = week_n * 15

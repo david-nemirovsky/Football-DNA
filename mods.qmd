@@ -13,13 +13,15 @@ editor: source
 ---
 
 :::{.callout-note}
-Updated as of `r format(Sys.time(), '%A, %B %d, %Y at %X')` 
+Updated as of Tuesday, January 27, 2026 at 7:21:32 PM 
 :::
 
 ## **My Model vs Vegas (Based on Opening Bet Lines)**
 
 ```{r setup}
 #| include: false
+
+# Updated as of `r format(Sys.time(), '%A, %B %d, %Y at %X')`
 
 library(tidyverse)
 library(nflfastR)
@@ -67,7 +69,7 @@ teams_colors_logos = teams_colors_logos %>% filter(team_abbr %nin% c("OAK", "SD"
 #| include: false
 
 # week_n = ceiling(as.integer(Sys.Date() - as.Date("2025-09-07")) / 7)
-week_n = ceiling(as.integer(Sys.Date() - as.Date("2025-09-07")) / 7) + 1
+week_n = ifelse(ceiling(as.integer(Sys.Date() - as.Date("2025-09-07")) / 7) + 1 > 22, 22, ceiling(as.integer(Sys.Date() - as.Date("2025-09-07")) / 7))
 
 # Load 2025 data
 df_szn_pbp = 
