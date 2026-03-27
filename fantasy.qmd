@@ -86,6 +86,10 @@ df_fantasy =
     )
 ```
 
+## **Pre-Season Rankings**
+
+Download Rankings Here: [2025 Fantasy Draft Rankings 0.5PPR](fpts_rank_all_fin_2025.xlsx)
+
 ## **Fantasy Football Stats**
 
 ::: panel-tabset
