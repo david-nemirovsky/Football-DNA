@@ -31,6 +31,7 @@ library(rsample)
 # library(gbm)
 # library(e1071)
 # library(gtsummary)
+library(reactable)
 
 knitr::opts_chunk$set(
   fig.width = 7,
@@ -89,6 +90,918 @@ df_fantasy =
 ## **Pre-Season Rankings**
 
 Download Rankings Here: [2025 Fantasy Draft Rankings 0.5PPR](fpts_rank_all_fin_2025.xlsx)
+
+::: panel-tabset
+
+### **QB**
+
+```{r qb tbl}
+df_qb_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_qb_fantasy_table.rds"))
+
+prob_pal =
+  scales::col_numeric(
+    palette = c("#d73027", "#fee08b", "#1a9850"),
+    domain = c(0, 1)
+  )
+
+edge_pal_qb =
+  scales::col_numeric(
+    palette = c("#d73027", "#fee08b", "#1a9850"),
+    domain = c(-100, 100)
+  )
+
+reactable(
+  df_qb_fantasy_table,
+  searchable = TRUE,
+  filterable = TRUE,
+  sortable = TRUE,
+  striped = TRUE,
+  highlight = TRUE,
+  bordered = TRUE,
+  defaultPageSize = 100,
+  defaultSorted = "qb_rank_svm",
+  defaultSortOrder = "asc",
+  columns = list(
+
+    player_display_name = colDef(
+      name = "Player",
+      minWidth = 100
+    ),
+
+    team = colDef(
+      name = "Team",
+      minWidth = 45
+    ),
+
+    qb_rank_svm = colDef(
+      name = "Rank",
+      minWidth = 45
+    ),
+
+    adp_qb = colDef(
+      name = "ADP",
+      minWidth = 45
+    ),
+
+    rank_edge_qb = colDef(
+      name = "Rank Edge",
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = edge_pal_qb(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+    
+    pred_fpts = colDef(
+      name = "Model Projection",
+      minWidth = 60
+    ),
+    
+    market_proj_qb = colDef(
+      name = "Market Projection",
+      minWidth = 60
+    ),
+
+    market_edge_qb = colDef(
+      name = "Projection Edge",
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = edge_pal_qb(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+    
+    pred_rank_mean = colDef(
+      name = "Mean finish",
+      minWidth = 60
+    ),
+
+    exp_finish_edge = colDef(
+      name = "Finish Edge",
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = edge_pal_qb(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+    
+    p_adp_beat = colDef(
+      name = "Beat ADP",
+      format = colFormat(percent = TRUE, digits = 1),
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = prob_pal(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+    
+    pred_fpts_10p = colDef(
+      name = "Floor",
+      minWidth = 60
+    ),
+    
+    pred_fpts_90p = colDef(
+      name = "Ceiling",
+      minWidth = 60
+    ),
+    
+    prop_top_1 = colDef(
+      name = "QB1",
+      format = colFormat(percent = TRUE, digits = 1),
+      style = function(value) {
+
+        text_color <- ifelse(value > .55, "white", "black")
+
+        list(
+          background = prob_pal(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+
+    prop_top_5 = colDef(
+      name = "QB5",
+      format = colFormat(percent = TRUE, digits = 1),
+      style = function(value) {
+
+        text_color <- ifelse(value > .55, "white", "black")
+
+        list(
+          background = prob_pal(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+
+    prop_top_12 = colDef(
+      name = "QB12",
+      format = colFormat(percent = TRUE, digits = 1),
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = prob_pal(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+
+    # prop_top_24 = colDef(
+    #   name = "RB24",
+    #   format = colFormat(percent = TRUE, digits = 1),
+    #   style = function(value) {
+    #   
+    #     text_color <- ifelse(value > .55, "white", "black")
+    #   
+    #     list(
+    #       background = prob_pal(value),
+    #       color = text_color,
+    #       fontWeight = "bold"
+    #     )
+    #   },
+    #   minWidth = 60
+    # ),
+
+    prop_below_24 = colDef(
+      name = "> QB24",
+      format = colFormat(percent = TRUE, digits = 1),
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = prob_pal(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    )
+  )
+)
+
+```
+
+### **RB**
+
+```{r rb tbl}
+df_rb_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_rb_fantasy_table.rds"))
+
+prob_pal =
+  scales::col_numeric(
+    palette = c("#d73027", "#fee08b", "#1a9850"),
+    domain = c(0, 1)
+  )
+
+edge_pal_rb =
+  scales::col_numeric(
+    palette = c("#d73027", "#fee08b", "#1a9850"),
+    domain = c(-75, 75)
+  )
+
+reactable(
+  df_rb_fantasy_table,
+  searchable = TRUE,
+  filterable = TRUE,
+  sortable = TRUE,
+  striped = TRUE,
+  highlight = TRUE,
+  bordered = TRUE,
+  defaultPageSize = 100,
+  defaultSorted = "rb_rank_svm",
+  defaultSortOrder = "asc",
+  columns = list(
+
+    player_display_name = colDef(
+      name = "Player",
+      minWidth = 100
+    ),
+
+    team = colDef(
+      name = "Team",
+      minWidth = 45
+    ),
+
+    rb_rank_svm = colDef(
+      name = "Rank",
+      minWidth = 45
+    ),
+
+    adp_rb = colDef(
+      name = "ADP",
+      minWidth = 45
+    ),
+
+    rank_edge_rb = colDef(
+      name = "Rank Edge",
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = edge_pal_rb(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+    
+    pred_fpts = colDef(
+      name = "Model Projection",
+      minWidth = 60
+    ),
+    
+    market_proj_rb = colDef(
+      name = "Market Projection",
+      minWidth = 60
+    ),
+
+    market_edge_rb = colDef(
+      name = "Projection Edge",
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = edge_pal_rb(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+    
+    pred_rank_mean = colDef(
+      name = "Mean finish",
+      minWidth = 60
+    ),
+
+    exp_finish_edge = colDef(
+      name = "Finish Edge",
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = edge_pal_rb(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+    
+    p_adp_beat = colDef(
+      name = "Beat ADP",
+      format = colFormat(percent = TRUE, digits = 1),
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = prob_pal(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+    
+    pred_fpts_10p = colDef(
+      name = "Floor",
+      minWidth = 60
+    ),
+    
+    pred_fpts_90p = colDef(
+      name = "Ceiling",
+      minWidth = 60
+    ),
+    
+    # prop_top_1 = colDef(
+    #   name = "WR1",
+    #   format = colFormat(percent = TRUE, digits = 1),
+    #   style = function(value) {
+    #   
+    #     text_color <- ifelse(value > .55, "white", "black")
+    #   
+    #     list(
+    #       background = prob_pal(value),
+    #       color = text_color,
+    #       fontWeight = "bold"
+    #     )
+    #   },
+    #   minWidth = 60
+    # ),
+    # 
+    # prop_top_5 = colDef(
+    #   name = "WR5",
+    #   format = colFormat(percent = TRUE, digits = 1),
+    #   style = function(value) {
+    #   
+    #     text_color <- ifelse(value > .55, "white", "black")
+    #   
+    #     list(
+    #       background = prob_pal(value),
+    #       color = text_color,
+    #       fontWeight = "bold"
+    #     )
+    #   },
+    #   minWidth = 60
+    # ),
+
+    prop_top_12 = colDef(
+      name = "RB12",
+      format = colFormat(percent = TRUE, digits = 1),
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = prob_pal(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+
+    prop_top_24 = colDef(
+      name = "RB24",
+      format = colFormat(percent = TRUE, digits = 1),
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = prob_pal(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+
+    prop_below_36 = colDef(
+      name = "> RB36",
+      format = colFormat(percent = TRUE, digits = 1),
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = prob_pal(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    )
+  )
+)
+```
+
+### **WR**
+
+```{r wr tbl}
+df_wr_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_wr_fantasy_table.rds"))
+
+prob_pal =
+  scales::col_numeric(
+    palette = c("#d73027", "#fee08b", "#1a9850"),
+    domain = c(0, 1)
+  )
+
+edge_pal =
+  scales::col_numeric(
+    palette = c("#d73027", "#fee08b", "#1a9850"),
+    domain = c(-130, 130)
+  )
+
+reactable(
+  df_wr_fantasy_table,
+  searchable = TRUE,
+  filterable = TRUE,
+  sortable = TRUE,
+  striped = TRUE,
+  highlight = TRUE,
+  bordered = TRUE,
+  defaultPageSize = 100,
+  defaultSorted = "wr_rank_svm",
+  defaultSortOrder = "asc",
+  columns = list(
+
+    player_display_name = colDef(
+      name = "Player",
+      minWidth = 100
+    ),
+
+    team = colDef(
+      name = "Team",
+      minWidth = 45
+    ),
+
+    wr_rank_svm = colDef(
+      name = "Rank",
+      minWidth = 45
+    ),
+
+    adp_wr = colDef(
+      name = "ADP",
+      minWidth = 45
+    ),
+
+    rank_edge_wr = colDef(
+      name = "Rank Edge",
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = edge_pal(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+    
+    pred_fpts = colDef(
+      name = "Model Projection",
+      minWidth = 60
+    ),
+    
+    market_proj_wr = colDef(
+      name = "Market Projection",
+      minWidth = 60
+    ),
+
+    market_edge_wr = colDef(
+      name = "Projection Edge",
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = edge_pal(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+    
+    pred_rank_mean = colDef(
+      name = "Mean finish",
+      minWidth = 60
+    ),
+
+    exp_finish_edge = colDef(
+      name = "Finish Edge",
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = edge_pal(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+    
+    p_adp_beat = colDef(
+      name = "Beat ADP",
+      format = colFormat(percent = TRUE, digits = 1),
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = prob_pal(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+    
+    pred_fpts_10p = colDef(
+      name = "Floor",
+      minWidth = 60
+    ),
+    
+    pred_fpts_90p = colDef(
+      name = "Ceiling",
+      minWidth = 60
+    ),
+    
+    # prop_top_1 = colDef(
+    #   name = "WR1",
+    #   format = colFormat(percent = TRUE, digits = 1),
+    #   style = function(value) {
+    #   
+    #     text_color <- ifelse(value > .55, "white", "black")
+    #   
+    #     list(
+    #       background = prob_pal(value),
+    #       color = text_color,
+    #       fontWeight = "bold"
+    #     )
+    #   },
+    #   minWidth = 60
+    # ),
+    # 
+    # prop_top_5 = colDef(
+    #   name = "WR5",
+    #   format = colFormat(percent = TRUE, digits = 1),
+    #   style = function(value) {
+    #   
+    #     text_color <- ifelse(value > .55, "white", "black")
+    #   
+    #     list(
+    #       background = prob_pal(value),
+    #       color = text_color,
+    #       fontWeight = "bold"
+    #     )
+    #   },
+    #   minWidth = 60
+    # ),
+
+    prop_top_12 = colDef(
+      name = "WR12",
+      format = colFormat(percent = TRUE, digits = 1),
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = prob_pal(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+
+    prop_top_24 = colDef(
+      name = "WR24",
+      format = colFormat(percent = TRUE, digits = 1),
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = prob_pal(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+
+    prop_top_36 = colDef(
+      name = "WR36",
+      format = colFormat(percent = TRUE, digits = 1),
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = prob_pal(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+
+    # prop_below_36 = colDef(
+    #   name = "> WR36",
+    #   format = colFormat(percent = TRUE, digits = 1),
+    #   style = function(value) {
+    #   
+    #     text_color <- ifelse(value > .55, "white", "black")
+    #   
+    #     list(
+    #       background = prob_pal(value),
+    #       color = text_color,
+    #       fontWeight = "bold"
+    #     )
+    #   },
+    #   minWidth = 60
+    # ),
+
+    prop_below_50 = colDef(
+      name = "> WR50",
+      format = colFormat(percent = TRUE, digits = 1),
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = prob_pal(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    )
+  )
+)
+```
+
+### **TE**
+
+```{r te tbl}
+df_te_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_te_fantasy_table.rds"))
+
+prob_pal =
+  scales::col_numeric(
+    palette = c("#d73027", "#fee08b", "#1a9850"),
+    domain = c(0, 1)
+  )
+
+edge_pal_te =
+  scales::col_numeric(
+    palette = c("#d73027", "#fee08b", "#1a9850"),
+    domain = c(-75, 75)
+  )
+
+reactable(
+  df_te_fantasy_table,
+  searchable = TRUE,
+  filterable = TRUE,
+  sortable = TRUE,
+  striped = TRUE,
+  highlight = TRUE,
+  bordered = TRUE,
+  defaultPageSize = 100,
+  defaultSorted = "te_rank_boost",
+  defaultSortOrder = "asc",
+  columns = list(
+
+    player_display_name = colDef(
+      name = "Player",
+      minWidth = 100
+    ),
+
+    team = colDef(
+      name = "Team",
+      minWidth = 45
+    ),
+
+    te_rank_boost = colDef(
+      name = "Rank",
+      minWidth = 45
+    ),
+
+    adp_te = colDef(
+      name = "ADP",
+      minWidth = 45
+    ),
+
+    rank_edge_te = colDef(
+      name = "Rank Edge",
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = edge_pal_te(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+    
+    pred_fpts = colDef(
+      name = "Model Projection",
+      minWidth = 60
+    ),
+    
+    market_proj_te = colDef(
+      name = "Market Projection",
+      minWidth = 60
+    ),
+
+    market_edge_te = colDef(
+      name = "Projection Edge",
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = edge_pal_te(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+    
+    pred_rank_mean = colDef(
+      name = "Mean finish",
+      minWidth = 60
+    ),
+
+    exp_finish_edge = colDef(
+      name = "Finish Edge",
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = edge_pal_te(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+    
+    p_adp_beat = colDef(
+      name = "Beat ADP",
+      format = colFormat(percent = TRUE, digits = 1),
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = prob_pal(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+    
+    pred_fpts_10p = colDef(
+      name = "Floor",
+      minWidth = 60
+    ),
+    
+    pred_fpts_90p = colDef(
+      name = "Ceiling",
+      minWidth = 60
+    ),
+    
+    prop_top_1 = colDef(
+      name = "TE1",
+      format = colFormat(percent = TRUE, digits = 1),
+      style = function(value) {
+
+        text_color <- ifelse(value > .55, "white", "black")
+
+        list(
+          background = prob_pal(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+
+    prop_top_5 = colDef(
+      name = "TE5",
+      format = colFormat(percent = TRUE, digits = 1),
+      style = function(value) {
+
+        text_color <- ifelse(value > .55, "white", "black")
+
+        list(
+          background = prob_pal(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+
+    prop_top_12 = colDef(
+      name = "TE12",
+      format = colFormat(percent = TRUE, digits = 1),
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = prob_pal(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    ),
+
+    # prop_top_24 = colDef(
+    #   name = "RB24",
+    #   format = colFormat(percent = TRUE, digits = 1),
+    #   style = function(value) {
+    #   
+    #     text_color <- ifelse(value > .55, "white", "black")
+    #   
+    #     list(
+    #       background = prob_pal(value),
+    #       color = text_color,
+    #       fontWeight = "bold"
+    #     )
+    #   },
+    #   minWidth = 60
+    # ),
+
+    prop_below_24 = colDef(
+      name = "> TE24",
+      format = colFormat(percent = TRUE, digits = 1),
+      style = function(value) {
+      
+        text_color <- ifelse(value > .55, "white", "black")
+      
+        list(
+          background = prob_pal(value),
+          color = text_color,
+          fontWeight = "bold"
+        )
+      },
+      minWidth = 60
+    )
+  )
+)
+```
+
 
 ## **Fantasy Football Stats**
 
