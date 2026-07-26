@@ -15965,15 +15965,15 @@ df_wr_project_fin_adp =
   ) %>% 
   #filter(is.na(avg))
   mutate(
-    adp_wr = as.integer(str_extract(pos_rank_adp, "\\d+")),
-    rank_edge_wr = adp_wr - wr_rank_svm
+    adp = as.integer(str_extract(pos_rank_adp, "\\d+")),
+    rank_edge = adp - wr_rank_svm
   )
 
 market_curve_wr = 
   df_wr_project_fin_adp %>% 
-  drop_na(rank_edge_wr) %>% 
+  drop_na(rank_edge) %>% 
   gam(
-    pred_fpts ~ s(adp_wr),
+    pred_fpts ~ s(adp),
     data = .,
     method = "REML"
   )
@@ -15981,13 +15981,13 @@ market_curve_wr =
 df_wr_project_market = 
   df_wr_project_fin_adp %>%
   mutate(
-    market_proj_wr =
+    market_proj =
       predict(
         market_curve_wr,
         newdata = .
       ),
-    market_edge_wr = pred_fpts - market_proj_wr,
-    exp_finish_edge = adp_wr - pred_rank_mean
+    market_edge = pred_fpts - market_proj,
+    exp_finish_edge = adp - pred_rank_mean
   )
 
 view(df_wr_project_market)
@@ -15996,12 +15996,12 @@ df_adp_beat =
   df_fpts_wr_sim %>% 
   left_join(
     df_wr_project_fin_adp %>% 
-      select(team, player_display_name, adp_wr),
+      select(team, player_display_name, adp),
     by = c("team", "player_display_name")
   ) %>% 
   group_by(player_id) %>% 
   summarise(
-    p_adp_beat = mean(fpts_sim_rank < adp_wr)
+    prop_adp_beat = mean(fpts_sim_rank < adp)
   )
 
 df_wr_project_market_fin = 
@@ -16013,11 +16013,30 @@ view(df_wr_project_market_fin)
 df_wr_fantasy_table = 
   df_wr_project_market_fin %>% 
   mutate(
-    across(c(market_proj_wr, market_edge_wr, pred_rank_mean, exp_finish_edge), ~ round(., 1))
+    across(c(market_proj, market_edge, pred_rank_med, exp_finish_edge), ~ round(., 1))
   ) %>% 
-  select(player_display_name, team, wr_rank_svm, adp_wr, rank_edge_wr, pred_fpts, market_proj_wr, market_edge_wr, pred_rank_mean, exp_finish_edge, p_adp_beat, pred_fpts_10p, pred_fpts_90p, starts_with("prop_")) %>% 
+  rename(rank_mod = wr_rank_svm) %>% 
+  select(player_display_name, team, rank_mod, adp, rank_edge, pred_rank_med, pred_fpts, market_proj, market_edge, prop_adp_beat, pred_fpts_10p, pred_fpts_90p, starts_with("prop_")) %>% 
   select(-c(prop_top_1, prop_top_5)) %>% 
-  drop_na()
+  drop_na() %>% 
+  labelled::set_variable_labels(
+    "player_display_name" = "Player", 
+    "team" = "Team", 
+    "rank_mod" = "Rank", 
+    "adp" = "ADP", 
+    "rank_edge" = "Rank Edge", 
+    "pred_rank_med" = "Median Finish", 
+    "pred_fpts" = "Model Projection", 
+    "market_proj" = "Market Projection", 
+    "market_edge" = "Market Edge", 
+    "prop_adp_beat" = "Beat ADP", 
+    "pred_fpts_10p" = "Floor", 
+    "pred_fpts_90p" = "Ceiling", 
+    "prop_top_12" = "WR12", 
+    "prop_top_24" = "WR24", 
+    "prop_top_36" = "WR36", 
+    "prop_below_50" = "> WR50"
+  )
 
 saveRDS(df_wr_fantasy_table, str_c("data/fantasy_data/", "df_wr_fantasy_table.rds"))
 
@@ -19042,15 +19061,15 @@ df_rb_project_fin_adp =
   ) %>% 
   # filter(is.na(adp))
   mutate(
-    adp_rb = as.integer(str_extract(pos_rank_adp, "\\d+")),
-    rank_edge_rb = adp_rb - rb_rank_svm
+    adp = as.integer(str_extract(pos_rank_adp, "\\d+")),
+    rank_edge = adp - rb_rank_svm
   )
 
 market_curve_rb = 
   df_rb_project_fin_adp %>% 
-  drop_na(rank_edge_rb) %>% 
+  drop_na(rank_edge) %>% 
   gam(
-    pred_fpts ~ s(adp_rb),
+    pred_fpts ~ s(adp),
     data = .,
     method = "REML"
   )
@@ -19058,13 +19077,13 @@ market_curve_rb =
 df_rb_project_market = 
   df_rb_project_fin_adp %>%
   mutate(
-    market_proj_rb =
+    market_proj =
       predict(
         market_curve_rb,
         newdata = .
       ),
-    market_edge_rb = pred_fpts - market_proj_rb,
-    exp_finish_edge = adp_rb - pred_rank_mean
+    market_edge = pred_fpts - market_proj,
+    exp_finish_edge = adp - pred_rank_mean
   )
 
 view(df_rb_project_market)
@@ -19073,12 +19092,12 @@ df_adp_beat_rb =
   df_fpts_rb_sim %>% 
   left_join(
     df_rb_project_fin_adp %>% 
-      select(team, player_display_name, adp_rb),
+      select(team, player_display_name, adp),
     by = c("team", "player_display_name")
   ) %>% 
   group_by(player_id) %>% 
   summarise(
-    p_adp_beat = mean(fpts_sim_rank < adp_rb)
+    prop_adp_beat = mean(fpts_sim_rank < adp)
   )
 
 df_rb_project_market_fin = 
@@ -19090,11 +19109,29 @@ view(df_rb_project_market_fin)
 df_rb_fantasy_table = 
   df_rb_project_market_fin %>% 
   mutate(
-    across(c(market_proj_rb, market_edge_rb, pred_rank_mean, exp_finish_edge), ~ round(., 1))
+    across(c(market_proj, market_edge, pred_rank_med, exp_finish_edge), ~ round(., 1))
   ) %>% 
-  select(player_display_name, team, rb_rank_svm, adp_rb, rank_edge_rb, pred_fpts, market_proj_rb, market_edge_rb, pred_rank_mean, exp_finish_edge, p_adp_beat, pred_fpts_10p, pred_fpts_90p, starts_with("prop_")) %>% 
+  rename(rank_mod = rb_rank_svm) %>% 
+  select(player_display_name, team, rank_mod, adp, rank_edge, pred_rank_med, pred_fpts, market_proj, market_edge, prop_adp_beat, pred_fpts_10p, pred_fpts_90p, starts_with("prop_")) %>% 
   select(-c(prop_top_1, prop_top_5)) %>% 
-  drop_na()
+  drop_na() %>% 
+  labelled::set_variable_labels(
+    "player_display_name" = "Player", 
+    "team" = "Team", 
+    "rank_mod" = "Rank", 
+    "adp" = "ADP", 
+    "rank_edge" = "Rank Edge", 
+    "pred_rank_med" = "Median Finish", 
+    "pred_fpts" = "Model Projection", 
+    "market_proj" = "Market Projection", 
+    "market_edge" = "Market Edge", 
+    "prop_adp_beat" = "Beat ADP", 
+    "pred_fpts_10p" = "Floor", 
+    "pred_fpts_90p" = "Ceiling", 
+    "prop_top_12" = "RB12", 
+    "prop_top_24" = "RB24", 
+    "prop_below_36" = "> RB36"
+  )
 
 saveRDS(df_rb_fantasy_table, str_c("data/fantasy_data/", "df_rb_fantasy_table.rds"))
 
@@ -21386,15 +21423,15 @@ df_te_project_fin_adp =
   ) %>% 
   # filter(is.na(adp))
   mutate(
-    adp_te = as.integer(str_extract(pos_rank_adp, "\\d+")),
-    rank_edge_te = adp_te - te_rank_boost
+    adp = as.integer(str_extract(pos_rank_adp, "\\d+")),
+    rank_edge = adp - te_rank_boost
   )
 
 market_curve_te = 
   df_te_project_fin_adp %>% 
-  drop_na(rank_edge_te) %>% 
+  drop_na(rank_edge) %>% 
   gam(
-    pred_fpts ~ s(adp_te),
+    pred_fpts ~ s(adp),
     data = .,
     method = "REML"
   )
@@ -21402,13 +21439,13 @@ market_curve_te =
 df_te_project_market = 
   df_te_project_fin_adp %>%
   mutate(
-    market_proj_te =
+    market_proj =
       predict(
         market_curve_te,
         newdata = .
       ),
-    market_edge_te = pred_fpts - market_proj_te,
-    exp_finish_edge = adp_te - pred_rank_mean
+    market_edge = pred_fpts - market_proj,
+    exp_finish_edge = adp - pred_rank_mean
   )
 
 view(df_te_project_market)
@@ -21417,12 +21454,12 @@ df_adp_beat_te =
   df_fpts_te_sim %>% 
   left_join(
     df_te_project_fin_adp %>% 
-      select(team, player_display_name, adp_te),
+      select(team, player_display_name, adp),
     by = c("team", "player_display_name")
   ) %>% 
   group_by(player_id) %>% 
   summarise(
-    p_adp_beat = mean(fpts_sim_rank < adp_te)
+    prop_adp_beat = mean(fpts_sim_rank < adp)
   )
 
 df_te_project_market_fin = 
@@ -21434,11 +21471,30 @@ view(df_te_project_market_fin)
 df_te_fantasy_table =
   df_te_project_market_fin %>% 
   mutate(
-    across(c(market_proj_te, market_edge_te, pred_rank_mean, exp_finish_edge), ~ round(., 1))
+    across(c(market_proj, market_edge, pred_rank_med, exp_finish_edge), ~ round(., 1))
   ) %>% 
-  select(player_display_name, team, te_rank_boost, adp_te, rank_edge_te, pred_fpts, market_proj_te, market_edge_te, pred_rank_mean, exp_finish_edge, p_adp_beat, pred_fpts_10p, pred_fpts_90p, starts_with("prop_")) %>% 
+  rename(rank_mod = te_rank_boost) %>% 
+  select(player_display_name, team, rank_mod, adp, rank_edge, pred_rank_med, pred_fpts, market_proj, market_edge, prop_adp_beat, pred_fpts_10p, pred_fpts_90p, starts_with("prop_")) %>% 
   select(-c(prop_top_24, prop_below_36)) %>% 
-  drop_na()
+  drop_na() %>% 
+  labelled::set_variable_labels(
+    "player_display_name" = "Player", 
+    "team" = "Team", 
+    "rank_mod" = "Rank", 
+    "adp" = "ADP", 
+    "rank_edge" = "Rank Edge", 
+    "pred_rank_med" = "Median Finish", 
+    "pred_fpts" = "Model Projection", 
+    "market_proj" = "Market Projection", 
+    "market_edge" = "Market Edge", 
+    "prop_adp_beat" = "Beat ADP", 
+    "pred_fpts_10p" = "Floor", 
+    "pred_fpts_90p" = "Ceiling", 
+    "prop_top_1" = "TE1", 
+    "prop_top_5" = "TE5", 
+    "prop_top_12" = "TE12", 
+    "prop_below_24" = "> TE24"
+  )
 
 saveRDS(df_te_fantasy_table, str_c("data/fantasy_data/", "df_te_fantasy_table.rds"))
 
@@ -24096,15 +24152,15 @@ df_qb_project_fin_adp =
   ) %>% 
   # filter(is.na(adp))
   mutate(
-    adp_qb = as.integer(str_extract(pos_rank_adp, "\\d+")),
-    rank_edge_qb = adp_qb - qb_rank_svm
+    adp = as.integer(str_extract(pos_rank_adp, "\\d+")),
+    rank_edge = adp - qb_rank_svm
   )
 
 market_curve_qb = 
   df_qb_project_fin_adp %>% 
-  drop_na(rank_edge_qb) %>% 
+  drop_na(rank_edge) %>% 
   gam(
-    pred_fpts ~ s(adp_qb),
+    pred_fpts ~ s(adp),
     data = .,
     method = "REML"
   )
@@ -24112,27 +24168,27 @@ market_curve_qb =
 df_qb_project_market = 
   df_qb_project_fin_adp %>%
   mutate(
-    market_proj_qb =
+    market_proj =
       predict(
         market_curve_qb,
         newdata = .
       ),
-    market_edge_qb = pred_fpts - market_proj_qb,
-    exp_finish_edge = adp_qb - pred_rank_mean
+    market_edge = pred_fpts - market_proj,
+    exp_finish_edge = adp - pred_rank_mean
   )
 
-view(df_te_project_market)
+view(df_qb_project_market)
 
 df_adp_beat_qb = 
   df_fpts_qb_sim %>% 
   left_join(
     df_qb_project_fin_adp %>% 
-      select(team, player_display_name, adp_qb),
+      select(team, player_display_name, adp),
     by = c("team", "player_display_name")
   ) %>% 
   group_by(player_id) %>% 
   summarise(
-    p_adp_beat = mean(fpts_sim_rank < adp_qb)
+    prop_adp_beat = mean(fpts_sim_rank < adp)
   )
 
 df_qb_project_market_fin = 
@@ -24144,11 +24200,30 @@ view(df_qb_project_market_fin)
 df_qb_fantasy_table =
   df_qb_project_market_fin %>% 
   mutate(
-    across(c(market_proj_qb, market_edge_qb, pred_rank_mean, exp_finish_edge), ~ round(., 1))
+    across(c(market_proj, market_edge, pred_rank_med, exp_finish_edge), ~ round(., 1))
   ) %>% 
-  select(player_display_name, team, qb_rank_svm, adp_qb, rank_edge_qb, pred_fpts, market_proj_qb, market_edge_qb, pred_rank_mean, exp_finish_edge, p_adp_beat, pred_fpts_10p, pred_fpts_90p, starts_with("prop_")) %>% 
+  rename(rank_mod = qb_rank_svm) %>% 
+  select(player_display_name, team, rank_mod, adp, rank_edge, pred_rank_med, pred_fpts, market_proj, market_edge, prop_adp_beat, pred_fpts_10p, pred_fpts_90p, starts_with("prop_")) %>% 
   select(-c(prop_top_24, prop_below_36)) %>% 
-  drop_na()
+  drop_na() %>% 
+  labelled::set_variable_labels(
+    "player_display_name" = "Player", 
+    "team" = "Team", 
+    "rank_mod" = "Rank", 
+    "adp" = "ADP", 
+    "rank_edge" = "Rank Edge", 
+    "pred_rank_med" = "Median Finish", 
+    "pred_fpts" = "Model Projection", 
+    "market_proj" = "Market Projection", 
+    "market_edge" = "Market Edge", 
+    "prop_adp_beat" = "Beat ADP", 
+    "pred_fpts_10p" = "Floor", 
+    "pred_fpts_90p" = "Ceiling", 
+    "prop_top_1" = "QB1", 
+    "prop_top_5" = "QB5", 
+    "prop_top_12" = "QB12", 
+    "prop_below_24" = "> QB24"
+  )
 
 saveRDS(df_qb_fantasy_table, str_c("data/fantasy_data/", "df_qb_fantasy_table.rds"))
 

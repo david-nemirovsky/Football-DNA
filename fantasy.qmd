@@ -87,230 +87,428 @@ df_fantasy =
     )
 ```
 
-## **Pre-Season Rankings**
+## **Pre-Season PPR Rankings**
 
-Download Rankings Here: [2025 Fantasy Draft Rankings 0.5PPR](fpts_rank_all_fin_2025.xlsx)
+<!-- Download Rankings Here: [2025 Fantasy Draft Rankings 0.5PPR](fpts_rank_all_fin_2025.xlsx) -->
 
 ::: panel-tabset
 
 ### **QB**
 
 ```{r qb tbl}
+# df_fpts_qb_test = readRDS(str_c("data/fantasy_data/", "df_fpts_qb_test.rds"))
+
 df_qb_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_qb_fantasy_table.rds"))
 
-prob_pal =
-  scales::col_numeric(
-    palette = c("#d73027", "#fee08b", "#1a9850"),
-    domain = c(0, 1)
+# df_qb_features_table = 
+#   df_fpts_qb_test %>% 
+#   left_join(
+#     df_qb_fantasy_table %>% 
+#       select(player_display_name, rank_mod, pred_fpts),
+#     by = "player_display_name"
+#   ) %>% 
+#   mutate(
+#     across(
+#       c(starts_with("prior_"), games_missed_rate, expect_rush, ol_cont_grade_pass),
+#       ~ round(., 1)
+#     )
+#   ) %>% 
+#   select(player_display_name, team, rank_mod, pred_fpts, everything(), -player_id) %>% 
+#   labelled::set_variable_labels(
+#     "player_display_name" = "Player", 
+#     "team" = "Team", 
+#     "rank_mod" = "Rank", 
+#     "pred_fpts" = "Projection", 
+#     "prior_fpts" = "Weighted Prior FPTS", 
+#     "prior_adot" = "Weighted Prior ADOT", 
+#     "prior_qb_epa" = "Weighted Prior EPA", 
+#     "draft_number" = "Draft Number", 
+#     "prior_fpts_other" = "QB Competition", 
+#     "qb_new_team" = "New Team", 
+#     "games_missed_rate" = "Missed Games Rate", 
+#     "expect_rush" = "Expected Rushes", 
+#     "ol_cont_grade_pass" = "Returning OL Grade"
+#   )
+# 
+# view(df_qb_features_table)
+# 
+# proj_pal_qb =
+#   scales::col_numeric(
+#     palette = c("#d73027", "#fee08b", "#1a9850"),
+#     domain = c(min(df_qb_features_table$pred_fpts), max(df_qb_features_table$pred_fpts))
+#   )
+# 
+# prior_pal_qb =
+#   scales::col_numeric(
+#     palette = c("#d73027", "#fee08b", "#1a9850"),
+#     domain = c(min(df_qb_features_table$prior_fpts), max(df_qb_features_table$prior_fpts))
+#   )
+# 
+# adot_pal_qb =
+#   scales::col_numeric(
+#     palette = c("#d73027", "#fee08b", "#1a9850"),
+#     domain = c(min(df_qb_features_table$prior_adot), max(df_qb_features_table$prior_adot))
+#   )
+# 
+# epa_pal_qb =
+#   scales::col_numeric(
+#     palette = c("#d73027", "#fee08b", "#1a9850"),
+#     domain = c(min(df_qb_features_table$prior_qb_epa), max(df_qb_features_table$prior_qb_epa))
+#   )
+# 
+# fpts_other_pal_qb =
+#   scales::col_numeric(
+#     palette = c("#1a9850", "#fee08b", "#d73027"),
+#     domain = c(min(df_qb_features_table$prior_fpts_other), max(df_qb_features_table$prior_fpts_other))
+#   )
+# 
+# games_missed_pal_qb =
+#   scales::col_numeric(
+#     palette = c("#1a9850", "#fee08b", "#d73027"),
+#     domain = c(min(df_qb_features_table$games_missed_rate), max(df_qb_features_table$games_missed_rate))
+#   )
+# 
+# rush_pal_qb =
+#   scales::col_numeric(
+#     palette = c("#d73027", "#fee08b", "#1a9850"),
+#     domain = c(min(df_qb_features_table$expect_rush), max(df_qb_features_table$expect_rush))
+#   )
+# 
+# draft_pal_qb =
+#   scales::col_numeric(
+#     palette = c("#1a9850", "#fee08b", "#d73027"),
+#     domain = c(max(df_qb_features_table$draft_number), min(df_qb_features_table$draft_number))
+#   )
+# 
+# ol_pal_qb =
+#   scales::col_numeric(
+#     palette = c("#d73027", "#fee08b", "#1a9850"),
+#     domain = c(min(df_qb_features_table$ol_cont_grade_pass), max(df_qb_features_table$ol_cont_grade_pass))
+#   )
+# 
+# new_team_pal_qb = 
+#   scales::col_numeric(
+#     palette = c("#1a9850", "#fee08b", "#d73027"),
+#     domain = c(min(df_qb_features_table$qb_new_team), max(df_qb_features_table$qb_new_team))
+#   )
+# 
+# reactable(
+#   df_qb_features_table,
+#   searchable = TRUE,
+#   filterable = TRUE,
+#   sortable = TRUE,
+#   striped = TRUE,
+#   highlight = TRUE,
+#   bordered = TRUE,
+#   defaultPageSize = 100,
+#   defaultSorted = "qb_rank_svm",
+#   defaultSortOrder = "asc",
+#   columns = list(
+# 
+#     player_display_name = colDef(
+#       name = "Player",
+#       minWidth = 100
+#     ),
+# 
+#     team = colDef(
+#       name = "Team",
+#       minWidth = 45
+#     ),
+# 
+#     qb_rank_svm = colDef(
+#       name = "Rank",
+#       minWidth = 45
+#     ),
+# 
+#     pred_fpts = colDef(
+#       name = "Projection",
+#       style = function(value) {
+#       
+#         text_color <- ifelse(value > quantile(df_qb_features_table$pred_fpts, 0.6)[[1]], "white", "black")
+#       
+#         list(
+#           background = proj_pal_qb(value),
+#           color = text_color,
+#           fontWeight = "bold"
+#         )
+#       },
+#       minWidth = 60
+#     ),
+#     
+#     prior_fpts = colDef(
+#       name = "Weighted Prior FPTS",
+#       style = function(value) {
+#       
+#         text_color <- ifelse(value > quantile(df_qb_features_table$prior_fpts, 0.6)[[1]], "white", "black")
+#       
+#         list(
+#           background = prior_pal_qb(value),
+#           color = text_color,
+#           fontWeight = "bold"
+#         )
+#       },
+#       minWidth = 60
+#     ),
+#     
+#     prior_adot = colDef(
+#       name = "Weighted Prior ADOT",
+#       style = function(value) {
+#       
+#         text_color <- ifelse(value > quantile(df_qb_features_table$prior_adot, 0.6)[[1]], "white", "black")
+#       
+#         list(
+#           background = adot_pal_qb(value),
+#           color = text_color,
+#           fontWeight = "bold"
+#         )
+#       },
+#       minWidth = 60
+#     ),
+#     
+#     prior_qb_epa = colDef(
+#       name = "Weighted Prior EPA",
+#       style = function(value) {
+#       
+#         text_color <- ifelse(value > quantile(df_qb_features_table$prior_qb_epa, 0.6)[[1]], "white", "black")
+#       
+#         list(
+#           background = epa_pal_qb(value),
+#           color = text_color,
+#           fontWeight = "bold"
+#         )
+#       },
+#       minWidth = 60
+#     ),
+#     
+#     draft_number = colDef(
+#       name = "Draft Number",
+#       style = function(value) {
+# 
+#         text_color <- ifelse(value >  quantile(df_qb_features_table$draft_number, 0.6)[[1]], "white", "black")
+# 
+#         list(
+#           background = draft_pal_qb(value),
+#           color = text_color,
+#           fontWeight = "bold"
+#         )
+#       },
+#       minWidth = 60
+#     ),
+#     
+#     prior_fpts_other = colDef(
+#       name = "QB Competition",
+#       style = function(value) {
+#       
+#         text_color <- ifelse(value > quantile(df_qb_features_table$prior_fpts_other, 0.6)[[1]], "white", "black")
+#       
+#         list(
+#           background = fpts_other_pal_qb(value),
+#           color = text_color,
+#           fontWeight = "bold"
+#         )
+#       },
+#       minWidth = 60
+#     ),
+#     
+#     qb_new_team = colDef(
+#       name = "New Team",
+#       style = function(value) {
+# 
+#         text_color <- ifelse(value > 0.6, "white", "black")
+# 
+#         list(
+#           background = new_team_pal_qb(value),
+#           color = text_color,
+#           fontWeight = "bold"
+#         )
+#       },
+#       minWidth = 60
+#     ),
+#     
+#     games_missed_rate = colDef(
+#       name = "Missed Games Rate",
+#       style = function(value) {
+#       
+#         text_color <- ifelse(value > quantile(df_qb_features_table$games_missed_rate, 0.6)[[1]], "white", "black")
+#       
+#         list(
+#           background = games_missed_pal_qb(value),
+#           color = text_color,
+#           fontWeight = "bold"
+#         )
+#       },
+#       minWidth = 60
+#     ),
+#     
+#     expect_rush = colDef(
+#       name = "Expected Rushes",
+#       style = function(value) {
+#       
+#         text_color <- ifelse(value > quantile(df_qb_features_table$expect_rush, 0.6)[[1]], "white", "black")
+#       
+#         list(
+#           background = rush_pal_qb(value),
+#           color = text_color,
+#           fontWeight = "bold"
+#         )
+#       },
+#       minWidth = 60
+#     ),
+#     
+#     ol_cont_grade_pass = colDef(
+#       name = "OL Grades",
+#       style = function(value) {
+#       
+#         text_color <- ifelse(value > quantile(df_qb_features_table$ol_cont_grade_pass, 0.6)[[1]], "white", "black")
+#       
+#         list(
+#           background = ol_pal_qb(value),
+#           color = text_color,
+#           fontWeight = "bold"
+#         )
+#       },
+#       minWidth = 60
+#     )
+#     
+#   )
+# )
+
+make_style <- function(data, column) {
+  
+  # Determine whether column is a probability variable
+  is_probability <- grepl(
+    "^prop_",
+    column,
+    ignore.case = TRUE
   )
-
-edge_pal_qb =
-  scales::col_numeric(
-    palette = c("#d73027", "#fee08b", "#1a9850"),
-    domain = c(-100, 100)
+  
+  # Automatically determine palette domain
+  domain <- if (is_probability) {
+    c(0, 1)
+  } else {
+    range(data[[column]], na.rm = TRUE)
+  }
+  
+  # Create palette
+  pal <- scales::col_numeric(
+    palette = c(
+      "#d73027",
+      "#fee08b",
+      "#1a9850"
+    ),
+    domain = domain
   )
-
-reactable(
-  df_qb_fantasy_table,
-  searchable = TRUE,
-  filterable = TRUE,
-  sortable = TRUE,
-  striped = TRUE,
-  highlight = TRUE,
-  bordered = TRUE,
-  defaultPageSize = 100,
-  defaultSorted = "qb_rank_svm",
-  defaultSortOrder = "asc",
-  columns = list(
-
-    player_display_name = colDef(
-      name = "Player",
-      minWidth = 100
-    ),
-
-    team = colDef(
-      name = "Team",
-      minWidth = 45
-    ),
-
-    qb_rank_svm = colDef(
-      name = "Rank",
-      minWidth = 45
-    ),
-
-    adp_qb = colDef(
-      name = "ADP",
-      minWidth = 45
-    ),
-
-    rank_edge_qb = colDef(
-      name = "Rank Edge",
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = edge_pal_qb(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
+  
+  # Return style function
+  function(value) {
     
-    pred_fpts = colDef(
-      name = "Model Projection",
-      minWidth = 60
-    ),
+    # 70% through the color scale
+    text_cutoff <- domain[1] + 0.70 * diff(domain)
     
-    market_proj_qb = colDef(
-      name = "Market Projection",
-      minWidth = 60
-    ),
-
-    market_edge_qb = colDef(
-      name = "Projection Edge",
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = edge_pal_qb(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
-    
-    pred_rank_mean = colDef(
-      name = "Mean finish",
-      minWidth = 60
-    ),
-
-    exp_finish_edge = colDef(
-      name = "Finish Edge",
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = edge_pal_qb(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
-    
-    p_adp_beat = colDef(
-      name = "Beat ADP",
-      format = colFormat(percent = TRUE, digits = 1),
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = prob_pal(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
-    
-    pred_fpts_10p = colDef(
-      name = "Floor",
-      minWidth = 60
-    ),
-    
-    pred_fpts_90p = colDef(
-      name = "Ceiling",
-      minWidth = 60
-    ),
-    
-    prop_top_1 = colDef(
-      name = "QB1",
-      format = colFormat(percent = TRUE, digits = 1),
-      style = function(value) {
-
-        text_color <- ifelse(value > .55, "white", "black")
-
-        list(
-          background = prob_pal(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
-
-    prop_top_5 = colDef(
-      name = "QB5",
-      format = colFormat(percent = TRUE, digits = 1),
-      style = function(value) {
-
-        text_color <- ifelse(value > .55, "white", "black")
-
-        list(
-          background = prob_pal(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
-
-    prop_top_12 = colDef(
-      name = "QB12",
-      format = colFormat(percent = TRUE, digits = 1),
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = prob_pal(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
-
-    # prop_top_24 = colDef(
-    #   name = "RB24",
-    #   format = colFormat(percent = TRUE, digits = 1),
-    #   style = function(value) {
-    #   
-    #     text_color <- ifelse(value > .55, "white", "black")
-    #   
-    #     list(
-    #       background = prob_pal(value),
-    #       color = text_color,
-    #       fontWeight = "bold"
-    #     )
-    #   },
-    #   minWidth = 60
-    # ),
-
-    prop_below_24 = colDef(
-      name = "> QB24",
-      format = colFormat(percent = TRUE, digits = 1),
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = prob_pal(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
+    list(
+      background = pal(value),
+      color = ifelse(
+        value > text_cutoff,
+        "white",
+        "black"
+      ),
+      fontWeight = "bold"
     )
-  )
-)
+  }
+}
 
+make_fantasy_table <- function(
+    data,
+    default_sorted
+) {
+  
+  columns <- names(data)
+  
+  column_defs <- setNames(
+    lapply(columns, function(column) {
+      
+      # Get the label directly from the data
+      label <- labelled::var_label(data[[column]])
+      
+      # Fall back to the column name if no label exists
+      if (is.null(label)) {
+        label <- column
+      }
+      
+      # Identify probability columns
+      is_probability <- grepl(
+        "^(p_|prop_)",
+        column,
+        ignore.case = TRUE
+      )
+      
+      # Identify columns to color
+      is_edge <- grepl(
+        "edge",
+        column,
+        ignore.case = TRUE
+      )
+      
+      # Probability columns
+      if (is_probability) {
+        
+        colDef(
+          name = label,
+          format = colFormat(
+            percent = TRUE,
+            digits = 1
+          ),
+          style = make_style(
+            data,
+            column
+          ),
+          minWidth = 60
+        )
+        
+      # Edge columns
+      } else if (is_edge) {
+        
+        colDef(
+          name = label,
+          style = make_style(
+            data,
+            column
+          ),
+          minWidth = 60
+        )
+        
+      # All other columns
+      } else {
+        
+        colDef(
+          name = label,
+          minWidth = 60
+        )
+      }
+      
+    }),
+    columns
+  )
+  
+  reactable(
+    data,
+    searchable = TRUE,
+    filterable = TRUE,
+    sortable = TRUE,
+    striped = TRUE,
+    highlight = TRUE,
+    bordered = TRUE,
+    defaultPageSize = 100,
+    defaultSorted = default_sorted,
+    defaultSortOrder = "asc",
+    columns = column_defs
+  )
+}
+
+make_fantasy_table(
+  df_qb_fantasy_table,
+  default_sorted = "rank_mod"
+)
 ```
 
 ### **RB**
@@ -318,217 +516,141 @@ reactable(
 ```{r rb tbl}
 df_rb_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_rb_fantasy_table.rds"))
 
-prob_pal =
-  scales::col_numeric(
-    palette = c("#d73027", "#fee08b", "#1a9850"),
-    domain = c(0, 1)
+make_style <- function(data, column) {
+  
+  # Determine whether column is a probability variable
+  is_probability <- grepl(
+    "^prop_",
+    column,
+    ignore.case = TRUE
   )
-
-edge_pal_rb =
-  scales::col_numeric(
-    palette = c("#d73027", "#fee08b", "#1a9850"),
-    domain = c(-75, 75)
+  
+  # Automatically determine palette domain
+  domain <- if (is_probability) {
+    c(0, 1)
+  } else {
+    range(data[[column]], na.rm = TRUE)
+  }
+  
+  # Create palette
+  pal <- scales::col_numeric(
+    palette = c(
+      "#d73027",
+      "#fee08b",
+      "#1a9850"
+    ),
+    domain = domain
   )
-
-reactable(
-  df_rb_fantasy_table,
-  searchable = TRUE,
-  filterable = TRUE,
-  sortable = TRUE,
-  striped = TRUE,
-  highlight = TRUE,
-  bordered = TRUE,
-  defaultPageSize = 100,
-  defaultSorted = "rb_rank_svm",
-  defaultSortOrder = "asc",
-  columns = list(
-
-    player_display_name = colDef(
-      name = "Player",
-      minWidth = 100
-    ),
-
-    team = colDef(
-      name = "Team",
-      minWidth = 45
-    ),
-
-    rb_rank_svm = colDef(
-      name = "Rank",
-      minWidth = 45
-    ),
-
-    adp_rb = colDef(
-      name = "ADP",
-      minWidth = 45
-    ),
-
-    rank_edge_rb = colDef(
-      name = "Rank Edge",
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = edge_pal_rb(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
+  
+  # Return style function
+  function(value) {
     
-    pred_fpts = colDef(
-      name = "Model Projection",
-      minWidth = 60
-    ),
+    # 70% through the color scale
+    text_cutoff <- domain[1] + 0.70 * diff(domain)
     
-    market_proj_rb = colDef(
-      name = "Market Projection",
-      minWidth = 60
-    ),
-
-    market_edge_rb = colDef(
-      name = "Projection Edge",
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = edge_pal_rb(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
-    
-    pred_rank_mean = colDef(
-      name = "Mean finish",
-      minWidth = 60
-    ),
-
-    exp_finish_edge = colDef(
-      name = "Finish Edge",
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = edge_pal_rb(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
-    
-    p_adp_beat = colDef(
-      name = "Beat ADP",
-      format = colFormat(percent = TRUE, digits = 1),
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = prob_pal(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
-    
-    pred_fpts_10p = colDef(
-      name = "Floor",
-      minWidth = 60
-    ),
-    
-    pred_fpts_90p = colDef(
-      name = "Ceiling",
-      minWidth = 60
-    ),
-    
-    # prop_top_1 = colDef(
-    #   name = "WR1",
-    #   format = colFormat(percent = TRUE, digits = 1),
-    #   style = function(value) {
-    #   
-    #     text_color <- ifelse(value > .55, "white", "black")
-    #   
-    #     list(
-    #       background = prob_pal(value),
-    #       color = text_color,
-    #       fontWeight = "bold"
-    #     )
-    #   },
-    #   minWidth = 60
-    # ),
-    # 
-    # prop_top_5 = colDef(
-    #   name = "WR5",
-    #   format = colFormat(percent = TRUE, digits = 1),
-    #   style = function(value) {
-    #   
-    #     text_color <- ifelse(value > .55, "white", "black")
-    #   
-    #     list(
-    #       background = prob_pal(value),
-    #       color = text_color,
-    #       fontWeight = "bold"
-    #     )
-    #   },
-    #   minWidth = 60
-    # ),
-
-    prop_top_12 = colDef(
-      name = "RB12",
-      format = colFormat(percent = TRUE, digits = 1),
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = prob_pal(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
-
-    prop_top_24 = colDef(
-      name = "RB24",
-      format = colFormat(percent = TRUE, digits = 1),
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = prob_pal(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
-
-    prop_below_36 = colDef(
-      name = "> RB36",
-      format = colFormat(percent = TRUE, digits = 1),
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = prob_pal(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
+    list(
+      background = pal(value),
+      color = ifelse(
+        value > text_cutoff,
+        "white",
+        "black"
+      ),
+      fontWeight = "bold"
     )
+  }
+}
+
+make_fantasy_table <- function(
+    data,
+    default_sorted
+) {
+  
+  columns <- names(data)
+  
+  column_defs <- setNames(
+    lapply(columns, function(column) {
+      
+      # Get the label directly from the data
+      label <- labelled::var_label(data[[column]])
+      
+      # Fall back to the column name if no label exists
+      if (is.null(label)) {
+        label <- column
+      }
+      
+      # Identify probability columns
+      is_probability <- grepl(
+        "^(p_|prop_)",
+        column,
+        ignore.case = TRUE
+      )
+      
+      # Identify columns to color
+      is_edge <- grepl(
+        "edge",
+        column,
+        ignore.case = TRUE
+      )
+      
+      # Probability columns
+      if (is_probability) {
+        
+        colDef(
+          name = label,
+          format = colFormat(
+            percent = TRUE,
+            digits = 1
+          ),
+          style = make_style(
+            data,
+            column
+          ),
+          minWidth = 60
+        )
+        
+      # Edge columns
+      } else if (is_edge) {
+        
+        colDef(
+          name = label,
+          style = make_style(
+            data,
+            column
+          ),
+          minWidth = 60
+        )
+        
+      # All other columns
+      } else {
+        
+        colDef(
+          name = label,
+          minWidth = 60
+        )
+      }
+      
+    }),
+    columns
   )
+  
+  reactable(
+    data,
+    searchable = TRUE,
+    filterable = TRUE,
+    sortable = TRUE,
+    striped = TRUE,
+    highlight = TRUE,
+    bordered = TRUE,
+    defaultPageSize = 100,
+    defaultSorted = default_sorted,
+    defaultSortOrder = "asc",
+    columns = column_defs
+  )
+}
+
+make_fantasy_table(
+  df_rb_fantasy_table,
+  default_sorted = "rank_mod"
 )
 ```
 
@@ -537,249 +659,141 @@ reactable(
 ```{r wr tbl}
 df_wr_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_wr_fantasy_table.rds"))
 
-prob_pal =
-  scales::col_numeric(
-    palette = c("#d73027", "#fee08b", "#1a9850"),
-    domain = c(0, 1)
+make_style <- function(data, column) {
+  
+  # Determine whether column is a probability variable
+  is_probability <- grepl(
+    "^prop_",
+    column,
+    ignore.case = TRUE
   )
-
-edge_pal =
-  scales::col_numeric(
-    palette = c("#d73027", "#fee08b", "#1a9850"),
-    domain = c(-130, 130)
+  
+  # Automatically determine palette domain
+  domain <- if (is_probability) {
+    c(0, 1)
+  } else {
+    range(data[[column]], na.rm = TRUE)
+  }
+  
+  # Create palette
+  pal <- scales::col_numeric(
+    palette = c(
+      "#d73027",
+      "#fee08b",
+      "#1a9850"
+    ),
+    domain = domain
   )
-
-reactable(
-  df_wr_fantasy_table,
-  searchable = TRUE,
-  filterable = TRUE,
-  sortable = TRUE,
-  striped = TRUE,
-  highlight = TRUE,
-  bordered = TRUE,
-  defaultPageSize = 100,
-  defaultSorted = "wr_rank_svm",
-  defaultSortOrder = "asc",
-  columns = list(
-
-    player_display_name = colDef(
-      name = "Player",
-      minWidth = 100
-    ),
-
-    team = colDef(
-      name = "Team",
-      minWidth = 45
-    ),
-
-    wr_rank_svm = colDef(
-      name = "Rank",
-      minWidth = 45
-    ),
-
-    adp_wr = colDef(
-      name = "ADP",
-      minWidth = 45
-    ),
-
-    rank_edge_wr = colDef(
-      name = "Rank Edge",
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = edge_pal(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
+  
+  # Return style function
+  function(value) {
     
-    pred_fpts = colDef(
-      name = "Model Projection",
-      minWidth = 60
-    ),
+    # 70% through the color scale
+    text_cutoff <- domain[1] + 0.70 * diff(domain)
     
-    market_proj_wr = colDef(
-      name = "Market Projection",
-      minWidth = 60
-    ),
-
-    market_edge_wr = colDef(
-      name = "Projection Edge",
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = edge_pal(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
-    
-    pred_rank_mean = colDef(
-      name = "Mean finish",
-      minWidth = 60
-    ),
-
-    exp_finish_edge = colDef(
-      name = "Finish Edge",
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = edge_pal(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
-    
-    p_adp_beat = colDef(
-      name = "Beat ADP",
-      format = colFormat(percent = TRUE, digits = 1),
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = prob_pal(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
-    
-    pred_fpts_10p = colDef(
-      name = "Floor",
-      minWidth = 60
-    ),
-    
-    pred_fpts_90p = colDef(
-      name = "Ceiling",
-      minWidth = 60
-    ),
-    
-    # prop_top_1 = colDef(
-    #   name = "WR1",
-    #   format = colFormat(percent = TRUE, digits = 1),
-    #   style = function(value) {
-    #   
-    #     text_color <- ifelse(value > .55, "white", "black")
-    #   
-    #     list(
-    #       background = prob_pal(value),
-    #       color = text_color,
-    #       fontWeight = "bold"
-    #     )
-    #   },
-    #   minWidth = 60
-    # ),
-    # 
-    # prop_top_5 = colDef(
-    #   name = "WR5",
-    #   format = colFormat(percent = TRUE, digits = 1),
-    #   style = function(value) {
-    #   
-    #     text_color <- ifelse(value > .55, "white", "black")
-    #   
-    #     list(
-    #       background = prob_pal(value),
-    #       color = text_color,
-    #       fontWeight = "bold"
-    #     )
-    #   },
-    #   minWidth = 60
-    # ),
-
-    prop_top_12 = colDef(
-      name = "WR12",
-      format = colFormat(percent = TRUE, digits = 1),
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = prob_pal(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
-
-    prop_top_24 = colDef(
-      name = "WR24",
-      format = colFormat(percent = TRUE, digits = 1),
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = prob_pal(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
-
-    prop_top_36 = colDef(
-      name = "WR36",
-      format = colFormat(percent = TRUE, digits = 1),
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = prob_pal(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
-
-    # prop_below_36 = colDef(
-    #   name = "> WR36",
-    #   format = colFormat(percent = TRUE, digits = 1),
-    #   style = function(value) {
-    #   
-    #     text_color <- ifelse(value > .55, "white", "black")
-    #   
-    #     list(
-    #       background = prob_pal(value),
-    #       color = text_color,
-    #       fontWeight = "bold"
-    #     )
-    #   },
-    #   minWidth = 60
-    # ),
-
-    prop_below_50 = colDef(
-      name = "> WR50",
-      format = colFormat(percent = TRUE, digits = 1),
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = prob_pal(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
+    list(
+      background = pal(value),
+      color = ifelse(
+        value > text_cutoff,
+        "white",
+        "black"
+      ),
+      fontWeight = "bold"
     )
+  }
+}
+
+make_fantasy_table <- function(
+    data,
+    default_sorted
+) {
+  
+  columns <- names(data)
+  
+  column_defs <- setNames(
+    lapply(columns, function(column) {
+      
+      # Get the label directly from the data
+      label <- labelled::var_label(data[[column]])
+      
+      # Fall back to the column name if no label exists
+      if (is.null(label)) {
+        label <- column
+      }
+      
+      # Identify probability columns
+      is_probability <- grepl(
+        "^(p_|prop_)",
+        column,
+        ignore.case = TRUE
+      )
+      
+      # Identify columns to color
+      is_edge <- grepl(
+        "edge",
+        column,
+        ignore.case = TRUE
+      )
+      
+      # Probability columns
+      if (is_probability) {
+        
+        colDef(
+          name = label,
+          format = colFormat(
+            percent = TRUE,
+            digits = 1
+          ),
+          style = make_style(
+            data,
+            column
+          ),
+          minWidth = 60
+        )
+        
+      # Edge columns
+      } else if (is_edge) {
+        
+        colDef(
+          name = label,
+          style = make_style(
+            data,
+            column
+          ),
+          minWidth = 60
+        )
+        
+      # All other columns
+      } else {
+        
+        colDef(
+          name = label,
+          minWidth = 60
+        )
+      }
+      
+    }),
+    columns
   )
+  
+  reactable(
+    data,
+    searchable = TRUE,
+    filterable = TRUE,
+    sortable = TRUE,
+    striped = TRUE,
+    highlight = TRUE,
+    bordered = TRUE,
+    defaultPageSize = 100,
+    defaultSorted = default_sorted,
+    defaultSortOrder = "asc",
+    columns = column_defs
+  )
+}
+
+make_fantasy_table(
+  df_wr_fantasy_table,
+  default_sorted = "rank_mod"
 )
 ```
 
@@ -788,217 +802,141 @@ reactable(
 ```{r te tbl}
 df_te_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_te_fantasy_table.rds"))
 
-prob_pal =
-  scales::col_numeric(
-    palette = c("#d73027", "#fee08b", "#1a9850"),
-    domain = c(0, 1)
+make_style <- function(data, column) {
+  
+  # Determine whether column is a probability variable
+  is_probability <- grepl(
+    "^prop_",
+    column,
+    ignore.case = TRUE
   )
-
-edge_pal_te =
-  scales::col_numeric(
-    palette = c("#d73027", "#fee08b", "#1a9850"),
-    domain = c(-75, 75)
+  
+  # Automatically determine palette domain
+  domain <- if (is_probability) {
+    c(0, 1)
+  } else {
+    range(data[[column]], na.rm = TRUE)
+  }
+  
+  # Create palette
+  pal <- scales::col_numeric(
+    palette = c(
+      "#d73027",
+      "#fee08b",
+      "#1a9850"
+    ),
+    domain = domain
   )
-
-reactable(
-  df_te_fantasy_table,
-  searchable = TRUE,
-  filterable = TRUE,
-  sortable = TRUE,
-  striped = TRUE,
-  highlight = TRUE,
-  bordered = TRUE,
-  defaultPageSize = 100,
-  defaultSorted = "te_rank_boost",
-  defaultSortOrder = "asc",
-  columns = list(
-
-    player_display_name = colDef(
-      name = "Player",
-      minWidth = 100
-    ),
-
-    team = colDef(
-      name = "Team",
-      minWidth = 45
-    ),
-
-    te_rank_boost = colDef(
-      name = "Rank",
-      minWidth = 45
-    ),
-
-    adp_te = colDef(
-      name = "ADP",
-      minWidth = 45
-    ),
-
-    rank_edge_te = colDef(
-      name = "Rank Edge",
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = edge_pal_te(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
+  
+  # Return style function
+  function(value) {
     
-    pred_fpts = colDef(
-      name = "Model Projection",
-      minWidth = 60
-    ),
+    # 70% through the color scale
+    text_cutoff <- domain[1] + 0.70 * diff(domain)
     
-    market_proj_te = colDef(
-      name = "Market Projection",
-      minWidth = 60
-    ),
-
-    market_edge_te = colDef(
-      name = "Projection Edge",
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = edge_pal_te(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
-    
-    pred_rank_mean = colDef(
-      name = "Mean finish",
-      minWidth = 60
-    ),
-
-    exp_finish_edge = colDef(
-      name = "Finish Edge",
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = edge_pal_te(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
-    
-    p_adp_beat = colDef(
-      name = "Beat ADP",
-      format = colFormat(percent = TRUE, digits = 1),
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = prob_pal(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
-    
-    pred_fpts_10p = colDef(
-      name = "Floor",
-      minWidth = 60
-    ),
-    
-    pred_fpts_90p = colDef(
-      name = "Ceiling",
-      minWidth = 60
-    ),
-    
-    prop_top_1 = colDef(
-      name = "TE1",
-      format = colFormat(percent = TRUE, digits = 1),
-      style = function(value) {
-
-        text_color <- ifelse(value > .55, "white", "black")
-
-        list(
-          background = prob_pal(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
-
-    prop_top_5 = colDef(
-      name = "TE5",
-      format = colFormat(percent = TRUE, digits = 1),
-      style = function(value) {
-
-        text_color <- ifelse(value > .55, "white", "black")
-
-        list(
-          background = prob_pal(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
-
-    prop_top_12 = colDef(
-      name = "TE12",
-      format = colFormat(percent = TRUE, digits = 1),
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = prob_pal(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
-    ),
-
-    # prop_top_24 = colDef(
-    #   name = "RB24",
-    #   format = colFormat(percent = TRUE, digits = 1),
-    #   style = function(value) {
-    #   
-    #     text_color <- ifelse(value > .55, "white", "black")
-    #   
-    #     list(
-    #       background = prob_pal(value),
-    #       color = text_color,
-    #       fontWeight = "bold"
-    #     )
-    #   },
-    #   minWidth = 60
-    # ),
-
-    prop_below_24 = colDef(
-      name = "> TE24",
-      format = colFormat(percent = TRUE, digits = 1),
-      style = function(value) {
-      
-        text_color <- ifelse(value > .55, "white", "black")
-      
-        list(
-          background = prob_pal(value),
-          color = text_color,
-          fontWeight = "bold"
-        )
-      },
-      minWidth = 60
+    list(
+      background = pal(value),
+      color = ifelse(
+        value > text_cutoff,
+        "white",
+        "black"
+      ),
+      fontWeight = "bold"
     )
+  }
+}
+
+make_fantasy_table <- function(
+    data,
+    default_sorted
+) {
+  
+  columns <- names(data)
+  
+  column_defs <- setNames(
+    lapply(columns, function(column) {
+      
+      # Get the label directly from the data
+      label <- labelled::var_label(data[[column]])
+      
+      # Fall back to the column name if no label exists
+      if (is.null(label)) {
+        label <- column
+      }
+      
+      # Identify probability columns
+      is_probability <- grepl(
+        "^(p_|prop_)",
+        column,
+        ignore.case = TRUE
+      )
+      
+      # Identify columns to color
+      is_edge <- grepl(
+        "edge",
+        column,
+        ignore.case = TRUE
+      )
+      
+      # Probability columns
+      if (is_probability) {
+        
+        colDef(
+          name = label,
+          format = colFormat(
+            percent = TRUE,
+            digits = 1
+          ),
+          style = make_style(
+            data,
+            column
+          ),
+          minWidth = 60
+        )
+        
+      # Edge columns
+      } else if (is_edge) {
+        
+        colDef(
+          name = label,
+          style = make_style(
+            data,
+            column
+          ),
+          minWidth = 60
+        )
+        
+      # All other columns
+      } else {
+        
+        colDef(
+          name = label,
+          minWidth = 60
+        )
+      }
+      
+    }),
+    columns
   )
+  
+  reactable(
+    data,
+    searchable = TRUE,
+    filterable = TRUE,
+    sortable = TRUE,
+    striped = TRUE,
+    highlight = TRUE,
+    bordered = TRUE,
+    defaultPageSize = 100,
+    defaultSorted = default_sorted,
+    defaultSortOrder = "asc",
+    columns = column_defs
+  )
+}
+
+make_fantasy_table(
+  df_te_fantasy_table,
+  default_sorted = "rank_mod"
 )
 ```
 
