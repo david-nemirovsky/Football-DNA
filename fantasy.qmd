@@ -100,6 +100,482 @@ df_fantasy =
 
 df_qb_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_qb_fantasy_table.rds"))
 
+make_fantasy_table <- function(
+    data,
+    default_sorted,
+    direction = NULL,
+    player_column = "player_display_name",
+    team_column = "team",
+    height = 700
+) {
+  
+  # ------------------------------------------------------------
+  # 1. Column names
+  # ------------------------------------------------------------
+  
+  columns <- names(data)
+  
+  
+  # ------------------------------------------------------------
+  # 2. Create column definitions
+  # ------------------------------------------------------------
+  
+  column_defs <- setNames(
+    
+    lapply(
+      
+      columns,
+      
+      function(column) {
+        
+        
+        # ------------------------------------------------------
+        # Column label
+        # ------------------------------------------------------
+        
+        label <- labelled::var_label(
+          data[[column]]
+        )
+        
+        if (is.null(label)) {
+          
+          label <- column
+          
+        }
+        
+        
+        # ------------------------------------------------------
+        # Identify column types
+        # ------------------------------------------------------
+        
+        is_probability <- grepl(
+          "prop_",
+          column,
+          ignore.case = TRUE
+        )
+        
+        is_edge <- grepl(
+          "edge",
+          column,
+          ignore.case = TRUE
+        )
+        
+        is_rank_adp_fin <- grepl(
+          "rank_mod|adp|pred_rank_med",
+          column,
+          ignore.case = TRUE
+        )
+        
+        is_feature <- !is.null(direction) &&
+          column %in% names(direction)
+        
+        
+        # ------------------------------------------------------
+        # Determine color direction
+        # ------------------------------------------------------
+        
+        column_direction <- "higher"
+        
+        if (is_feature) {
+          
+          column_direction <- direction[[column]]
+          
+        }
+        
+        
+        # ------------------------------------------------------
+        # Determine widths
+        # ------------------------------------------------------
+        
+        if (column == player_column) {
+          
+          column_width <- 155
+          
+        } else if (column == team_column) {
+          
+          column_width <- 70
+          
+        } else if (is_probability) {
+          
+          column_width <- 85
+          
+        } else if (is_edge) {
+          
+          column_width <- 90
+          
+        } else if (is_rank_adp_fin) {
+          
+          column_width <- 85
+          
+        } else {
+          
+          column_width <- 110
+          
+        }
+        
+        
+        # ------------------------------------------------------
+        # Sticky columns
+        # ------------------------------------------------------
+        
+        is_player <- column == player_column
+        is_team <- column == team_column
+        
+        
+        # ------------------------------------------------------
+        # Base column definition
+        # ------------------------------------------------------
+        
+        column_definition <- colDef(
+          
+          name = label,
+          
+          minWidth = column_width,
+          
+          width = column_width,
+          
+          sticky = if (
+            is_player | is_team
+          ) {
+            "left"
+          } else {
+            NULL
+          },
+          
+          headerStyle = list(
+            whiteSpace = "normal",
+            textAlign = "center",
+            lineHeight = "1.2",
+            padding = "8px 6px"
+          )
+        )
+        
+        
+        # ------------------------------------------------------
+        # Probability columns
+        # ------------------------------------------------------
+        
+        if (is_probability) {
+          
+          column_definition <- colDef(
+            
+            name = label,
+            
+            format = colFormat(
+              percent = TRUE,
+              digits = 1
+            ),
+            
+            style = make_style(
+              data = data,
+              column = column,
+              direction = column_direction
+            ),
+            
+            minWidth = column_width,
+            
+            width = column_width,
+            
+            sticky = if (
+              is_player | is_team
+            ) {
+              "left"
+            } else {
+              NULL
+            },
+            
+            headerStyle = list(
+              whiteSpace = "normal",
+              textAlign = "center",
+              lineHeight = "1.2",
+              padding = "8px 6px"
+            )
+          )
+        }
+        
+        
+        # ------------------------------------------------------
+        # Edge columns
+        # ------------------------------------------------------
+        
+        else if (is_edge) {
+          
+          column_definition <- colDef(
+            
+            name = label,
+            
+            style = make_style(
+              data = data,
+              column = column,
+              direction = column_direction
+            ),
+            
+            minWidth = column_width,
+            
+            width = column_width,
+            
+            sticky = if (
+              is_player | is_team
+            ) {
+              "left"
+            } else {
+              NULL
+            },
+            
+            headerStyle = list(
+              whiteSpace = "normal",
+              textAlign = "center",
+              lineHeight = "1.2",
+              padding = "8px 6px"
+            )
+          )
+        }
+        
+        
+        # ------------------------------------------------------
+        # Feature columns
+        # ------------------------------------------------------
+        
+        else if (is_feature) {
+          
+          column_definition <- colDef(
+            
+            name = label,
+            
+            style = make_style(
+              data = data,
+              column = column,
+              direction = column_direction
+            ),
+            
+            minWidth = column_width,
+            
+            width = column_width,
+            
+            sticky = if (
+              is_player | is_team
+            ) {
+              "left"
+            } else {
+              NULL
+            },
+            
+            headerStyle = list(
+              whiteSpace = "normal",
+              textAlign = "center",
+              lineHeight = "1.2",
+              padding = "8px 6px"
+            )
+          )
+        }
+        
+        
+        # ------------------------------------------------------
+        # Player column
+        # ------------------------------------------------------
+        
+        if (is_player) {
+          
+          column_definition <- colDef(
+            
+            name = label,
+            
+            minWidth = 150,
+            width = 150,
+            
+            sticky = "left",
+            
+            style = list(
+              whiteSpace = "nowrap",
+              fontWeight = "bold",
+              backgroundColor = "#1e1e1e"
+            ),
+            
+            headerStyle = list(
+              whiteSpace = "normal",
+              textAlign = "left",
+              backgroundColor = "#2b2b2b",
+              color = "#ffffff",
+              zIndex = 10
+            )
+          )
+        }
+        
+        # Team column
+        if (is_team) {
+          
+          column_definition <- colDef(
+            
+            name = label,
+            
+            minWidth = 70,
+            width = 70,
+            
+            sticky = "left",
+            
+            style = list(
+              whiteSpace = "nowrap",
+              textAlign = "center",
+              backgroundColor = "#1e1e1e"
+            ),
+            
+            headerStyle = list(
+              whiteSpace = "normal",
+              textAlign = "center",
+              backgroundColor = "#2b2b2b",
+              color = "#ffffff",
+              zIndex = 10
+            )
+          )
+        }        
+        
+        # Return column definition
+        column_definition
+        
+      }
+    ),
+    
+    columns
+  )
+  
+  
+  # ------------------------------------------------------------
+  # 3. Create reactable
+  # ------------------------------------------------------------
+  
+  reactable(
+    
+    data,
+    
+    class = "fantasy-table-dark",
+    
+    searchable = TRUE,
+    
+    filterable = TRUE,
+    
+    sortable = TRUE,
+    
+    striped = FALSE,
+    
+    highlight = TRUE,
+    
+    bordered = FALSE,
+    
+    fullWidth = TRUE,
+  
+    height = height,
+    
+    defaultPageSize = 200,
+    
+    defaultSorted = default_sorted,
+    
+    defaultSortOrder = "asc",
+    
+    defaultColDef = colDef(
+      
+      headerStyle = list(
+        whiteSpace = "normal",
+        textAlign = "center",
+        lineHeight = "1.2",
+        padding = "8px 6px"
+      ),
+      
+      style = list(
+        whiteSpace = "normal",
+        lineHeight = "1.2",
+        padding = "8px 6px"
+      )
+    ),
+    
+    columns = column_defs,
+  
+    theme = reactableTheme(
+      style = list(
+        overflow = "visible"
+      )
+    )
+  )
+}
+
+make_style <- function(
+    data,
+    column,
+    direction = "higher"
+) {
+  
+  values <- data[[column]]
+  
+  is_probability <- grepl(
+    "prop_",
+    column,
+    ignore.case = TRUE
+  )
+  
+  domain <- if (is_probability) {
+    
+    c(0, 1)
+    
+  } else {
+    
+    range(
+      values,
+      na.rm = TRUE
+    )
+  }
+  
+  pal <- scales::col_numeric(
+    
+    palette = c(
+      "#d73027",
+      "#fee08b",
+      "#1a9850"
+    ),
+    
+    domain = domain,
+    
+    reverse = direction == "lower"
+  )
+  
+  function(value) {
+    
+    scaled_value <- if (
+      direction == "higher"
+    ) {
+      
+      (value - domain[1]) /
+        diff(domain)
+      
+    } else {
+      
+      (domain[2] - value) /
+        diff(domain)
+    }
+    
+    list(
+      
+      backgroundColor = pal(value),
+      
+      color = ifelse(
+        scaled_value > 0.70,
+        "white",
+        "black"
+      ),
+      
+      fontWeight = "bold"
+    )
+  }
+}
+
+make_fantasy_table(
+  
+  data = df_qb_fantasy_table,
+  
+  default_sorted = "rank_mod",
+  
+  height = 700
+)
+
+
 # df_qb_features_table = 
 #   df_fpts_qb_test %>% 
 #   left_join(
@@ -373,142 +849,142 @@ df_qb_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_qb_fantasy_table.r
 #   )
 # )
 
-make_style <- function(data, column) {
-  
-  # Determine whether column is a probability variable
-  is_probability <- grepl(
-    "^prop_",
-    column,
-    ignore.case = TRUE
-  )
-  
-  # Automatically determine palette domain
-  domain <- if (is_probability) {
-    c(0, 1)
-  } else {
-    range(data[[column]], na.rm = TRUE)
-  }
-  
-  # Create palette
-  pal <- scales::col_numeric(
-    palette = c(
-      "#d73027",
-      "#fee08b",
-      "#1a9850"
-    ),
-    domain = domain
-  )
-  
-  # Return style function
-  function(value) {
-    
-    # 70% through the color scale
-    text_cutoff <- domain[1] + 0.70 * diff(domain)
-    
-    list(
-      background = pal(value),
-      color = ifelse(
-        value > text_cutoff,
-        "white",
-        "black"
-      ),
-      fontWeight = "bold"
-    )
-  }
-}
-
-make_fantasy_table <- function(
-    data,
-    default_sorted
-) {
-  
-  columns <- names(data)
-  
-  column_defs <- setNames(
-    lapply(columns, function(column) {
-      
-      # Get the label directly from the data
-      label <- labelled::var_label(data[[column]])
-      
-      # Fall back to the column name if no label exists
-      if (is.null(label)) {
-        label <- column
-      }
-      
-      # Identify probability columns
-      is_probability <- grepl(
-        "^(p_|prop_)",
-        column,
-        ignore.case = TRUE
-      )
-      
-      # Identify columns to color
-      is_edge <- grepl(
-        "edge",
-        column,
-        ignore.case = TRUE
-      )
-      
-      # Probability columns
-      if (is_probability) {
-        
-        colDef(
-          name = label,
-          format = colFormat(
-            percent = TRUE,
-            digits = 1
-          ),
-          style = make_style(
-            data,
-            column
-          ),
-          minWidth = 60
-        )
-        
-      # Edge columns
-      } else if (is_edge) {
-        
-        colDef(
-          name = label,
-          style = make_style(
-            data,
-            column
-          ),
-          minWidth = 60
-        )
-        
-      # All other columns
-      } else {
-        
-        colDef(
-          name = label,
-          minWidth = 60
-        )
-      }
-      
-    }),
-    columns
-  )
-  
-  reactable(
-    data,
-    searchable = TRUE,
-    filterable = TRUE,
-    sortable = TRUE,
-    striped = TRUE,
-    highlight = TRUE,
-    bordered = TRUE,
-    defaultPageSize = 100,
-    defaultSorted = default_sorted,
-    defaultSortOrder = "asc",
-    columns = column_defs
-  )
-}
-
-make_fantasy_table(
-  df_qb_fantasy_table,
-  default_sorted = "rank_mod"
-)
+# make_style <- function(data, column) {
+#   
+#   # Determine whether column is a probability variable
+#   is_probability <- grepl(
+#     "^prop_",
+#     column,
+#     ignore.case = TRUE
+#   )
+#   
+#   # Automatically determine palette domain
+#   domain <- if (is_probability) {
+#     c(0, 1)
+#   } else {
+#     range(data[[column]], na.rm = TRUE)
+#   }
+#   
+#   # Create palette
+#   pal <- scales::col_numeric(
+#     palette = c(
+#       "#d73027",
+#       "#fee08b",
+#       "#1a9850"
+#     ),
+#     domain = domain
+#   )
+#   
+#   # Return style function
+#   function(value) {
+#     
+#     # 70% through the color scale
+#     text_cutoff <- domain[1] + 0.70 * diff(domain)
+#     
+#     list(
+#       background = pal(value),
+#       color = ifelse(
+#         value > text_cutoff,
+#         "white",
+#         "black"
+#       ),
+#       fontWeight = "bold"
+#     )
+#   }
+# }
+# 
+# make_fantasy_table <- function(
+#     data,
+#     default_sorted
+# ) {
+#   
+#   columns <- names(data)
+#   
+#   column_defs <- setNames(
+#     lapply(columns, function(column) {
+#       
+#       # Get the label directly from the data
+#       label <- labelled::var_label(data[[column]])
+#       
+#       # Fall back to the column name if no label exists
+#       if (is.null(label)) {
+#         label <- column
+#       }
+#       
+#       # Identify probability columns
+#       is_probability <- grepl(
+#         "^(p_|prop_)",
+#         column,
+#         ignore.case = TRUE
+#       )
+#       
+#       # Identify columns to color
+#       is_edge <- grepl(
+#         "edge",
+#         column,
+#         ignore.case = TRUE
+#       )
+#       
+#       # Probability columns
+#       if (is_probability) {
+#         
+#         colDef(
+#           name = label,
+#           format = colFormat(
+#             percent = TRUE,
+#             digits = 1
+#           ),
+#           style = make_style(
+#             data,
+#             column
+#           ),
+#           minWidth = 60
+#         )
+#         
+#       # Edge columns
+#       } else if (is_edge) {
+#         
+#         colDef(
+#           name = label,
+#           style = make_style(
+#             data,
+#             column
+#           ),
+#           minWidth = 60
+#         )
+#         
+#       # All other columns
+#       } else {
+#         
+#         colDef(
+#           name = label,
+#           minWidth = 60
+#         )
+#       }
+#       
+#     }),
+#     columns
+#   )
+#   
+#   reactable(
+#     data,
+#     searchable = TRUE,
+#     filterable = TRUE,
+#     sortable = TRUE,
+#     striped = TRUE,
+#     highlight = TRUE,
+#     bordered = TRUE,
+#     defaultPageSize = 100,
+#     defaultSorted = default_sorted,
+#     defaultSortOrder = "asc",
+#     columns = column_defs
+#   )
+# }
+# 
+# make_fantasy_table(
+#   df_qb_fantasy_table,
+#   default_sorted = "rank_mod"
+# )
 ```
 
 ### **RB**
@@ -516,141 +992,146 @@ make_fantasy_table(
 ```{r rb tbl}
 df_rb_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_rb_fantasy_table.rds"))
 
-make_style <- function(data, column) {
-  
-  # Determine whether column is a probability variable
-  is_probability <- grepl(
-    "^prop_",
-    column,
-    ignore.case = TRUE
-  )
-  
-  # Automatically determine palette domain
-  domain <- if (is_probability) {
-    c(0, 1)
-  } else {
-    range(data[[column]], na.rm = TRUE)
-  }
-  
-  # Create palette
-  pal <- scales::col_numeric(
-    palette = c(
-      "#d73027",
-      "#fee08b",
-      "#1a9850"
-    ),
-    domain = domain
-  )
-  
-  # Return style function
-  function(value) {
-    
-    # 70% through the color scale
-    text_cutoff <- domain[1] + 0.70 * diff(domain)
-    
-    list(
-      background = pal(value),
-      color = ifelse(
-        value > text_cutoff,
-        "white",
-        "black"
-      ),
-      fontWeight = "bold"
-    )
-  }
-}
-
-make_fantasy_table <- function(
-    data,
-    default_sorted
-) {
-  
-  columns <- names(data)
-  
-  column_defs <- setNames(
-    lapply(columns, function(column) {
-      
-      # Get the label directly from the data
-      label <- labelled::var_label(data[[column]])
-      
-      # Fall back to the column name if no label exists
-      if (is.null(label)) {
-        label <- column
-      }
-      
-      # Identify probability columns
-      is_probability <- grepl(
-        "^(p_|prop_)",
-        column,
-        ignore.case = TRUE
-      )
-      
-      # Identify columns to color
-      is_edge <- grepl(
-        "edge",
-        column,
-        ignore.case = TRUE
-      )
-      
-      # Probability columns
-      if (is_probability) {
-        
-        colDef(
-          name = label,
-          format = colFormat(
-            percent = TRUE,
-            digits = 1
-          ),
-          style = make_style(
-            data,
-            column
-          ),
-          minWidth = 60
-        )
-        
-      # Edge columns
-      } else if (is_edge) {
-        
-        colDef(
-          name = label,
-          style = make_style(
-            data,
-            column
-          ),
-          minWidth = 60
-        )
-        
-      # All other columns
-      } else {
-        
-        colDef(
-          name = label,
-          minWidth = 60
-        )
-      }
-      
-    }),
-    columns
-  )
-  
-  reactable(
-    data,
-    searchable = TRUE,
-    filterable = TRUE,
-    sortable = TRUE,
-    striped = TRUE,
-    highlight = TRUE,
-    bordered = TRUE,
-    defaultPageSize = 100,
-    defaultSorted = default_sorted,
-    defaultSortOrder = "asc",
-    columns = column_defs
-  )
-}
+# make_style <- function(data, column) {
+#   
+#   # Determine whether column is a probability variable
+#   is_probability <- grepl(
+#     "^prop_",
+#     column,
+#     ignore.case = TRUE
+#   )
+#   
+#   # Automatically determine palette domain
+#   domain <- if (is_probability) {
+#     c(0, 1)
+#   } else {
+#     range(data[[column]], na.rm = TRUE)
+#   }
+#   
+#   # Create palette
+#   pal <- scales::col_numeric(
+#     palette = c(
+#       "#d73027",
+#       "#fee08b",
+#       "#1a9850"
+#     ),
+#     domain = domain
+#   )
+#   
+#   # Return style function
+#   function(value) {
+#     
+#     # 70% through the color scale
+#     text_cutoff <- domain[1] + 0.70 * diff(domain)
+#     
+#     list(
+#       background = pal(value),
+#       color = ifelse(
+#         value > text_cutoff,
+#         "white",
+#         "black"
+#       ),
+#       fontWeight = "bold"
+#     )
+#   }
+# }
+# 
+# make_fantasy_table <- function(
+#     data,
+#     default_sorted
+# ) {
+#   
+#   columns <- names(data)
+#   
+#   column_defs <- setNames(
+#     lapply(columns, function(column) {
+#       
+#       # Get the label directly from the data
+#       label <- labelled::var_label(data[[column]])
+#       
+#       # Fall back to the column name if no label exists
+#       if (is.null(label)) {
+#         label <- column
+#       }
+#       
+#       # Identify probability columns
+#       is_probability <- grepl(
+#         "^(p_|prop_)",
+#         column,
+#         ignore.case = TRUE
+#       )
+#       
+#       # Identify columns to color
+#       is_edge <- grepl(
+#         "edge",
+#         column,
+#         ignore.case = TRUE
+#       )
+#       
+#       # Probability columns
+#       if (is_probability) {
+#         
+#         colDef(
+#           name = label,
+#           format = colFormat(
+#             percent = TRUE,
+#             digits = 1
+#           ),
+#           style = make_style(
+#             data,
+#             column
+#           ),
+#           minWidth = 60
+#         )
+#         
+#       # Edge columns
+#       } else if (is_edge) {
+#         
+#         colDef(
+#           name = label,
+#           style = make_style(
+#             data,
+#             column
+#           ),
+#           minWidth = 60
+#         )
+#         
+#       # All other columns
+#       } else {
+#         
+#         colDef(
+#           name = label,
+#           minWidth = 60
+#         )
+#       }
+#       
+#     }),
+#     columns
+#   )
+#   
+#   reactable(
+#     data,
+#     searchable = TRUE,
+#     filterable = TRUE,
+#     sortable = TRUE,
+#     striped = TRUE,
+#     highlight = TRUE,
+#     bordered = TRUE,
+#     defaultPageSize = 100,
+#     defaultSorted = default_sorted,
+#     defaultSortOrder = "asc",
+#     columns = column_defs
+#   )
+# }
 
 make_fantasy_table(
+  
   df_rb_fantasy_table,
-  default_sorted = "rank_mod"
+  
+  default_sorted = "rank_mod",
+  
+  height = 700
+  
 )
 ```
 
@@ -659,141 +1140,146 @@ make_fantasy_table(
 ```{r wr tbl}
 df_wr_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_wr_fantasy_table.rds"))
 
-make_style <- function(data, column) {
-  
-  # Determine whether column is a probability variable
-  is_probability <- grepl(
-    "^prop_",
-    column,
-    ignore.case = TRUE
-  )
-  
-  # Automatically determine palette domain
-  domain <- if (is_probability) {
-    c(0, 1)
-  } else {
-    range(data[[column]], na.rm = TRUE)
-  }
-  
-  # Create palette
-  pal <- scales::col_numeric(
-    palette = c(
-      "#d73027",
-      "#fee08b",
-      "#1a9850"
-    ),
-    domain = domain
-  )
-  
-  # Return style function
-  function(value) {
-    
-    # 70% through the color scale
-    text_cutoff <- domain[1] + 0.70 * diff(domain)
-    
-    list(
-      background = pal(value),
-      color = ifelse(
-        value > text_cutoff,
-        "white",
-        "black"
-      ),
-      fontWeight = "bold"
-    )
-  }
-}
-
-make_fantasy_table <- function(
-    data,
-    default_sorted
-) {
-  
-  columns <- names(data)
-  
-  column_defs <- setNames(
-    lapply(columns, function(column) {
-      
-      # Get the label directly from the data
-      label <- labelled::var_label(data[[column]])
-      
-      # Fall back to the column name if no label exists
-      if (is.null(label)) {
-        label <- column
-      }
-      
-      # Identify probability columns
-      is_probability <- grepl(
-        "^(p_|prop_)",
-        column,
-        ignore.case = TRUE
-      )
-      
-      # Identify columns to color
-      is_edge <- grepl(
-        "edge",
-        column,
-        ignore.case = TRUE
-      )
-      
-      # Probability columns
-      if (is_probability) {
-        
-        colDef(
-          name = label,
-          format = colFormat(
-            percent = TRUE,
-            digits = 1
-          ),
-          style = make_style(
-            data,
-            column
-          ),
-          minWidth = 60
-        )
-        
-      # Edge columns
-      } else if (is_edge) {
-        
-        colDef(
-          name = label,
-          style = make_style(
-            data,
-            column
-          ),
-          minWidth = 60
-        )
-        
-      # All other columns
-      } else {
-        
-        colDef(
-          name = label,
-          minWidth = 60
-        )
-      }
-      
-    }),
-    columns
-  )
-  
-  reactable(
-    data,
-    searchable = TRUE,
-    filterable = TRUE,
-    sortable = TRUE,
-    striped = TRUE,
-    highlight = TRUE,
-    bordered = TRUE,
-    defaultPageSize = 100,
-    defaultSorted = default_sorted,
-    defaultSortOrder = "asc",
-    columns = column_defs
-  )
-}
+# make_style <- function(data, column) {
+#   
+#   # Determine whether column is a probability variable
+#   is_probability <- grepl(
+#     "^prop_",
+#     column,
+#     ignore.case = TRUE
+#   )
+#   
+#   # Automatically determine palette domain
+#   domain <- if (is_probability) {
+#     c(0, 1)
+#   } else {
+#     range(data[[column]], na.rm = TRUE)
+#   }
+#   
+#   # Create palette
+#   pal <- scales::col_numeric(
+#     palette = c(
+#       "#d73027",
+#       "#fee08b",
+#       "#1a9850"
+#     ),
+#     domain = domain
+#   )
+#   
+#   # Return style function
+#   function(value) {
+#     
+#     # 70% through the color scale
+#     text_cutoff <- domain[1] + 0.70 * diff(domain)
+#     
+#     list(
+#       background = pal(value),
+#       color = ifelse(
+#         value > text_cutoff,
+#         "white",
+#         "black"
+#       ),
+#       fontWeight = "bold"
+#     )
+#   }
+# }
+# 
+# make_fantasy_table <- function(
+#     data,
+#     default_sorted
+# ) {
+#   
+#   columns <- names(data)
+#   
+#   column_defs <- setNames(
+#     lapply(columns, function(column) {
+#       
+#       # Get the label directly from the data
+#       label <- labelled::var_label(data[[column]])
+#       
+#       # Fall back to the column name if no label exists
+#       if (is.null(label)) {
+#         label <- column
+#       }
+#       
+#       # Identify probability columns
+#       is_probability <- grepl(
+#         "^(p_|prop_)",
+#         column,
+#         ignore.case = TRUE
+#       )
+#       
+#       # Identify columns to color
+#       is_edge <- grepl(
+#         "edge",
+#         column,
+#         ignore.case = TRUE
+#       )
+#       
+#       # Probability columns
+#       if (is_probability) {
+#         
+#         colDef(
+#           name = label,
+#           format = colFormat(
+#             percent = TRUE,
+#             digits = 1
+#           ),
+#           style = make_style(
+#             data,
+#             column
+#           ),
+#           minWidth = 60
+#         )
+#         
+#       # Edge columns
+#       } else if (is_edge) {
+#         
+#         colDef(
+#           name = label,
+#           style = make_style(
+#             data,
+#             column
+#           ),
+#           minWidth = 60
+#         )
+#         
+#       # All other columns
+#       } else {
+#         
+#         colDef(
+#           name = label,
+#           minWidth = 60
+#         )
+#       }
+#       
+#     }),
+#     columns
+#   )
+#   
+#   reactable(
+#     data,
+#     searchable = TRUE,
+#     filterable = TRUE,
+#     sortable = TRUE,
+#     striped = TRUE,
+#     highlight = TRUE,
+#     bordered = TRUE,
+#     defaultPageSize = 100,
+#     defaultSorted = default_sorted,
+#     defaultSortOrder = "asc",
+#     columns = column_defs
+#   )
+# }
 
 make_fantasy_table(
+  
   df_wr_fantasy_table,
-  default_sorted = "rank_mod"
+  
+  default_sorted = "rank_mod",
+  
+  height = 700
+  
 )
 ```
 
@@ -802,141 +1288,146 @@ make_fantasy_table(
 ```{r te tbl}
 df_te_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_te_fantasy_table.rds"))
 
-make_style <- function(data, column) {
-  
-  # Determine whether column is a probability variable
-  is_probability <- grepl(
-    "^prop_",
-    column,
-    ignore.case = TRUE
-  )
-  
-  # Automatically determine palette domain
-  domain <- if (is_probability) {
-    c(0, 1)
-  } else {
-    range(data[[column]], na.rm = TRUE)
-  }
-  
-  # Create palette
-  pal <- scales::col_numeric(
-    palette = c(
-      "#d73027",
-      "#fee08b",
-      "#1a9850"
-    ),
-    domain = domain
-  )
-  
-  # Return style function
-  function(value) {
-    
-    # 70% through the color scale
-    text_cutoff <- domain[1] + 0.70 * diff(domain)
-    
-    list(
-      background = pal(value),
-      color = ifelse(
-        value > text_cutoff,
-        "white",
-        "black"
-      ),
-      fontWeight = "bold"
-    )
-  }
-}
-
-make_fantasy_table <- function(
-    data,
-    default_sorted
-) {
-  
-  columns <- names(data)
-  
-  column_defs <- setNames(
-    lapply(columns, function(column) {
-      
-      # Get the label directly from the data
-      label <- labelled::var_label(data[[column]])
-      
-      # Fall back to the column name if no label exists
-      if (is.null(label)) {
-        label <- column
-      }
-      
-      # Identify probability columns
-      is_probability <- grepl(
-        "^(p_|prop_)",
-        column,
-        ignore.case = TRUE
-      )
-      
-      # Identify columns to color
-      is_edge <- grepl(
-        "edge",
-        column,
-        ignore.case = TRUE
-      )
-      
-      # Probability columns
-      if (is_probability) {
-        
-        colDef(
-          name = label,
-          format = colFormat(
-            percent = TRUE,
-            digits = 1
-          ),
-          style = make_style(
-            data,
-            column
-          ),
-          minWidth = 60
-        )
-        
-      # Edge columns
-      } else if (is_edge) {
-        
-        colDef(
-          name = label,
-          style = make_style(
-            data,
-            column
-          ),
-          minWidth = 60
-        )
-        
-      # All other columns
-      } else {
-        
-        colDef(
-          name = label,
-          minWidth = 60
-        )
-      }
-      
-    }),
-    columns
-  )
-  
-  reactable(
-    data,
-    searchable = TRUE,
-    filterable = TRUE,
-    sortable = TRUE,
-    striped = TRUE,
-    highlight = TRUE,
-    bordered = TRUE,
-    defaultPageSize = 100,
-    defaultSorted = default_sorted,
-    defaultSortOrder = "asc",
-    columns = column_defs
-  )
-}
+# make_style <- function(data, column) {
+#   
+#   # Determine whether column is a probability variable
+#   is_probability <- grepl(
+#     "^prop_",
+#     column,
+#     ignore.case = TRUE
+#   )
+#   
+#   # Automatically determine palette domain
+#   domain <- if (is_probability) {
+#     c(0, 1)
+#   } else {
+#     range(data[[column]], na.rm = TRUE)
+#   }
+#   
+#   # Create palette
+#   pal <- scales::col_numeric(
+#     palette = c(
+#       "#d73027",
+#       "#fee08b",
+#       "#1a9850"
+#     ),
+#     domain = domain
+#   )
+#   
+#   # Return style function
+#   function(value) {
+#     
+#     # 70% through the color scale
+#     text_cutoff <- domain[1] + 0.70 * diff(domain)
+#     
+#     list(
+#       background = pal(value),
+#       color = ifelse(
+#         value > text_cutoff,
+#         "white",
+#         "black"
+#       ),
+#       fontWeight = "bold"
+#     )
+#   }
+# }
+# 
+# make_fantasy_table <- function(
+#     data,
+#     default_sorted
+# ) {
+#   
+#   columns <- names(data)
+#   
+#   column_defs <- setNames(
+#     lapply(columns, function(column) {
+#       
+#       # Get the label directly from the data
+#       label <- labelled::var_label(data[[column]])
+#       
+#       # Fall back to the column name if no label exists
+#       if (is.null(label)) {
+#         label <- column
+#       }
+#       
+#       # Identify probability columns
+#       is_probability <- grepl(
+#         "^(p_|prop_)",
+#         column,
+#         ignore.case = TRUE
+#       )
+#       
+#       # Identify columns to color
+#       is_edge <- grepl(
+#         "edge",
+#         column,
+#         ignore.case = TRUE
+#       )
+#       
+#       # Probability columns
+#       if (is_probability) {
+#         
+#         colDef(
+#           name = label,
+#           format = colFormat(
+#             percent = TRUE,
+#             digits = 1
+#           ),
+#           style = make_style(
+#             data,
+#             column
+#           ),
+#           minWidth = 60
+#         )
+#         
+#       # Edge columns
+#       } else if (is_edge) {
+#         
+#         colDef(
+#           name = label,
+#           style = make_style(
+#             data,
+#             column
+#           ),
+#           minWidth = 60
+#         )
+#         
+#       # All other columns
+#       } else {
+#         
+#         colDef(
+#           name = label,
+#           minWidth = 60
+#         )
+#       }
+#       
+#     }),
+#     columns
+#   )
+#   
+#   reactable(
+#     data,
+#     searchable = TRUE,
+#     filterable = TRUE,
+#     sortable = TRUE,
+#     striped = TRUE,
+#     highlight = TRUE,
+#     bordered = TRUE,
+#     defaultPageSize = 100,
+#     defaultSorted = default_sorted,
+#     defaultSortOrder = "asc",
+#     columns = column_defs
+#   )
+# }
 
 make_fantasy_table(
+
   df_te_fantasy_table,
-  default_sorted = "rank_mod"
+  
+  default_sorted = "rank_mod",
+  
+  height = 700
+  
 )
 ```
 

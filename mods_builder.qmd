@@ -14409,9 +14409,8 @@ df_fan_wr_fin_all =
       select(player_id, season, prior_fpts_other, prior_rank, expect_tar_other),
     by = c("player_id", "season")
   ) %>% 
-  left_join(df_games_missed_all, by = c("player_id", "season")) %>% 
-  # filter(prior_rank <= 100 | (prior_rank > 100 & prior_games_missed > 8 & sum_fpts >= 100) | (is.na(prior_rank))) %>% 
-  filter(prior_rank <= 100 | (is.na(prior_rank)))
+  left_join(df_games_missed_all, by = c("player_id", "season"))# %>% 
+  # filter(prior_rank <= 100 | (prior_rank > 100 & prior_games_missed > 8 & sum_fpts >= 100) | (is.na(prior_rank)))
 
 saveRDS(df_fan_wr_fin_all, str_c("data/fantasy_data/", "df_fan_wr_fin_all.rds"))
 
@@ -14605,6 +14604,7 @@ df_feature_svm = readRDS("df_feature_svm_2026_07_04.rds")
 
 df_fpts_wr_train = 
   df_fan_wr_fin_all %>% 
+  filter(prior_rank <= 100 | (is.na(prior_rank)) | prior_fpts >= 85) %>% 
   left_join(df_off_epa, by = c("team", "season")) %>% 
   left_join(df_rz_eff, by = c("team", "season")) %>% 
   left_join(df_def_epa_sos, by = c("team", "season")) %>%
@@ -15007,56 +15007,56 @@ min(mod_mars_wr_resid$results$RMSE)
 #mod_mars_wr_resid$finalModel %>% summary
 
 # Boost
-set.seed(37564)
-mod_boost_wr_resid = train(mod_var ~ .,
-                  na.action = na.exclude, 
-                  data = df_resid_wr_train, 
-                  method = "gbm", 
-                  tuneGrid = expand.grid(n.trees = c(1000, 5000, 9000),
-                                         interaction.depth = c(1:2),
-                                         shrinkage = c(0.0003, 0.0005, 0.0007),
-                                         n.minobsinnode = 1), 
-                  trControl = ctrl,
-                  verbose = F)
-ggplot(mod_boost_wr_resid, highlight = T) + 
-  ggtitle("Boost") +
-  theme(plot.title = element_text(hjust = 0.5))
-mod_boost_wr_resid$bestTune
-min(mod_boost_wr_resid$results$RMSE)
-
-#boost = tibble(wins_boost = predict(mod_boost, newdata = test_df))
-
-# SVM
-set.seed(37564)
-mod_svm_wr_resid = train(mod_var ~ .,
-                na.action = na.exclude, 
-                data = df_resid_wr_train,
-                preProcess = c("scale", "center"),
-                method = "svmRadialSigma",
-                tuneGrid = expand.grid(C = exp(seq(-2, 0, len = 5)),
-                                       sigma = exp(seq(-4,-2, len = 5))),
-                trControl = ctrl)
-ggplot(mod_svm_wr_resid, highlight = T) + 
-  ggtitle("SVM Radial") +
-  theme(plot.title = element_text(hjust = 0.5))
-mod_svm_wr_resid$bestTune
-min(mod_svm_wr_resid$results$RMSE)
-
-# Variable Importance
-set.seed(37564)
-vip(
-  mod_boost_wr_resid, 
-  method = "permute", 
-  train = df_resid_wr_train,
-  target = "mod_var",
-  metric = "rmse",
-  nsim = 50,
-  pred_wrapper = predict,
-  geom = "boxplot", 
-  all_permutations = T,
-  mapping = aes_string(fill = "Variable", alpha = 0.75),
-  num_features = 40L
-)
+# set.seed(37564)
+# mod_boost_wr_resid = train(mod_var ~ .,
+#                   na.action = na.exclude, 
+#                   data = df_resid_wr_train, 
+#                   method = "gbm", 
+#                   tuneGrid = expand.grid(n.trees = c(1000, 5000, 9000),
+#                                          interaction.depth = c(1:2),
+#                                          shrinkage = c(0.0003, 0.0005, 0.0007),
+#                                          n.minobsinnode = 1), 
+#                   trControl = ctrl,
+#                   verbose = F)
+# ggplot(mod_boost_wr_resid, highlight = T) + 
+#   ggtitle("Boost") +
+#   theme(plot.title = element_text(hjust = 0.5))
+# mod_boost_wr_resid$bestTune
+# min(mod_boost_wr_resid$results$RMSE)
+# 
+# #boost = tibble(wins_boost = predict(mod_boost, newdata = test_df))
+# 
+# # SVM
+# set.seed(37564)
+# mod_svm_wr_resid = train(mod_var ~ .,
+#                 na.action = na.exclude, 
+#                 data = df_resid_wr_train,
+#                 preProcess = c("scale", "center"),
+#                 method = "svmRadialSigma",
+#                 tuneGrid = expand.grid(C = exp(seq(-2, 0, len = 5)),
+#                                        sigma = exp(seq(-4,-2, len = 5))),
+#                 trControl = ctrl)
+# ggplot(mod_svm_wr_resid, highlight = T) + 
+#   ggtitle("SVM Radial") +
+#   theme(plot.title = element_text(hjust = 0.5))
+# mod_svm_wr_resid$bestTune
+# min(mod_svm_wr_resid$results$RMSE)
+# 
+# # Variable Importance
+# set.seed(37564)
+# vip(
+#   mod_boost_wr_resid, 
+#   method = "permute", 
+#   train = df_resid_wr_train,
+#   target = "mod_var",
+#   metric = "rmse",
+#   nsim = 50,
+#   pred_wrapper = predict,
+#   geom = "boxplot", 
+#   all_permutations = T,
+#   mapping = aes_string(fill = "Variable", alpha = 0.75),
+#   num_features = 40L
+# )
 
 coef(mod_enet_wr_resid$finalModel, mod_enet_wr_resid$bestTune$lambda)
 
@@ -15714,7 +15714,7 @@ df_fpts_wr_test =
   # filter(prior_rank <= 100 | (prior_rank > 100 & prior_games_missed > 8 | (is.na(prior_rank)))) %>% 
   left_join(df_games_missed_all, by = c("player_id", "season")) %>% 
   left_join(df_def_epa_sos, by = c("team", "season")) %>% 
-  filter(prior_rank <= 110 | is.na(prior_rank)) %>% 
+  filter(prior_rank <= 110 | is.na(prior_rank) | prior_fpts >= 85) %>% 
   mutate(
     expect_tar = prior_tar_share * prior_n_pass,
     expect_ay = prior_ays * prior_n_pass,
@@ -15955,7 +15955,7 @@ df_adp =
       )
   )
 
-view(df_adp)
+# view(df_adp)
 
 df_wr_project_fin_adp = 
   df_wr_project_fin %>%
@@ -15990,7 +15990,7 @@ df_wr_project_market =
     exp_finish_edge = adp - pred_rank_mean
   )
 
-view(df_wr_project_market)
+# view(df_wr_project_market)
 
 df_adp_beat = 
   df_fpts_wr_sim %>% 
@@ -16008,7 +16008,7 @@ df_wr_project_market_fin =
   df_wr_project_market %>% 
   left_join(df_adp_beat, by = "player_id")
 
-view(df_wr_project_market_fin)
+# view(df_wr_project_market_fin)
 
 df_wr_fantasy_table = 
   df_wr_project_market_fin %>% 
@@ -16035,7 +16035,7 @@ df_wr_fantasy_table =
     "prop_top_12" = "WR12", 
     "prop_top_24" = "WR24", 
     "prop_top_36" = "WR36", 
-    "prop_below_50" = "> WR50"
+    "prop_below_50" = ">WR50"
   )
 
 saveRDS(df_wr_fantasy_table, str_c("data/fantasy_data/", "df_wr_fantasy_table.rds"))
@@ -17570,9 +17570,8 @@ df_fan_rb_fin_all =
       select(player_id, season, prior_fpts_other, prior_rank, expect_rush_other),
     by = c("player_id", "season")
   ) %>% 
-  left_join(df_games_missed_rb_all, by = c("player_id", "season")) %>% 
-  # filter(prior_rank <= 100 | (prior_rank > 100 & prior_games_missed > 8 & sum_fpts >= 100) | (is.na(prior_rank))) %>% 
-  filter(prior_rank <= 100 | (is.na(prior_rank)))
+  left_join(df_games_missed_rb_all, by = c("player_id", "season"))# %>% 
+  # filter(prior_rank <= 100 | (prior_rank > 100 & prior_games_missed > 8 & sum_fpts >= 100) | (is.na(prior_rank)))
 
 saveRDS(df_fan_rb_fin_all, str_c("data/fantasy_data/", "df_fan_rb_fin_all.rds"))
 ```
@@ -17991,6 +17990,7 @@ saveRDS(df_ol_cont_team, str_c("data/fantasy_data/", "df_ol_cont_team.rds"))
 
 df_fpts_rb_train = 
   df_fan_rb_fin_all %>% 
+  filter(prior_rank <= 100 | (is.na(prior_rank)) | prior_fpts >= 85) %>% 
   # left_join(df_rb_epa, by = c("team", "season")) %>% 
   left_join(df_qb_epa_teams, by = c("team", "season")) %>% 
   left_join(df_off_epa, by = c("team", "season")) %>% 
@@ -18904,13 +18904,13 @@ df_fpts_rb_test =
   left_join(df_def_epa_sos, by = c("team", "season")) %>% 
   left_join(df_ol_cont_team, by = c("team", "season")) %>% 
   left_join(df_games_missed_rb_all, by = c("player_id", "season")) %>% 
-  filter(prior_rank <= 110 | is.na(prior_rank)) %>% 
+  filter(prior_rank <= 110 | is.na(prior_rank) | prior_fpts >= 85) %>% 
   mutate(
     expect_tar = prior_tar_share * prior_n_pass,
     expect_rush = prior_rush_share * prior_n_rush_team,
     expect_gl_opp = prior_gl_att_share * prior_gl_trips
   ) %>% 
-  select(player_id, player_display_name, team, prior_rush_rate, prior_fpts, prior_n_pass, prior_rb_epa, player_age, draft_number, rb_new_team, expect_rush_other, games_missed_rate, expect_tar, expect_rush, expect_gl_opp, ol_cont_grade, ol_cont_share) %>% 
+  select(player_id, player_display_name, team, prior_rush_rate, prior_fpts, prior_n_pass, prior_rb_epa, player_age, draft_number, rb_new_team, expect_rush_other, games_missed_rate, expect_tar, expect_rush, expect_gl_opp, ol_cont_grade_run, ol_cont_share) %>% 
   # select(-c(prior_qb_epa)) %>% 
   drop_na()
 
@@ -19051,7 +19051,7 @@ df_adp =
       )
   )
 
-view(df_adp)
+# view(df_adp)
 
 df_rb_project_fin_adp =
   df_rb_project_fin %>%
@@ -19086,7 +19086,7 @@ df_rb_project_market =
     exp_finish_edge = adp - pred_rank_mean
   )
 
-view(df_rb_project_market)
+# view(df_rb_project_market)
 
 df_adp_beat_rb = 
   df_fpts_rb_sim %>% 
@@ -19104,7 +19104,7 @@ df_rb_project_market_fin =
   df_rb_project_market %>% 
   left_join(df_adp_beat_rb, by = "player_id")
 
-view(df_rb_project_market_fin)
+# view(df_rb_project_market_fin)
 
 df_rb_fantasy_table = 
   df_rb_project_market_fin %>% 
@@ -19130,7 +19130,7 @@ df_rb_fantasy_table =
     "pred_fpts_90p" = "Ceiling", 
     "prop_top_12" = "RB12", 
     "prop_top_24" = "RB24", 
-    "prop_below_36" = "> RB36"
+    "prop_below_36" = ">RB36"
   )
 
 saveRDS(df_rb_fantasy_table, str_c("data/fantasy_data/", "df_rb_fantasy_table.rds"))
@@ -20318,9 +20318,8 @@ df_fan_te_fin_all =
       select(player_id, season, prior_fpts_other, prior_rank, expect_tar_other),
     by = c("player_id", "season")
   ) %>% 
-  left_join(df_games_missed_te_all, by = c("player_id", "season")) %>% 
-  # filter(prior_rank <= 100 | (prior_rank > 100 & prior_games_missed > 8 & sum_fpts >= 100) | (is.na(prior_rank))) %>% 
-  filter(prior_rank <= 40 | (is.na(prior_rank)))
+  left_join(df_games_missed_te_all, by = c("player_id", "season"))# %>% 
+  # filter(prior_rank <= 100 | (prior_rank > 100 & prior_games_missed > 8 & sum_fpts >= 100) | (is.na(prior_rank)))
 
 saveRDS(df_fan_te_fin_all, str_c("data/fantasy_data/", "df_fan_te_fin_all.rds"))
 
@@ -20390,6 +20389,7 @@ df_games_missed_te_all = readRDS(str_c("data/fantasy_data/", "df_games_missed_te
 
 df_fpts_te_train = 
   df_fan_te_fin_all %>% 
+  filter(prior_rank <= 40 | (is.na(prior_rank)) | prior_fpts >= 85) %>% 
   left_join(df_off_epa, by = c("team", "season")) %>% 
   left_join(df_te_usage, by = c("team", "season")) %>% 
   left_join(df_rz_eff, by = c("team", "season")) %>% 
@@ -21262,7 +21262,8 @@ df_fpts_te_test =
   left_join(df_games_missed_te_all, by = c("player_id", "season")) %>% 
   left_join(df_def_epa_sos, by = c("team", "season")) %>% 
   left_join(df_off_epa, by = c("team", "season")) %>% 
-  filter(prior_rank <= 40 | is.na(prior_rank)) %>% 
+  filter(prior_rank <= 40 | (is.na(prior_rank)) | prior_fpts >= 85) %>% 
+  # filter(prior_rank <= 40 | is.na(prior_rank)) %>% 
   mutate(
     expect_tar = prior_tar_share * prior_n_pass,
     expect_ay = prior_ays * prior_n_pass,
@@ -21493,7 +21494,7 @@ df_te_fantasy_table =
     "prop_top_1" = "TE1", 
     "prop_top_5" = "TE5", 
     "prop_top_12" = "TE12", 
-    "prop_below_24" = "> TE24"
+    "prop_below_24" = ">TE24"
   )
 
 saveRDS(df_te_fantasy_table, str_c("data/fantasy_data/", "df_te_fantasy_table.rds"))
@@ -22843,7 +22844,7 @@ df_fan_qb_fin_pre =
   left_join(df_gl_att_rb, by = c("season", "player_id", "team")) %>%
   left_join(df_qb_rush_att, by = c("player_id", "season")) %>% 
   left_join(df_rush_rate, by = c("season", "team")) %>% 
-  left_join(df_pass_rate %>% rename(n_pass_team = n_pass), by = c("season", "team")) %>%
+  left_join(df_pass_rate %>% rename(n_pass_team = n_pass), by = c("season", "team")) %>% 
   left_join(
     df_roster_qb_all %>% 
       select(season, player_id, team, birth_date, years_exp, draft_number) %>% 
@@ -22863,7 +22864,7 @@ df_fan_qb_fin_pre =
   mutate(
     rush_share = sum(n_rush, na.rm = T) / mean(sum(n_rush_team, na.rm = T), na.rm = T),
     mean_cpoe = mean(mean_cpoe, na.rm = T)
-  ) %>%
+  ) %>% 
   slice(1) %>% 
   ungroup() %>% 
   drop_na(team) %>% 
@@ -22934,9 +22935,8 @@ df_fan_qb_fin_all =
       select(player_id, season, prior_fpts_other, prior_rank),
     by = c("player_id", "season")
   ) %>% 
-  left_join(df_games_missed_qb_all, by = c("player_id", "season")) %>% 
-  # filter(prior_rank <= 100 | (prior_rank > 100 & prior_games_missed > 8 & sum_fpts >= 100) | (is.na(prior_rank))) %>% 
-  filter(prior_rank <= 30 | (is.na(prior_rank)))
+  left_join(df_games_missed_qb_all, by = c("player_id", "season"))# %>% 
+  # filter(prior_rank <= 100 | (prior_rank > 100 & prior_games_missed > 8 & sum_fpts >= 100) | (is.na(prior_rank)))
 
 saveRDS(df_fan_qb_fin_all, str_c("data/fantasy_data/", "df_fan_qb_fin_all.rds"))
 
@@ -23105,6 +23105,7 @@ df_def_epa_sos = readRDS(str_c("data/fantasy_data/", "df_def_epa_sos.rds"))
 
 df_fpts_qb_train =
   df_fan_qb_fin_all %>% 
+  filter(prior_rank <= 30 | (is.na(prior_rank)) | prior_fpts >= 150) %>% 
   # left_join(fin_df, by = c("team", "season")) %>% 
   # left_join(coach_df, by = c("team", "season")) %>% 
   # left_join(mod_df, by = c("team", "season")) %>% 
@@ -23995,7 +23996,8 @@ df_fpts_qb_test =
     expect_rush = prior_rush_share * prior_n_rush_team,
     expect_gl_opp = prior_gl_att_share * prior_gl_trips
   ) %>% 
-  filter(prior_rank <= 35 | (is.na(prior_rank))) %>% 
+  # filter(prior_rank <= 30 | (is.na(prior_rank)) | prior_fpts >= 150) %>% 
+  filter(prior_rank <= 35 | (is.na(prior_rank)) | prior_fpts >= 150) %>%
   select(player_id, player_display_name, team, prior_fpts, prior_adot, prior_qb_epa, draft_number, prior_fpts_other, qb_new_team, games_missed_rate, expect_rush, ol_cont_grade_pass) %>% 
   # select(-c(prior_qb_epa)) %>% 
   drop_na()
@@ -24222,7 +24224,7 @@ df_qb_fantasy_table =
     "prop_top_1" = "QB1", 
     "prop_top_5" = "QB5", 
     "prop_top_12" = "QB12", 
-    "prop_below_24" = "> QB24"
+    "prop_below_24" = ">QB24"
   )
 
 saveRDS(df_qb_fantasy_table, str_c("data/fantasy_data/", "df_qb_fantasy_table.rds"))

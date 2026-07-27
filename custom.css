@@ -1,0 +1,145 @@
+/* Override the primary color to your custom color 
+:root {
+  --bs-primary: #FFA500; /* Use the HEX color code for the "warning" color 
+}
+*/
+/* Change the background color of the entire website */
+/* body {
+  background-color: #204588; /*rgba(144, 195, 144, 0.5); /* Replace with your desired background color */
+/*}
+/* Change the background color of the navbar to light green */
+/*.navbar {
+  background-color: #002548; /*rgba(25, 60, 17, 0.8); /* Use your desired color's HEX code */
+/*}
+
+.navbar-brand {
+  background-color: #002548 !important; /* rgba(25, 60, 17, 0.8) */
+/*  color: #fff !important; /* Use your desired color's HEX code */
+/*}
+
+.nav.navbar-nav.navbar-right a {
+  color: #fff !important; /* Use your desired color's HEX code */
+/*}
+
+*/
+
+/* ------------------------------------------------------------
+   Main table
+------------------------------------------------------------ */
+
+.fantasy-table-dark {
+  background-color: #1e1e1e;
+  color: #f0f0f0;
+}
+
+
+/* ------------------------------------------------------------
+   Header
+------------------------------------------------------------ */
+
+.fantasy-table-dark .rt-th {
+  background-color: #2b2b2b;
+  color: #ffffff;
+  border-bottom: 1px solid #555555;
+
+  /* Allow headers to wrap onto multiple lines */
+  white-space: normal !important;
+
+  /* Only break lines at normal word boundaries */
+  word-break: normal;
+  overflow-wrap: normal;
+
+  /* Improve readability of multi-line headers */
+  line-height: 1.2;
+  padding: 8px 6px;
+}
+
+/* ------------------------------------------------------------
+   Normal body cells
+------------------------------------------------------------ */
+
+.fantasy-table-dark .rt-td {
+  background-color: #1e1e1e;
+  color: #f0f0f0;
+  border-bottom: 1px solid #333333;
+}
+
+
+/* ------------------------------------------------------------
+   Hover
+------------------------------------------------------------ */
+
+.fantasy-table-dark .rt-tr:hover .rt-td {
+  background-color: #333333;
+}
+/* ------------------------------------------------------------
+   Sticky Player column - body
+------------------------------------------------------------ */
+
+.fantasy-table-dark .sticky-player {
+  background-color: #1e1e1e;
+  z-index: 3;
+}
+
+
+/* ------------------------------------------------------------
+   Sticky Team column - body
+------------------------------------------------------------ */
+
+.fantasy-table-dark .sticky-team {
+  background-color: #1e1e1e;
+  z-index: 3;
+
+  box-shadow: 4px 0 6px -4px
+    rgba(0, 0, 0, 0.8);
+}
+
+
+/* ------------------------------------------------------------
+   Sticky Player/Team headers
+------------------------------------------------------------ */
+
+/* .fantasy-table-dark
+.sticky-player.rt-th, 
+.fantasy-table-dark 
+.sticky-team.rt-th { 
+  background-color: #2b2b2b; 
+  z-index: 10; 
+} */
+
+/* ------------------------------------------------------------
+   Search box
+------------------------------------------------------------ */
+
+.fantasy-table-dark input {
+  background-color: #2b2b2b;
+  color: #ffffff;
+  border: 1px solid #555555;
+}
+
+
+/* ------------------------------------------------------------
+   Select/filter controls
+------------------------------------------------------------ */
+
+.fantasy-table-dark select {
+  background-color: #2b2b2b;
+  color: #ffffff;
+  border: 1px solid #555555;
+}
+
+
+/* ------------------------------------------------------------
+   Pagination
+------------------------------------------------------------ */
+
+.fantasy-table-dark button {
+  background-color: #2b2b2b;
+  color: #ffffff;
+  border: 1px solid #555555;
+}
+
+
+.fantasy-table-dark button:hover {
+  background-color: #444444;
+}
