@@ -12,6 +12,10 @@ format:
 editor: source
 ---
 
+:::{.callout-note}
+Updated as of `r format(Sys.time(), '%A, %B %d, %Y at %X')`
+:::
+
 ```{r setup}
 #| include: false
 
@@ -93,12 +97,10 @@ df_fantasy =
 
 ::: panel-tabset
 
-### **QB**
+### **Big Board**
 
-```{r qb tbl}
-# df_fpts_qb_test = readRDS(str_c("data/fantasy_data/", "df_fpts_qb_test.rds"))
-
-df_qb_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_qb_fantasy_table.rds"))
+```{r}
+df_all_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_all_fantasy_table.rds"))
 
 make_fantasy_table <- function(
     data,
@@ -465,7 +467,7 @@ make_fantasy_table <- function(
   
     height = height,
     
-    defaultPageSize = 200,
+    defaultPageSize = 300,
     
     defaultSorted = default_sorted,
     
@@ -565,6 +567,23 @@ make_style <- function(
     )
   }
 }
+
+make_fantasy_table(
+  
+  data = df_all_fantasy_table,
+  
+  default_sorted = "rank_vor",
+  
+  height = 700
+)
+```
+
+### **QB**
+
+```{r qb tbl}
+# df_fpts_qb_test = readRDS(str_c("data/fantasy_data/", "df_fpts_qb_test.rds"))
+
+df_qb_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_qb_fantasy_table.rds"))
 
 make_fantasy_table(
   
@@ -1431,8 +1450,9 @@ make_fantasy_table(
 )
 ```
 
+:::
 
-## **Fantasy Football Stats**
+## **Fantasy Football Stats (2025)**
 
 ::: panel-tabset
 

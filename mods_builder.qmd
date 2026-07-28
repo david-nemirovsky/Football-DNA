@@ -15928,7 +15928,7 @@ saveRDS(df_wr_project_fin, str_c("data/fantasy_data/", "df_wr_project_fin.rds"))
 
 # from: https://www.fantasypros.com/nfl/adp/ppr-overall.php
 df_adp =
-  read.csv(str_c("data/raw_data/fantasy_adp/", "FantasyPros_2026_Overall_ADP_Rankings.csv")) %>% 
+  read.csv(str_c("data/raw_data/fantasy_adp/", "FantasyPros_2026_Overall_ADP_Rankings_2026_07_28.csv")) %>% 
   janitor::clean_names() %>% 
   tibble() %>% 
   rename(
@@ -15944,6 +15944,14 @@ df_adp =
         "Michael Pittman Jr." ~ "Michael Pittman",
         "Joshua Palmer" ~ "Josh Palmer",
         "Tre' Harris" ~ "Tre Harris",
+        "James Cook III" ~ "James Cook",
+        "Aaron Jones Sr." ~ "Aaron Jones",
+        "Travis Etienne Jr." ~ "Travis Etienne",
+        "Brian Robinson Jr." ~ "Brian Robinson",
+        "Audric Estime" ~ "Audric Estimé",
+        "Kyle Pitts Sr." ~ "Kyle Pitts",
+        "Hollywood Brown" ~ "Marquise Brown",
+        "Patrick Mahomes II" ~ "Patrick Mahomes",
         .default = player_display_name
       ),
     team = str_extract(str_extract(player_bye, "[A-Z]+ \\(\\d+\\)$"), "^[A-Z]+"), 
@@ -15992,7 +16000,7 @@ df_wr_project_market =
 
 # view(df_wr_project_market)
 
-df_adp_beat = 
+df_adp_beat_wr = 
   df_fpts_wr_sim %>% 
   left_join(
     df_wr_project_fin_adp %>% 
@@ -16006,7 +16014,7 @@ df_adp_beat =
 
 df_wr_project_market_fin = 
   df_wr_project_market %>% 
-  left_join(df_adp_beat, by = "player_id")
+  left_join(df_adp_beat_wr, by = "player_id")
 
 # view(df_wr_project_market_fin)
 
@@ -19018,38 +19026,38 @@ df_rb_project_fin =
 saveRDS(df_rb_project_fin, str_c("data/fantasy_data/", "df_rb_project_fin.rds"))
 
 # from: https://www.fantasypros.com/nfl/adp/ppr-overall.php
-df_adp =
-  read.csv(str_c("data/raw_data/fantasy_adp/", "FantasyPros_2026_Overall_ADP_Rankings.csv")) %>% 
-  janitor::clean_names() %>% 
-  tibble() %>% 
-  rename(
-    # player_display_name = player_bye,
-    pos_rank_adp = pos,
-    adp = avg
-  ) %>% 
-  mutate(
-    player_display_name = str_trim(str_remove(player_bye, "[A-Z]+ \\(\\d+\\)$")),
-    player_display_name = 
-      case_match(
-        player_display_name, 
-        "Michael Pittman Jr." ~ "Michael Pittman",
-        "Joshua Palmer" ~ "Josh Palmer",
-        "Tre' Harris" ~ "Tre Harris",
-        "James Cook III" ~ "James Cook",
-        "Aaron Jones Sr." ~ "Aaron Jones",
-        "Travis Etienne Jr." ~ "Travis Etienne",
-        "Brian Robinson Jr." ~ "Brian Robinson",
-        "Audric Estime" ~ "Audric Estimé",
-        .default = player_display_name
-      ),
-    team = str_extract(str_extract(player_bye, "[A-Z]+ \\(\\d+\\)$"), "^[A-Z]+"), 
-    team = 
-      case_when(
-        team == "LAR" ~ "LA",
-        team == "JAC" ~ "JAX",
-        .default = team
-      )
-  )
+# df_adp =
+#   read.csv(str_c("data/raw_data/fantasy_adp/", "FantasyPros_2026_Overall_ADP_Rankings.csv")) %>% 
+#   janitor::clean_names() %>% 
+#   tibble() %>% 
+#   rename(
+#     # player_display_name = player_bye,
+#     pos_rank_adp = pos,
+#     adp = avg
+#   ) %>% 
+#   mutate(
+#     player_display_name = str_trim(str_remove(player_bye, "[A-Z]+ \\(\\d+\\)$")),
+#     player_display_name = 
+#       case_match(
+#         player_display_name, 
+#         "Michael Pittman Jr." ~ "Michael Pittman",
+#         "Joshua Palmer" ~ "Josh Palmer",
+#         "Tre' Harris" ~ "Tre Harris",
+#         "James Cook III" ~ "James Cook",
+#         "Aaron Jones Sr." ~ "Aaron Jones",
+#         "Travis Etienne Jr." ~ "Travis Etienne",
+#         "Brian Robinson Jr." ~ "Brian Robinson",
+#         "Audric Estime" ~ "Audric Estimé",
+#         .default = player_display_name
+#       ),
+#     team = str_extract(str_extract(player_bye, "[A-Z]+ \\(\\d+\\)$"), "^[A-Z]+"), 
+#     team = 
+#       case_when(
+#         team == "LAR" ~ "LA",
+#         team == "JAC" ~ "JAX",
+#         .default = team
+#       )
+#   )
 
 # view(df_adp)
 
@@ -21380,39 +21388,39 @@ df_te_project_fin =
 saveRDS(df_te_project_fin, str_c("data/fantasy_data/", "df_te_project_fin.rds"))
 
 # from: https://www.fantasypros.com/nfl/adp/ppr-overall.php
-df_adp =
-  read.csv(str_c("data/raw_data/fantasy_adp/", "FantasyPros_2026_Overall_ADP_Rankings.csv")) %>% 
-  janitor::clean_names() %>% 
-  tibble() %>% 
-  rename(
-    # player_display_name = player_bye,
-    pos_rank_adp = pos,
-    adp = avg
-  ) %>% 
-  mutate(
-    player_display_name = str_trim(str_remove(player_bye, "[A-Z]+ \\(\\d+\\)$")),
-    player_display_name = 
-      case_match(
-        player_display_name, 
-        "Michael Pittman Jr." ~ "Michael Pittman",
-        "Joshua Palmer" ~ "Josh Palmer",
-        "Tre' Harris" ~ "Tre Harris",
-        "James Cook III" ~ "James Cook",
-        "Aaron Jones Sr." ~ "Aaron Jones",
-        "Travis Etienne Jr." ~ "Travis Etienne",
-        "Brian Robinson Jr." ~ "Brian Robinson",
-        "Audric Estime" ~ "Audric Estimé",
-        "Kyle Pitts Sr." ~ "Kyle Pitts",
-        .default = player_display_name
-      ),
-    team = str_extract(str_extract(player_bye, "[A-Z]+ \\(\\d+\\)$"), "^[A-Z]+"), 
-    team = 
-      case_when(
-        team == "LAR" ~ "LA",
-        team == "JAC" ~ "JAX",
-        .default = team
-      )
-  )
+# df_adp =
+#   read.csv(str_c("data/raw_data/fantasy_adp/", "FantasyPros_2026_Overall_ADP_Rankings.csv")) %>% 
+#   janitor::clean_names() %>% 
+#   tibble() %>% 
+#   rename(
+#     # player_display_name = player_bye,
+#     pos_rank_adp = pos,
+#     adp = avg
+#   ) %>% 
+#   mutate(
+#     player_display_name = str_trim(str_remove(player_bye, "[A-Z]+ \\(\\d+\\)$")),
+#     player_display_name = 
+#       case_match(
+#         player_display_name, 
+#         "Michael Pittman Jr." ~ "Michael Pittman",
+#         "Joshua Palmer" ~ "Josh Palmer",
+#         "Tre' Harris" ~ "Tre Harris",
+#         "James Cook III" ~ "James Cook",
+#         "Aaron Jones Sr." ~ "Aaron Jones",
+#         "Travis Etienne Jr." ~ "Travis Etienne",
+#         "Brian Robinson Jr." ~ "Brian Robinson",
+#         "Audric Estime" ~ "Audric Estimé",
+#         "Kyle Pitts Sr." ~ "Kyle Pitts",
+#         .default = player_display_name
+#       ),
+#     team = str_extract(str_extract(player_bye, "[A-Z]+ \\(\\d+\\)$"), "^[A-Z]+"), 
+#     team = 
+#       case_when(
+#         team == "LAR" ~ "LA",
+#         team == "JAC" ~ "JAX",
+#         .default = team
+#       )
+#   )
 
 view(df_adp)
 
@@ -21449,7 +21457,7 @@ df_te_project_market =
     exp_finish_edge = adp - pred_rank_mean
   )
 
-view(df_te_project_market)
+# view(df_te_project_market)
 
 df_adp_beat_te = 
   df_fpts_te_sim %>% 
@@ -21467,7 +21475,7 @@ df_te_project_market_fin =
   df_te_project_market %>% 
   left_join(df_adp_beat_te, by = "player_id")
 
-view(df_te_project_market_fin)
+# view(df_te_project_market_fin)
 
 df_te_fantasy_table =
   df_te_project_market_fin %>% 
@@ -24109,42 +24117,42 @@ df_qb_project_fin =
 saveRDS(df_qb_project_fin, str_c("data/fantasy_data/", "df_qb_project_fin.rds"))
 
 # from: https://www.fantasypros.com/nfl/adp/ppr-overall.php
-df_adp =
-  read.csv(str_c("data/raw_data/fantasy_adp/", "FantasyPros_2026_Overall_ADP_Rankings.csv")) %>% 
-  janitor::clean_names() %>% 
-  tibble() %>% 
-  rename(
-    # player_display_name = player_bye,
-    pos_rank_adp = pos,
-    adp = avg
-  ) %>% 
-  mutate(
-    player_display_name = str_trim(str_remove(player_bye, "[A-Z]+ \\(\\d+\\)$")),
-    player_display_name = 
-      case_match(
-        player_display_name, 
-        "Michael Pittman Jr." ~ "Michael Pittman",
-        "Joshua Palmer" ~ "Josh Palmer",
-        "Tre' Harris" ~ "Tre Harris",
-        "James Cook III" ~ "James Cook",
-        "Aaron Jones Sr." ~ "Aaron Jones",
-        "Travis Etienne Jr." ~ "Travis Etienne",
-        "Brian Robinson Jr." ~ "Brian Robinson",
-        "Audric Estime" ~ "Audric Estimé",
-        "Kyle Pitts Sr." ~ "Kyle Pitts",
-        "Patrick Mahomes II" ~ "Patrick Mahomes",
-        .default = player_display_name
-      ),
-    team = str_extract(str_extract(player_bye, "[A-Z]+ \\(\\d+\\)$"), "^[A-Z]+"), 
-    team = 
-      case_when(
-        team == "LAR" ~ "LA",
-        team == "JAC" ~ "JAX",
-        .default = team
-      )
-  )
-
-view(df_adp)
+# df_adp =
+#   read.csv(str_c("data/raw_data/fantasy_adp/", "FantasyPros_2026_Overall_ADP_Rankings.csv")) %>% 
+#   janitor::clean_names() %>% 
+#   tibble() %>% 
+#   rename(
+#     # player_display_name = player_bye,
+#     pos_rank_adp = pos,
+#     adp = avg
+#   ) %>% 
+#   mutate(
+#     player_display_name = str_trim(str_remove(player_bye, "[A-Z]+ \\(\\d+\\)$")),
+#     player_display_name = 
+#       case_match(
+#         player_display_name, 
+#         "Michael Pittman Jr." ~ "Michael Pittman",
+#         "Joshua Palmer" ~ "Josh Palmer",
+#         "Tre' Harris" ~ "Tre Harris",
+#         "James Cook III" ~ "James Cook",
+#         "Aaron Jones Sr." ~ "Aaron Jones",
+#         "Travis Etienne Jr." ~ "Travis Etienne",
+#         "Brian Robinson Jr." ~ "Brian Robinson",
+#         "Audric Estime" ~ "Audric Estimé",
+#         "Kyle Pitts Sr." ~ "Kyle Pitts",
+#         "Patrick Mahomes II" ~ "Patrick Mahomes",
+#         .default = player_display_name
+#       ),
+#     team = str_extract(str_extract(player_bye, "[A-Z]+ \\(\\d+\\)$"), "^[A-Z]+"), 
+#     team = 
+#       case_when(
+#         team == "LAR" ~ "LA",
+#         team == "JAC" ~ "JAX",
+#         .default = team
+#       )
+#   )
+# 
+# view(df_adp)
 
 df_qb_project_fin_adp =
   df_qb_project_fin %>%
@@ -24179,7 +24187,7 @@ df_qb_project_market =
     exp_finish_edge = adp - pred_rank_mean
   )
 
-view(df_qb_project_market)
+# view(df_qb_project_market)
 
 df_adp_beat_qb = 
   df_fpts_qb_sim %>% 
@@ -24197,7 +24205,7 @@ df_qb_project_market_fin =
   df_qb_project_market %>% 
   left_join(df_adp_beat_qb, by = "player_id")
 
-view(df_qb_project_market_fin)
+# view(df_qb_project_market_fin)
 
 df_qb_fantasy_table =
   df_qb_project_market_fin %>% 
@@ -25054,6 +25062,74 @@ write.csv(fpts_qb_2025_fin_rank_export, glue::glue("fpts_qb_2025_fin_rank_{forma
 ## Combine All Rankings
 
 ```{r all pos ranks}
+df_replacement = 
+  tibble(
+    position = c("QB", "RB", "WR", "TE"),
+    rank_replace = c(13, 37, 55, 13)
+  )
+
+df_all_fantasy_table =
+  df_qb_project_fin %>% 
+  mutate(position = "QB") %>% 
+  bind_rows(
+    df_rb_project_fin %>% 
+      mutate(position = "RB")
+  ) %>% 
+  bind_rows(
+    df_wr_project_fin %>% 
+      mutate(position = "WR")
+  ) %>% 
+  bind_rows(
+    df_te_project_fin %>% 
+      mutate(position = "TE")
+  ) %>% 
+  mutate(
+    rank_mod = 
+      case_when(
+        position == "QB" ~ qb_rank_svm,
+        position == "RB" ~ rb_rank_svm,
+        position == "WR" ~ wr_rank_svm,
+        position == "TE" ~ te_rank_boost,
+        .default = NA
+      )
+  ) %>% 
+  left_join(df_replacement, by = "position") %>% 
+  mutate(
+    pred_replace = ifelse(rank_mod == rank_replace, pred_fpts_med, NA)
+  ) %>% 
+  group_by(position) %>% 
+  fill(pred_replace, .direction = "downup") %>% 
+  ungroup() %>% 
+  left_join(df_adp, by = c("player_display_name", "team")) %>% 
+  mutate(
+    rank_all = rank(-pred_fpts_med),
+    rank_edge = adp - rank_all,
+    vor = pred_fpts_med - pred_replace,
+    rank_vor = rank(-vor),
+    z_vor = scale(vor)[ , 1],
+    z_rank_edge = scale(rank_edge)[ , 1],
+    draft_value = vor * 0.65 + rank_edge * 0.35
+  ) %>% 
+  select(player_display_name, team, position, rank_vor, adp, rank_edge, draft_value, pred_fpts, pred_replace, vor) %>% 
+  mutate(
+    across(c(draft_value, pred_fpts, pred_replace, vor), ~ round(., 1)),
+    across(c(rank_vor, adp, rank_edge), ~ round(., 0))
+  ) %>% 
+  labelled::set_variable_labels(
+    "player_display_name" = "Player", 
+    "team" = "Team", 
+    "position" = "Position",
+    "rank_vor" = "Rank", 
+    "adp" = "ADP", 
+    "rank_edge" = "Rank Edge", 
+    "draft_value" = "Draft Value",
+    "pred_fpts" = "Model Projection", 
+    "pred_replace" = "Replacement Projection",
+    "vor" = "VOR"
+  )
+
+saveRDS(df_all_fantasy_table, str_c("data/fantasy_data/", "df_all_fantasy_table.rds"))
+
 fpts_all_rank_export = 
   fpts_wr_2025_fin_rank_export %>% 
   mutate(
