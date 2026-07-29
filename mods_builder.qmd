@@ -14243,6 +14243,10 @@ df_fan_te_season_finish = readRDS(str_c("data/fantasy_data/", "df_fan_te_season_
 df_fan_te_fin_pre = readRDS(str_c("data/fantasy_data/", "df_fan_te_fin_pre.rds"))
 df_games_missed_all = readRDS(str_c("data/fantasy_data/", "df_games_missed_wr_all.rds"))
 
+# predict rookie competition:
+
+
+
 df_fan_wr_fin_pre =
   df_fan_wr_all %>% 
   filter(between(season, 2016, 2025)) %>% 
@@ -25110,10 +25114,10 @@ df_all_fantasy_table =
     z_rank_edge = scale(rank_edge)[ , 1],
     draft_value = vor * 0.65 + rank_edge * 0.35
   ) %>% 
-  select(player_display_name, team, position, rank_vor, adp, rank_edge, draft_value, pred_fpts, pred_replace, vor) %>% 
+  select(player_display_name, team, position, rank_vor, adp, pred_fpts, draft_value) %>% 
   mutate(
-    across(c(draft_value, pred_fpts, pred_replace, vor), ~ round(., 1)),
-    across(c(rank_vor, adp, rank_edge), ~ round(., 0))
+    across(c(draft_value, pred_fpts), ~ round(., 1)),
+    across(c(rank_vor, adp), ~ round(., 0))
   ) %>% 
   labelled::set_variable_labels(
     "player_display_name" = "Player", 
@@ -25121,11 +25125,11 @@ df_all_fantasy_table =
     "position" = "Position",
     "rank_vor" = "Rank", 
     "adp" = "ADP", 
-    "rank_edge" = "Rank Edge", 
-    "draft_value" = "Draft Value",
+    # "rank_edge" = "Rank Edge",
     "pred_fpts" = "Model Projection", 
-    "pred_replace" = "Replacement Projection",
-    "vor" = "VOR"
+    "draft_value" = "Draft Value"#, 
+    # "pred_replace" = "Replacement Projection",
+    # "vor" = "VOR"
   )
 
 saveRDS(df_all_fantasy_table, str_c("data/fantasy_data/", "df_all_fantasy_table.rds"))

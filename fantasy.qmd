@@ -157,13 +157,13 @@ make_fantasy_table <- function(
         )
         
         is_edge <- grepl(
-          "edge",
+          "edge|draft_value",
           column,
           ignore.case = TRUE
         )
         
         is_rank_adp_fin <- grepl(
-          "rank_mod|adp|pred_rank_med",
+          "rank_mod|adp|pred_rank_med|rank_vor",
           column,
           ignore.case = TRUE
         )
@@ -171,6 +171,21 @@ make_fantasy_table <- function(
         is_feature <- !is.null(direction) &&
           column %in% names(direction)
         
+        # ------------------------------------------------------
+        # Alignment
+        # ------------------------------------------------------
+        
+        is_center <- column %in% c(
+          "team",
+          "position"
+        )
+        
+        base_style <- list(
+          whiteSpace = "normal",
+          lineHeight = "1.2",
+          padding = "8px 6px",
+          textAlign = if (is_center) "center" else "left"
+        )
         
         # ------------------------------------------------------
         # Determine color direction
@@ -229,13 +244,13 @@ make_fantasy_table <- function(
         # ------------------------------------------------------
         
         column_definition <- colDef(
-          
+
           name = label,
-          
+        
           minWidth = column_width,
-          
+        
           width = column_width,
-          
+        
           sticky = if (
             is_player | is_team
           ) {
@@ -243,7 +258,9 @@ make_fantasy_table <- function(
           } else {
             NULL
           },
-          
+        
+          style = base_style,
+        
           headerStyle = list(
             whiteSpace = "normal",
             textAlign = "center",
@@ -268,11 +285,19 @@ make_fantasy_table <- function(
               digits = 1
             ),
             
-            style = make_style(
-              data = data,
-              column = column,
-              direction = column_direction
-            ),
+            style = function(value) {
+
+              c(
+                base_style,
+            
+                make_style(
+                  data = data,
+                  column = column,
+                  direction = column_direction
+                )(value)
+              )
+            
+            },
             
             minWidth = column_width,
             
@@ -306,11 +331,19 @@ make_fantasy_table <- function(
             
             name = label,
             
-            style = make_style(
-              data = data,
-              column = column,
-              direction = column_direction
-            ),
+            style = function(value) {
+
+              c(
+                base_style,
+            
+                make_style(
+                  data = data,
+                  column = column,
+                  direction = column_direction
+                )(value)
+              )
+            
+            },
             
             minWidth = column_width,
             
@@ -344,11 +377,19 @@ make_fantasy_table <- function(
             
             name = label,
             
-            style = make_style(
-              data = data,
-              column = column,
-              direction = column_direction
-            ),
+            style = function(value) {
+
+              c(
+                base_style,
+            
+                make_style(
+                  data = data,
+                  column = column,
+                  direction = column_direction
+                )(value)
+              )
+            
+            },
             
             minWidth = column_width,
             
