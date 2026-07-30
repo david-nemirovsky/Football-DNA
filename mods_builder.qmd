@@ -14244,8 +14244,61 @@ df_fan_te_fin_pre = readRDS(str_c("data/fantasy_data/", "df_fan_te_fin_pre.rds")
 df_games_missed_all = readRDS(str_c("data/fantasy_data/", "df_games_missed_wr_all.rds"))
 
 # predict rookie competition:
+df_rookie_tar = 
+  df_fan_wr_all %>% 
+  left_join(
+    df_roster_wr_all %>% 
+      select(season, player_id, rookie_year, draft_number),
+    by = c("player_id", "season")
+  ) %>% 
+  filter(rookie_year == season) %>% 
+  mutate(position = "WR") %>% 
+  rbind(
+    df_fan_te_all %>% 
+      left_join(
+        df_roster_te_all %>% 
+          select(season, player_id, rookie_year, draft_number),
+        by = c("player_id", "season")
+      ) %>% 
+      filter(rookie_year == season) %>% 
+      mutate(position = "TE")
+  ) %>% 
+  select(season, position, player_id, player_display_name, draft_number, targets) %>% 
+  mutate(draft_number = replace_na(as.integer(draft_number), 260)) %>% 
+  group_by(player_id, position, player_display_name, season, draft_number) %>% 
+  summarise(
+    n_tar = sum(targets)
+  ) %>% 
+  ungroup()
 
+mod_rookie_tar_wr = 
+  df_rookie_tar %>% 
+  filter(position == "WR") %>% 
+  gam(
+    n_tar ~ s(draft_number),
+    data = .,
+    method = "REML"
+  )
 
+mod_rookie_tar_te = 
+  df_rookie_tar %>% 
+  filter(position == "TE") %>% 
+  gam(
+    n_tar ~ s(draft_number),
+    data = .,
+    method = "REML"
+  )
+
+df_rookie_tar_fin =
+  df_rookie_tar %>% 
+  filter(position == "WR") %>% 
+  mutate(expect_tar = predict(mod_rookie_tar_wr)) %>% 
+  rbind(
+    df_rookie_tar %>% 
+      filter(position == "TE") %>% 
+      mutate(expect_tar = predict(mod_rookie_tar_te))
+  ) %>% 
+  select(season, player_id, expect_tar)
 
 df_fan_wr_fin_pre =
   df_fan_wr_all %>% 
@@ -14404,10 +14457,12 @@ df_fan_wr_fin_all =
             by = c("team", "season")
           )
       ) %>% 
+      left_join(df_rookie_tar_fin, by = c("season", "player_id")) %>% 
       mutate(
+        expect_tar_rookie = sum(expect_tar, na.rm = T),
         top_20_other = sum(prior_ind_top_20, na.rm = T) - prior_ind_top_20,
         prior_fpts_other = sum(prior_fpts, na.rm = T) - prior_fpts,
-        expect_tar_other = sum(prior_tar_share * prior_n_pass, na.rm = T) - prior_tar_share * prior_n_pass
+        expect_tar_other = sum(prior_tar_share * prior_n_pass, na.rm = T) - prior_tar_share * prior_n_pass + expect_tar_rookie
       ) %>% 
       ungroup() %>% 
       select(player_id, season, prior_fpts_other, prior_rank, expect_tar_other),
@@ -15688,10 +15743,25 @@ df_fpts_wr_test =
             by = c("team", "season")
           )
       ) %>% 
+      left_join(
+        df_roster_wr_all %>% 
+          filter(rookie_year == 2026) %>% 
+          mutate(draft_number = replace_na(as.integer(draft_number), 260)) %>% 
+          mutate(expect_tar = predict(mod_rookie_tar_wr, newdata = .)) %>% 
+          rbind(
+            df_roster_te_all %>% 
+              filter(rookie_year == 2026) %>% 
+              mutate(draft_number = replace_na(as.integer(draft_number), 260)) %>% 
+              mutate(expect_tar = predict(mod_rookie_tar_te, newdata = .))
+          ) %>% 
+          select(player_id, expect_tar), 
+        by = c("player_id")
+      ) %>% 
       mutate(
+        expect_tar_rookie = sum(expect_tar, na.rm = T),
         top_20_other = sum(prior_ind_top_20, na.rm = T) - prior_ind_top_20,
         prior_fpts_other = sum(prior_fpts, na.rm = T) - prior_fpts,
-        expect_tar_other = sum(prior_tar_share * prior_n_pass, na.rm = T) - prior_tar_share * prior_n_pass
+        expect_tar_other = sum(prior_tar_share * prior_n_pass, na.rm = T) - prior_tar_share * prior_n_pass + expect_tar_rookie
       ) %>% 
       ungroup() %>% 
       select(player_id, season, team, prior_fpts_other, prior_rank, expect_tar_other) %>% 
@@ -17470,6 +17540,36 @@ saveRDS(df_route_partic_rb, str_c("data/fantasy_data/", "df_route_partic_rb.rds"
 # 
 # view(fan_rb_fin_all)
 
+# predict rookie competition:
+df_rookie_rush = 
+  df_fan_rb_all %>% 
+  left_join(
+    df_roster_rb_all %>% 
+      select(season, player_id, rookie_year, draft_number),
+    by = c("player_id", "season")
+  ) %>% 
+  filter(rookie_year == season) %>% 
+  select(season, player_id, player_display_name, draft_number, carries) %>% 
+  mutate(draft_number = replace_na(as.integer(draft_number), 260)) %>% 
+  group_by(player_id, player_display_name, season, draft_number) %>% 
+  summarise(
+    n_rush = sum(carries)
+  ) %>% 
+  ungroup()
+
+mod_rookie_rush_rb = 
+  df_rookie_rush %>% 
+  gam(
+    n_rush ~ s(draft_number),
+    data = .,
+    method = "REML"
+  )
+
+df_rookie_rush_fin =
+  df_rookie_rush %>% 
+  mutate(expect_rush = predict(mod_rookie_rush_rb)) %>% 
+  select(season, player_id, expect_rush)
+
 df_fan_rb_fin_pre =
   df_fan_rb_all %>% 
   filter(between(season, 2016, 2025)) %>% 
@@ -17573,10 +17673,12 @@ df_fan_rb_fin_all =
           select(season, team, prior_n_rush_team),
         by = c("team", "season")
       ) %>% 
+      left_join(df_rookie_rush_fin, by = c("season", "player_id")) %>% 
       mutate(
+        expect_rush_rookie = sum(expect_rush, na.rm = T),
         top_20_other = sum(prior_ind_top_20, na.rm = T) - prior_ind_top_20,
         prior_fpts_other = sum(prior_fpts, na.rm = T) - prior_fpts,
-        expect_rush_other = sum(prior_rush_share * prior_n_rush_team, na.rm = T) - prior_rush_share * prior_n_rush_team
+        expect_rush_other = sum(prior_rush_share * prior_n_rush_team, na.rm = T) - prior_rush_share * prior_n_rush_team + expect_rush_rookie
       ) %>% 
       ungroup() %>% 
       select(player_id, season, prior_fpts_other, prior_rank, expect_rush_other),
@@ -18900,10 +19002,19 @@ df_fpts_rb_test =
           select(season, team, prior_n_rush_team, prior_rush_rate),
         by = c("team", "season")
       ) %>% 
+      left_join(
+        df_roster_rb_all %>% 
+          filter(rookie_year == 2026) %>% 
+          mutate(draft_number = replace_na(as.integer(draft_number), 260)) %>% 
+          mutate(expect_rush = predict(mod_rookie_rush_rb, newdata = .)) %>% 
+          select(player_id, expect_rush), 
+        by = c("player_id")
+      ) %>% 
       mutate(
+        expect_rush_rookie = sum(expect_rush, na.rm = T),
         top_20_other = sum(prior_ind_top_20, na.rm = T) - prior_ind_top_20,
         prior_fpts_other = sum(prior_fpts, na.rm = T) - prior_fpts,
-        expect_rush_other = sum(prior_rush_share * prior_n_rush_team, na.rm = T) - prior_rush_share * prior_n_rush_team
+        expect_rush_other = sum(prior_rush_share * prior_n_rush_team, na.rm = T) - prior_rush_share * prior_n_rush_team + expect_rush_rookie
       ) %>% 
       ungroup() %>% 
       select(player_id, season, team, prior_fpts_other, prior_rank, expect_rush_other, prior_n_rush_team, prior_rush_rate) %>% 
@@ -20321,10 +20432,12 @@ df_fan_te_fin_all =
             by = c("team", "season")
           )
       ) %>% 
+      left_join(df_rookie_tar_fin, by = c("season", "player_id")) %>% 
       mutate(
+        expect_tar_rookie = sum(expect_tar, na.rm = T),
         top_20_other = sum(prior_ind_top_20, na.rm = T) - prior_ind_top_20,
         prior_fpts_other = sum(prior_fpts, na.rm = T) - prior_fpts,
-        expect_tar_other = sum(prior_tar_share * prior_n_pass, na.rm = T) - prior_tar_share * prior_n_pass
+        expect_tar_other = sum(prior_tar_share * prior_n_pass, na.rm = T) - prior_tar_share * prior_n_pass + expect_tar_rookie
       ) %>% 
       ungroup() %>% 
       select(player_id, season, prior_fpts_other, prior_rank, expect_tar_other),
@@ -21243,10 +21356,25 @@ df_fpts_te_test =
             by = c("team", "season")
           )
       ) %>% 
+      left_join(
+        df_roster_wr_all %>% 
+          filter(rookie_year == 2026) %>% 
+          mutate(draft_number = replace_na(as.integer(draft_number), 260)) %>% 
+          mutate(expect_tar = predict(mod_rookie_tar_wr, newdata = .)) %>% 
+          rbind(
+            df_roster_te_all %>% 
+              filter(rookie_year == 2026) %>% 
+              mutate(draft_number = replace_na(as.integer(draft_number), 260)) %>% 
+              mutate(expect_tar = predict(mod_rookie_tar_te, newdata = .))
+          ) %>% 
+          select(player_id, expect_tar), 
+        by = c("player_id")
+      ) %>% 
       mutate(
+        expect_tar_rookie = sum(expect_tar, na.rm = T),
         top_20_other = sum(prior_ind_top_20, na.rm = T) - prior_ind_top_20,
         prior_fpts_other = sum(prior_fpts, na.rm = T) - prior_fpts,
-        expect_tar_other = sum(prior_tar_share * prior_n_pass, na.rm = T) - prior_tar_share * prior_n_pass
+        expect_tar_other = sum(prior_tar_share * prior_n_pass, na.rm = T) - prior_tar_share * prior_n_pass + expect_tar_rookie
       ) %>% 
       ungroup() %>% 
       select(player_id, season, team, prior_fpts_other, prior_rank, expect_tar_other) %>% 
@@ -21426,7 +21554,7 @@ saveRDS(df_te_project_fin, str_c("data/fantasy_data/", "df_te_project_fin.rds"))
 #       )
 #   )
 
-view(df_adp)
+# view(df_adp)
 
 df_te_project_fin_adp =
   df_te_project_fin %>%
