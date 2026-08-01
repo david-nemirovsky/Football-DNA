@@ -14020,7 +14020,14 @@ df_qb_epa_teams =
   arrange(player_id, season) %>% 
   group_by(player_id) %>% 
   mutate(
-    prior_qb_epa = lag(sum_epa)
+    prior_qb_epa = lag(sum_epa),
+    team = 
+      case_when(
+        team == "SD" ~ "LAC",
+        team == "SL" ~ "LA",
+        team == "OAK" ~ "LV",
+        .default = team
+      )
   ) %>% 
   ungroup() %>% 
   group_by(season, team) %>% 
@@ -14346,6 +14353,7 @@ df_fan_wr_fin_pre =
     team = 
       case_when(
         team == "SD" ~ "LAC",
+        team == "SL" ~ "LA",
         team == "OAK" ~ "LV",
         .default = team
       )
@@ -14612,7 +14620,13 @@ df_rz_eff =
   ) %>%
   drop_na() %>%
   ungroup() %>%
-  rename(team = posteam) %>%
+  rename(team = posteam) %>% 
+  bind_rows(
+    tibble(
+      season = 2026,
+      team = szn_all %>% distinct(home_team) %>% pull()
+    )
+  ) %>% 
   arrange(team, season) %>% 
   group_by(team) %>% 
   mutate(
@@ -15299,6 +15313,71 @@ df_fpts_wr_rookie_train =
       distinct(),
     by = c("season", "team")
   ) %>% 
+  left_join(
+    df_roster_wr_all %>% 
+      left_join(df_fan_wr_season_finish, by = c("player_id", "season")) %>% 
+      select(player_id, season, team, full_name, fpts_total, season_rank) %>% 
+      mutate(
+        ind_top_20 = ifelse(season_rank <= 20, 1, 0)
+      ) %>% 
+      group_by(player_id) %>% 
+      arrange(player_id, season) %>% 
+      mutate(
+        prior_ind_top_20 = lag(ind_top_20),
+        prior_fpts = lag(fpts_total),
+        prior_rank = lag(season_rank)
+      ) %>% 
+      ungroup() %>% 
+      group_by(season, team) %>% 
+      arrange(season, team) %>% 
+      filter(season != 2016) %>% 
+      left_join(
+        df_fan_wr_fin_pre %>% 
+          select(season, player_id, prior_tar_share),
+        by = c("player_id", "season")
+      ) %>% 
+      left_join(
+        df_qb_epa_teams %>% 
+          select(season, team, prior_n_pass),
+        by = c("team", "season")
+      ) %>% 
+      rbind(
+        df_roster_te_all %>% 
+          left_join(df_fan_te_season_finish, by = c("player_id", "season")) %>% 
+          select(player_id, season, team, full_name, fpts_total, season_rank) %>% 
+          mutate(
+            ind_top_20 = ifelse(season_rank <= 20, 1, 0)
+          ) %>% 
+          group_by(player_id) %>% 
+          arrange(player_id, season) %>% 
+          mutate(
+            prior_ind_top_20 = lag(ind_top_20),
+            prior_fpts = lag(fpts_total),
+            prior_rank = lag(season_rank)
+          ) %>% 
+          ungroup() %>% 
+          group_by(season, team) %>% 
+          arrange(season, team) %>% 
+          filter(season != 2016) %>% 
+          left_join(
+            df_fan_te_fin_pre %>% 
+              select(season, player_id, prior_tar_share),
+            by = c("player_id", "season")
+          ) %>% 
+          left_join(
+            df_qb_epa_teams %>% 
+              select(season, team, prior_n_pass),
+            by = c("team", "season")
+          )
+      ) %>% 
+      ungroup() %>% 
+      group_by(season, team) %>% 
+      summarise(
+        expect_tar_other = sum(prior_tar_share * prior_n_pass, na.rm = T)
+      ) %>% 
+      ungroup(),
+    by = c("season", "team")
+  ) %>% 
   mutate(
     draft_number = replace_na(as.integer(draft_number), 260)
   ) %>% 
@@ -15309,11 +15388,12 @@ df_fpts_wr_rookie_train =
   slice_min(draft_number, n = 15) %>% 
   ungroup() %>% 
   left_join(df_off_epa, by = c("team", "season")) %>% 
-  left_join(df_rz_eff, by = c("team", "season")) %>%
+  left_join(df_rz_eff, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>%
   # left_join(coach_df, by = c("team", "season")) %>% 
   # left_join(mod_df, by = c("team", "season")) %>% 
-  select(player_id, sum_fpts, prior_qb_epa, prior_n_pass, prior_off_pass_epa, prior_rz_eff, prior_rz_trips, prior_fpts_other, player_age, draft_number) %>% 
-  select(-c(prior_off_pass_epa, prior_rz_trips, prior_rz_eff)) %>% 
+  select(player_id, sum_fpts, prior_qb_epa, prior_n_pass, prior_off_pass_epa, prior_rz_eff, prior_rz_trips, prior_fpts_other, expect_tar_other, player_age, draft_number, ol_cont_grade_pass) %>% 
+  select(-c(prior_off_pass_epa, prior_rz_trips, prior_rz_eff, prior_fpts_other, ol_cont_grade_pass)) %>%
   drop_na() %>% 
   arrange(player_id) %>%
   select(-player_id)
@@ -15504,7 +15584,7 @@ df_oof_pred_wr_rook =
 
 df_mod_resid_wr_rook = 
   df_oof_pred_wr_rook %>% 
-  filter(model == "svm") %>% 
+  filter(model == "boost") %>% 
   cbind(df_fpts_wr_rookie_train) %>% 
   tibble() 
   # filter(sum_fpts != actual)
@@ -15546,7 +15626,7 @@ mod_knn_wr_rook_resid = train(mod_var ~ .,
                 data = df_resid_wr_train_rook, 
                 method = "knn", 
                 preProcess = c("center","scale"),
-                tuneGrid = data.frame(k = seq(24, 68, by = 2)), 
+                tuneGrid = data.frame(k = seq(80, 110, by = 2)), 
                 trControl = ctrl)
 ggplot(mod_knn_wr_rook_resid, highlight = T) + 
   ggtitle("KNN") +
@@ -15570,64 +15650,121 @@ min(mod_mars_wr_rook_resid$results$RMSE)
 #mod_mars_wr_rook_resid$finalModel %>% summary
 
 # Boost
-set.seed(37564)
-mod_boost_wr_rook_resid = train(mod_var ~ .,
-                  na.action = na.exclude, 
-                  data = df_resid_wr_train_rook, 
-                  method = "gbm", 
-                  tuneGrid = expand.grid(n.trees = c(1000, 5000, 9000),
-                                         interaction.depth = c(1:2),
-                                         shrinkage = c(0.0003, 0.0005, 0.0007),
-                                         n.minobsinnode = 1), 
-                  trControl = ctrl,
-                  verbose = F)
-ggplot(mod_boost_wr_rook_resid, highlight = T) + 
-  ggtitle("Boost") +
-  theme(plot.title = element_text(hjust = 0.5))
-mod_boost_wr_rook_resid$bestTune
-min(mod_boost_wr_rook_resid$results$RMSE)
-
-#boost = tibble(wins_boost = predict(mod_boost, newdata = test_df))
-
-# SVM
-set.seed(37564)
-mod_svm_wr_rook_resid = train(mod_var ~ .,
-                na.action = na.exclude, 
-                data = df_resid_wr_train,
-                preProcess = c("scale", "center"),
-                method = "svmRadialSigma",
-                tuneGrid = expand.grid(C = exp(seq(-2, 0, len = 5)),
-                                       sigma = exp(seq(-4,-2, len = 5))),
-                trControl = ctrl)
-ggplot(mod_svm_wr_rook_resid, highlight = T) + 
-  ggtitle("SVM Radial") +
-  theme(plot.title = element_text(hjust = 0.5))
-mod_svm_wr_rook_resid$bestTune
-min(mod_svm_wr_rook_resid$results$RMSE)
-
-# Variable Importance
-set.seed(37564)
-vip(
-  mod_boost_wr_rook_resid, 
-  method = "permute", 
-  train = df_resid_wr_train_rook,
-  target = "mod_var",
-  metric = "rmse",
-  nsim = 50,
-  pred_wrapper = predict,
-  geom = "boxplot", 
-  all_permutations = T,
-  mapping = aes_string(fill = "Variable", alpha = 0.75),
-  num_features = 40L
-)
+# set.seed(37564)
+# mod_boost_wr_rook_resid = train(mod_var ~ .,
+#                   na.action = na.exclude, 
+#                   data = df_resid_wr_train_rook, 
+#                   method = "gbm", 
+#                   tuneGrid = expand.grid(n.trees = c(1000, 5000, 9000),
+#                                          interaction.depth = c(1:2),
+#                                          shrinkage = c(0.0003, 0.0005, 0.0007),
+#                                          n.minobsinnode = 1), 
+#                   trControl = ctrl,
+#                   verbose = F)
+# ggplot(mod_boost_wr_rook_resid, highlight = T) + 
+#   ggtitle("Boost") +
+#   theme(plot.title = element_text(hjust = 0.5))
+# mod_boost_wr_rook_resid$bestTune
+# min(mod_boost_wr_rook_resid$results$RMSE)
+# 
+# #boost = tibble(wins_boost = predict(mod_boost, newdata = test_df))
+# 
+# # SVM
+# set.seed(37564)
+# mod_svm_wr_rook_resid = train(mod_var ~ .,
+#                 na.action = na.exclude, 
+#                 data = df_resid_wr_train,
+#                 preProcess = c("scale", "center"),
+#                 method = "svmRadialSigma",
+#                 tuneGrid = expand.grid(C = exp(seq(-2, 0, len = 5)),
+#                                        sigma = exp(seq(-4,-2, len = 5))),
+#                 trControl = ctrl)
+# ggplot(mod_svm_wr_rook_resid, highlight = T) + 
+#   ggtitle("SVM Radial") +
+#   theme(plot.title = element_text(hjust = 0.5))
+# mod_svm_wr_rook_resid$bestTune
+# min(mod_svm_wr_rook_resid$results$RMSE)
+#
+# # Variable Importance
+# set.seed(37564)
+# vip(
+#   mod_boost_wr_rook_resid, 
+#   method = "permute", 
+#   train = df_resid_wr_train_rook,
+#   target = "mod_var",
+#   metric = "rmse",
+#   nsim = 50,
+#   pred_wrapper = predict,
+#   geom = "boxplot", 
+#   all_permutations = T,
+#   mapping = aes_string(fill = "Variable", alpha = 0.75),
+#   num_features = 40L
+# )
 
 coef(mod_enet_wr_rook_resid$finalModel, mod_enet_wr_rook_resid$bestTune$lambda)
 
 # Resamples
 set.seed(37564)
-res_resid = resamples(list(GLM = mod_glm_wr_rook_resid, ENET = mod_enet_wr_rook_resid, MARS = mod_mars_wr_rook_resid, KNN = mod_knn_wr_rook_resid, BOOST = mod_boost_wr_rook_resid, SVM = mod_svm_wr_rook_resid))
+res_resid = resamples(list(GLM = mod_glm_wr_rook_resid, ENET = mod_enet_wr_rook_resid, MARS = mod_mars_wr_rook_resid, KNN = mod_knn_wr_rook_resid))
 summary(res_resid)
 bwplot(res_resid, metric = "RMSE", main = "RMSE for Repeated 5-Fold CV Using Various Models")
+
+# test SDs:
+
+# Calibration:
+df_resid_wr_train_rook %>%
+  cbind(
+    df_fpts_wr_rookie_train %>%
+      select(sum_fpts)
+  ) %>%
+  tibble() %>%
+  mutate(
+    mod_pred_fpts = predict(mod_boost_wr_rook, newdata = df_fpts_wr_rookie_train),
+    mod_pred_resid = predict(mod_knn_wr_rook_resid, newdata = df_resid_wr_train_rook),
+    # mod_pred_var = exp(mod_pred_resid) * smearing_factor - 1,
+    # mod_pred_sd = sqrt(mod_pred_var),
+    residual = sum_fpts - mod_pred_fpts,
+    mod_pred_sd = mod_pred_resid * sqrt(pi / 2),
+    # mod_pred_sd_quant = ntile(mod_pred_sd, 5),
+    mod_pred_sd_quant = ntile(mod_pred_sd, 5)
+  ) %>%
+  group_by(mod_pred_sd_quant) %>%
+  summarise(
+    mean_sd = mean(mod_pred_sd),
+    resid_sd = sd(residual)
+  )
+
+# coverage:
+df_resid_wr_train_rook %>%
+  cbind(
+    df_fpts_wr_rookie_train %>%
+      select(sum_fpts)
+  ) %>%
+  tibble() %>%
+  mutate(
+    mod_pred_fpts = predict(mod_boost_wr_rook, newdata = df_fpts_wr_rookie_train),
+    mod_pred_resid = predict(mod_knn_wr_rook_resid, newdata = df_resid_wr_train_rook),
+    # mod_pred_var = exp(mod_pred_resid) * smearing_factor - 1,
+    # mod_pred_sd = sqrt(mod_pred_var),
+    residual = sum_fpts - mod_pred_fpts,
+    mod_pred_sd = mod_pred_resid * sqrt(pi / 2),
+    # mod_pred_sd_quant = ntile(mod_pred_sd, 5),
+    mod_pred_sd_quant = ntile(mod_pred_sd, 5),
+    cov_1sd =
+      case_when(
+        abs(residual) <= mod_pred_sd ~ 1,
+        .default = 0
+      ),
+    cov_2sd =
+      case_when(
+        abs(residual) <= 2 * mod_pred_sd ~ 1,
+        .default = 0
+      )
+  ) %>%
+  summarise(
+    cov_1sd = mean(cov_1sd),
+    cov_2sd = mean(cov_2sd)
+  )
 ```
 
 ### Run model on test data
@@ -15803,7 +15940,7 @@ saveRDS(df_fpts_wr_test, str_c("data/fantasy_data/", "df_fpts_wr_test.rds"))
 
 view(df_fpts_wr_test)
 
-df_fpts_wr_rookie_test = 
+df_fpts_wr_rookie_test =
   df_roster_wr_all %>% 
   filter(rookie_year == 2026) %>% 
   mutate(player_age = as.double(as.Date(str_c(as.character(season), "-09-01")) - as.Date(birth_date)) / 365.25) %>% 
@@ -15840,6 +15977,71 @@ df_fpts_wr_rookie_test =
       filter(season == 2026),
     by = c("season", "team")
   ) %>% 
+  left_join(
+    df_roster_wr_all %>% 
+      left_join(df_fan_wr_season_finish, by = c("player_id", "season")) %>% 
+      select(player_id, season, team, full_name, fpts_total, season_rank) %>% 
+      mutate(
+        ind_top_20 = ifelse(season_rank <= 20, 1, 0)
+      ) %>% 
+      group_by(player_id) %>% 
+      arrange(player_id, season) %>% 
+      mutate(
+        prior_ind_top_20 = lag(ind_top_20),
+        prior_fpts = lag(fpts_total),
+        prior_rank = lag(season_rank)
+      ) %>% 
+      ungroup() %>% 
+      group_by(season, team) %>% 
+      arrange(season, team) %>% 
+      filter(season != 2016) %>% 
+      left_join(
+        df_fpts_wr_test_pre %>% 
+          select(season, player_id, prior_tar_share),
+        by = c("player_id", "season")
+      ) %>% 
+      left_join(
+        df_qb_epa_teams %>% 
+          select(season, team, prior_n_pass),
+        by = c("team", "season")
+      ) %>% 
+      rbind(
+        df_roster_te_all %>% 
+          left_join(df_fan_te_season_finish, by = c("player_id", "season")) %>% 
+          select(player_id, season, team, full_name, fpts_total, season_rank) %>% 
+          mutate(
+            ind_top_20 = ifelse(season_rank <= 20, 1, 0)
+          ) %>% 
+          group_by(player_id) %>% 
+          arrange(player_id, season) %>% 
+          mutate(
+            prior_ind_top_20 = lag(ind_top_20),
+            prior_fpts = lag(fpts_total),
+            prior_rank = lag(season_rank)
+          ) %>% 
+          ungroup() %>% 
+          group_by(season, team) %>% 
+          arrange(season, team) %>% 
+          filter(season != 2016) %>% 
+          left_join(
+            df_fpts_te_test_pre %>% 
+              select(season, player_id, prior_tar_share),
+            by = c("player_id", "season")
+          ) %>% 
+          left_join(
+            df_qb_epa_teams %>% 
+              select(season, team, prior_n_pass),
+            by = c("team", "season")
+          )
+      ) %>% 
+      ungroup() %>% 
+      filter(season == 2026) %>% 
+      group_by(team) %>% 
+      summarise(
+        expect_tar_other = sum(prior_tar_share * prior_n_pass, na.rm = T)
+      ),
+    by = "team"
+  ) %>% 
   mutate(
     draft_number = replace_na(as.integer(draft_number), 260)
   ) %>% 
@@ -15851,8 +16053,10 @@ df_fpts_wr_rookie_test =
   ungroup() %>% 
   left_join(df_off_epa, by = c("team", "season")) %>% 
   left_join(df_rz_eff, by = c("team", "season")) %>% 
-  select(player_id, full_name, team, prior_qb_epa, prior_n_pass, prior_off_pass_epa, prior_rz_eff, prior_fpts_other, player_age, draft_number) %>% 
+  select(player_id, full_name, team, prior_qb_epa, prior_n_pass, prior_off_pass_epa, prior_rz_eff, prior_fpts_other, player_age, draft_number, expect_tar_other) %>% 
   drop_na()
+
+saveRDS(df_fpts_wr_rookie_test, str_c("data/fantasy_data/", "df_fpts_wr_rookie_test.rds"))
 
 view(df_fpts_wr_rookie_test)
 
@@ -15928,7 +16132,9 @@ df_fpts_wr_sim =
   mutate(
     player_sim_ind = row_number()
   ) %>% 
-  ungroup() %>% 
+  ungroup()
+
+%>% 
   group_by(player_sim_ind) %>% 
   arrange(player_sim_ind, -fpts_sim) %>% 
   mutate(
@@ -15938,8 +16144,69 @@ df_fpts_wr_sim =
 
 saveRDS(df_fpts_wr_sim, str_c("data/fantasy_data/", "df_fpts_wr_sim.rds"))
 
-df_wr_project_fin =
+set.seed(37564)
+df_fpts_wr_rook_sim =
+  df_fpts_wr_rookie_test %>% 
+  rename(player_display_name = full_name) %>% 
+  mutate(
+    pred_fpts_boost = predict(mod_boost_wr_rook, newdata = df_fpts_wr_rookie_test),
+    pred_resid_knn = predict(mod_knn_wr_rook_resid, newdata = df_fpts_wr_rookie_test)
+  ) %>% 
+  group_by(player_id) %>% 
+  arrange(-pred_fpts_boost) %>% 
+  rowid_to_column("wr_rank_boost") %>% 
+  select(wr_rank_boost, team, player_id, player_display_name, pred_fpts_boost, pred_resid_knn) %>% 
+  mutate(
+    # pred_var_knn = exp(pred_resid_knn) * smearing_factor - 1,
+    # pred_sd_knn = sqrt(pred_var_knn),
+    pred_sd_knn = pred_resid_knn * sqrt(pi / 2),
+    # pred_sd_knn = sqrt(exp(pred_resid_knn) - 1)
+    fpts_sim = 
+      map2(
+        .x = pred_fpts_boost,
+        .y = pred_sd_knn,
+        ~ rnorm(10000, mean = .x, sd = .y)
+      )
+  ) %>% 
+  separate_longer_delim(fpts_sim, delim = ",") %>% 
+  mutate(fpts_sim = as.double(str_remove(fpts_sim, "^c\\("))) %>% 
+  group_by(player_id) %>% 
+  mutate(
+    player_sim_ind = row_number()
+  ) %>% 
+  ungroup()
+
+df_fpts_wr_sim_fin = 
   df_fpts_wr_sim %>% 
+  bind_rows(
+    df_fpts_wr_rook_sim
+  ) %>% 
+  group_by(player_sim_ind) %>% 
+  arrange(player_sim_ind, -fpts_sim) %>% 
+  mutate(
+    fpts_sim_rank = row_number()
+  ) %>% 
+  ungroup()
+
+saveRDS(df_fpts_wr_rook_sim, str_c("data/fantasy_data/", "df_fpts_wr_rook_sim.rds"))
+
+df_wr_project_fin =
+  df_fpts_wr_sim_fin %>%
+  left_join(
+    df_fpts_wr_sim_fin %>% 
+      distinct(player_id, pred_fpts_svm, pred_fpts_boost) %>% 
+      mutate(
+        pred_fpts_fin = 
+          case_when(
+            is.na(pred_fpts_svm) ~ pred_fpts_boost,
+            .default = pred_fpts_svm
+          )
+      ) %>% 
+      arrange(-pred_fpts_fin) %>% 
+      rowid_to_column("wr_rank_fin") %>% 
+      select(player_id, wr_rank_fin, pred_fpts_fin),
+    by = "player_id"
+  ) %>% 
   mutate(
     top_1 = ifelse(fpts_sim_rank == 1, 1, 0),
     top_5 = ifelse(fpts_sim_rank <= 5, 1, 0),
@@ -15948,9 +16215,9 @@ df_wr_project_fin =
     top_36 = ifelse(fpts_sim_rank <= 36, 1, 0),
     # below_30 = ifelse(fpts_sim_rank > 30, 1, 0),
     below_50 = ifelse(fpts_sim_rank > 50, 1, 0),
-    pred_fpts = round(pred_fpts_svm, 1)
+    pred_fpts = round(pred_fpts_fin, 1)
   ) %>% 
-  group_by(player_id, team, wr_rank_svm, player_display_name, pred_fpts) %>% 
+  group_by(player_id, team, wr_rank_fin, player_display_name, pred_fpts) %>% 
   summarise(
     across(
       c(starts_with("top_"), starts_with("below_")),
@@ -15966,7 +16233,7 @@ df_wr_project_fin =
   ) %>% 
   ungroup() %>% 
   left_join(
-    df_fpts_wr_sim %>% 
+    df_fpts_wr_sim_fin %>% 
       group_by(player_id, team, player_display_name) %>% 
       arrange(player_id, team, player_display_name, fpts_sim) %>% 
       mutate(
@@ -16026,6 +16293,10 @@ df_adp =
         "Kyle Pitts Sr." ~ "Kyle Pitts",
         "Hollywood Brown" ~ "Marquise Brown",
         "Patrick Mahomes II" ~ "Patrick Mahomes",
+        "KC Concepcion" ~ "K.C. Concepcion",
+        "Omar Cooper Jr." ~ "Omar Cooper",
+        "Ted Hurst III" ~ "Ted Hurst",
+        "Chris Brazzell II" ~ "Chris Brazzell II",
         .default = player_display_name
       ),
     team = str_extract(str_extract(player_bye, "[A-Z]+ \\(\\d+\\)$"), "^[A-Z]+"), 
@@ -16048,7 +16319,7 @@ df_wr_project_fin_adp =
   #filter(is.na(avg))
   mutate(
     adp = as.integer(str_extract(pos_rank_adp, "\\d+")),
-    rank_edge = adp - wr_rank_svm
+    rank_edge = adp - wr_rank_fin
   )
 
 market_curve_wr = 
@@ -16075,7 +16346,7 @@ df_wr_project_market =
 # view(df_wr_project_market)
 
 df_adp_beat_wr = 
-  df_fpts_wr_sim %>% 
+  df_fpts_wr_sim_fin %>% 
   left_join(
     df_wr_project_fin_adp %>% 
       select(team, player_display_name, adp),
@@ -16092,15 +16363,15 @@ df_wr_project_market_fin =
 
 # view(df_wr_project_market_fin)
 
-df_wr_fantasy_table = 
+df_wr_fantasy_table =
   df_wr_project_market_fin %>% 
   mutate(
     across(c(market_proj, market_edge, pred_rank_med, exp_finish_edge), ~ round(., 1))
   ) %>% 
-  rename(rank_mod = wr_rank_svm) %>% 
+  rename(rank_mod = wr_rank_fin) %>% 
   select(player_display_name, team, rank_mod, adp, rank_edge, pred_rank_med, pred_fpts, market_proj, market_edge, prop_adp_beat, pred_fpts_10p, pred_fpts_90p, starts_with("prop_")) %>% 
   select(-c(prop_top_1, prop_top_5)) %>% 
-  drop_na() %>% 
+  # drop_na() %>% 
   labelled::set_variable_labels(
     "player_display_name" = "Player", 
     "team" = "Team", 
@@ -18669,8 +18940,8 @@ bwplot(res_resid, metric = "RMSE", main = "RMSE for Repeated 5-Fold CV Using Var
 ### Make model for rookies
 
 ```{r rb rookie}
-fpts_rb_rookie_train_df = 
-  roster_rb_all %>% 
+df_fpts_rb_rookie_train =
+  df_roster_rb_all %>% 
   filter(rookie_year == season) %>% 
   mutate(draft_number = replace_na(as.integer(draft_number), 260)) %>% 
   select(season, player_id, full_name, team, birth_date, draft_number) %>% 
@@ -18685,7 +18956,7 @@ fpts_rb_rookie_train_df =
   ) %>% 
   drop_na(team) %>% 
   left_join(
-    fan_rb_all %>% 
+    df_fan_rb_all %>% 
       select(season, position, player_id, player_display_name, fpts) %>% 
       group_by(season, player_id, player_display_name, position) %>% 
       mutate(sum_fpts = sum(fpts, na.rm = T)) %>% 
@@ -18694,16 +18965,16 @@ fpts_rb_rookie_train_df =
       distinct(),
     by = c("season", "player_id")
   ) %>% 
-  left_join(fin_df, by = c("team", "season")) %>% 
-  left_join(coach_df, by = c("team", "season")) %>% 
-  left_join(rush_rate_df, by = c("team", "season")) %>% 
+  # left_join(fin_df, by = c("team", "season")) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  left_join(df_rush_rate, by = c("team", "season")) %>% 
   group_by(season) %>%
   arrange(season, draft_number) %>% 
   slice_min(draft_number, n = 15) %>% 
   ungroup() %>% 
   left_join(
-    roster_rb_all %>% 
-      left_join(fan_rb_season_finish, by = c("player_id", "season")) %>% 
+    df_roster_rb_all %>% 
+      left_join(df_fan_rb_season_finish, by = c("player_id", "season")) %>% 
       select(player_id, season, team, full_name, fpts_total, season_rank) %>% 
       mutate(
         ind_top_20 = ifelse(season_rank <= 20, 1, 0)
@@ -18728,13 +18999,58 @@ fpts_rb_rookie_train_df =
       distinct(),
     by = c("season", "team")
   ) %>% 
-  select(player_id, sum_fpts, prior_off_rush_epa, prior_rush_rate, prior_fpts_other, coach_exp_off, player_age, draft_number) %>% 
+  left_join(
+    df_roster_rb_all %>% 
+      left_join(df_fan_rb_season_finish, by = c("player_id", "season")) %>% 
+      select(player_id, season, team, full_name, fpts_total, season_rank) %>% 
+      mutate(
+        ind_top_20 = ifelse(season_rank <= 20, 1, 0)
+      ) %>% 
+      group_by(player_id) %>% 
+      arrange(player_id, season) %>% 
+      mutate(
+        prior_ind_top_20 = lag(ind_top_20),
+        prior_fpts = lag(fpts_total),
+        prior_rank = lag(season_rank)
+      ) %>% 
+      ungroup() %>% 
+      group_by(season, team) %>% 
+      arrange(season, team) %>% 
+      filter(season != 2016) %>% 
+      left_join(
+        df_fan_rb_fin_pre %>% 
+          select(season, player_id, prior_rush_share),
+        by = c("player_id", "season")
+      ) %>% 
+      left_join(
+        df_rush_rate %>% 
+          select(season, team, prior_n_rush_team),
+        by = c("team", "season")
+      ) %>% 
+      ungroup() %>% 
+      group_by(season, team) %>% 
+      summarise(
+        expect_rush_other = sum(prior_rush_share * prior_n_rush_team, na.rm = T)
+      ) %>% 
+      ungroup(),
+    by = c("team", "season")
+  ) %>% 
+  left_join(df_ol_cont_team, by = c("season", "team")) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_gl_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  select(player_id, sum_fpts, prior_off_rush_epa, prior_rush_rate, prior_fpts_other, player_age, draft_number, expect_rush_other, ol_cont_grade_run, prior_off_rush_epa, prior_gl_eff, def_rush_epa_sos) %>% 
   drop_na() %>% 
   arrange(player_id) %>%
   select(-player_id)
 
-ctrl = trainControl(method = "repeatedcv", number = 5, repeats = 10)
-# ctrl = trainControl(method = "cv", number = 5)
+ctrl = 
+  trainControl(
+    method = "repeatedcv", 
+    number = 5, 
+    repeats = 10,
+    savePredictions = "final"
+  )
 
 # train_df = 
 #   mod_df %>% 
@@ -18750,32 +19066,32 @@ ctrl = trainControl(method = "repeatedcv", number = 5, repeats = 10)
 set.seed(37564)
 mod_glm_rb_rook = train(sum_fpts ~ .,
                 na.action = na.exclude, 
-                data = fpts_rb_rookie_train_df, 
+                data = df_fpts_rb_rookie_train, 
                 #subset = season,
                 method = "glm", 
                 trControl = ctrl)
 mod_glm_rb_rook
 
-# Lasso
+# ENET
 set.seed(37564)
-mod_lass_rb_rook = train(sum_fpts ~ .,
+mod_enet_rb_rook = train(sum_fpts ~ .,
                  na.action = na.exclude, 
-                 data = fpts_rb_rookie_train_df, 
+                 data = df_fpts_rb_rookie_train, 
                  method = "glmnet", 
-                 tuneGrid = expand.grid(alpha = 1, 
-                                        lambda = exp(seq(-3, 2, length = 50))),
+                 tuneGrid = expand.grid(alpha = seq(0, 1, by = 0.2), 
+                                        lambda = exp(seq(-3, 2, length = 10))),
                  trControl = ctrl)
-ggplot(mod_lass_rb_rook, highlight = T) + 
+ggplot(mod_enet_rb_rook, highlight = T) + 
   ggtitle("Lasso") +
   theme(plot.title = element_text(hjust = 0.5))
-mod_lass_rb_rook$bestTune
-min(mod_lass_rb_rook$results$RMSE)
+mod_enet_rb_rook$bestTune
+min(mod_enet_rb_rook$results$RMSE)
 
 # KNN
 set.seed(37564)
 mod_knn_rb_rook = train(sum_fpts ~ .,
                 na.action = na.exclude, 
-                data = fpts_rb_rookie_train_df, 
+                data = df_fpts_rb_rookie_train, 
                 method = "knn", 
                 preProcess = c("center","scale"),
                 tuneGrid = data.frame(k = seq(2, 30, by = 2)), 
@@ -18790,7 +19106,7 @@ min(mod_knn_rb_rook$results$RMSE)
 set.seed(37564)
 mod_mars_rb_rook = train(sum_fpts ~ .,
                  na.action = na.exclude, 
-                 data = fpts_rb_rookie_train_df, 
+                 data = df_fpts_rb_rookie_train, 
                  method = "earth", 
                  tuneGrid = expand.grid(degree = 2:4, nprune = 1:10), 
                  trControl = ctrl)
@@ -18805,10 +19121,10 @@ min(mod_mars_rb_rook$results$RMSE)
 set.seed(37564)
 mod_boost_rb_rook = train(sum_fpts ~ .,
                   na.action = na.exclude, 
-                  data = fpts_rb_rookie_train_df, 
+                  data = df_fpts_rb_rookie_train, 
                   method = "gbm", 
-                  tuneGrid = expand.grid(n.trees = c(7000, 9000, 11000),
-                                         interaction.depth = 2:3,
+                  tuneGrid = expand.grid(n.trees = c(1000, 5000, 9000),
+                                         interaction.depth = c(1:2),
                                          shrinkage = c(0.0001, 0.0003, 0.0005), 
                                          n.minobsinnode = 1), 
                   trControl = ctrl,
@@ -18825,10 +19141,10 @@ min(mod_boost_rb_rook$results$RMSE)
 set.seed(37564)
 mod_svm_rb_rook = train(sum_fpts ~ .,
                 na.action = na.exclude, 
-                data = fpts_rb_rookie_train_df,
+                data = df_fpts_rb_rookie_train,
                 preProcess = c("scale", "center"),
                 method = "svmRadialSigma",
-                tuneGrid = expand.grid(C = exp(seq(2.4, 3, len = 6)),
+                tuneGrid = expand.grid(C = exp(seq(1, 3, len = 5)),
                                        sigma = exp(seq(-7,-2, len = 10))),
                 trControl = ctrl)
 ggplot(mod_svm_rb_rook, highlight = T) + 
@@ -18844,7 +19160,7 @@ set.seed(37564)
 vip(
   mod_boost_rb_rook, 
   method = "permute", 
-  train = fpts_rb_rookie_train_df,
+  train = df_fpts_rb_rookie_train,
   target = "sum_fpts",
   metric = "rmse",
   nsim = 50,
@@ -18854,11 +19170,11 @@ vip(
   mapping = aes_string(fill = "Variable", alpha = 0.75)
 )
 
-coef(mod_lass_rb_rook$finalModel, mod_lass_rb_rook$bestTune$lambda)
+coef(mod_enet_rb_rook$finalModel, mod_enet_rb_rook$bestTune$lambda)
 
 # Resamples
 set.seed(37564)
-res = resamples(list(GLM = mod_glm_rb_rook, LASSO = mod_lass_rb_rook, MARS = mod_mars_rb_rook, KNN = mod_knn_rb_rook, BOOST = mod_boost_rb_rook, SVM = mod_svm_rb_rook))
+res = resamples(list(GLM = mod_glm_rb_rook, ENET = mod_enet_rb_rook, MARS = mod_mars_rb_rook, KNN = mod_knn_rb_rook, BOOST = mod_boost_rb_rook, SVM = mod_svm_rb_rook))
 summary(res)
 bwplot(res, metric = "RMSE", main = "RMSE for Repeated 5-Fold CV Using Various Models")
 
