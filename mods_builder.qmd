@@ -26014,8 +26014,8 @@ df_all_fantasy_table =
     rank_mod = 
       case_when(
         position == "QB" ~ qb_rank_svm,
-        position == "RB" ~ rb_rank_svm,
-        position == "WR" ~ wr_rank_svm,
+        position == "RB" ~ rb_rank_fin,
+        position == "WR" ~ wr_rank_fin,
         position == "TE" ~ te_rank_boost,
         .default = NA
       )
