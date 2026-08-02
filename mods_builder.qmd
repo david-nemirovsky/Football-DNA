@@ -16289,6 +16289,7 @@ df_adp =
         "Omar Cooper Jr." ~ "Omar Cooper",
         "Ted Hurst III" ~ "Ted Hurst",
         "Chris Brazzell II" ~ "Chris Brazzell II",
+        "Mike Washington Jr." ~ "Mike Washington",
         .default = player_display_name
       ),
     team = str_extract(str_extract(player_bye, "[A-Z]+ \\(\\d+\\)$"), "^[A-Z]+"), 
@@ -18964,6 +18965,7 @@ df_fpts_rb_rookie_train =
   arrange(season, draft_number) %>% 
   slice_min(draft_number, n = 15) %>% 
   ungroup() %>% 
+  filter(draft_number < 260) %>% 
   left_join(
     df_roster_rb_all %>% 
       left_join(df_fan_rb_season_finish, by = c("player_id", "season")) %>% 
@@ -19036,6 +19038,8 @@ df_fpts_rb_rookie_train =
   drop_na() %>% 
   arrange(player_id) %>%
   select(-player_id)
+
+# view(df_fpts_rb_rookie_train)
 
 ctrl = 
   trainControl(
@@ -19763,8 +19767,9 @@ df_fpts_rb_rookie_test =
   # left_join(coach_df, by = c("team", "season")) %>% 
   group_by(season) %>% 
   arrange(season, draft_number) %>% 
-  slice_min(draft_number, n = 14) %>% 
+  slice_min(draft_number, n = 15) %>% 
   ungroup() %>% 
+  filter(draft_number < 260) %>% 
   left_join(df_off_epa, by = c("team", "season")) %>% 
   # left_join(df_rz_eff, by = c("team", "season")) %>% 
   select(player_id, full_name, team, prior_off_rush_epa, prior_fpts_other, player_age, draft_number, expect_rush_other) %>% 
