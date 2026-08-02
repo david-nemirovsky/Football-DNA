@@ -19763,7 +19763,7 @@ df_fpts_rb_rookie_test =
   # left_join(coach_df, by = c("team", "season")) %>% 
   group_by(season) %>% 
   arrange(season, draft_number) %>% 
-  slice_min(draft_number, n = 15) %>% 
+  slice_min(draft_number, n = 14) %>% 
   ungroup() %>% 
   left_join(df_off_epa, by = c("team", "season")) %>% 
   # left_join(df_rz_eff, by = c("team", "season")) %>% 
