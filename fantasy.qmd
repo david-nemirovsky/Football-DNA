@@ -431,12 +431,16 @@ make_fantasy_table <- function(
             style = list(
               whiteSpace = "nowrap",
               fontWeight = "bold",
+              lineHeight = "1.2",
+              padding = "8px 6px",
               backgroundColor = "#1e1e1e"
             ),
             
             headerStyle = list(
               whiteSpace = "normal",
               textAlign = "left",
+              lineHeight = "1.2",
+              padding = "8px 6px",
               backgroundColor = "#2b2b2b",
               color = "#ffffff",
               zIndex = 10
@@ -459,12 +463,16 @@ make_fantasy_table <- function(
             style = list(
               whiteSpace = "nowrap",
               textAlign = "center",
+              lineHeight = "1.2",
+              padding = "8px 6px",
               backgroundColor = "#1e1e1e"
             ),
             
             headerStyle = list(
               whiteSpace = "normal",
               textAlign = "center",
+              lineHeight = "1.2",
+              padding = "8px 6px",
               backgroundColor = "#2b2b2b",
               color = "#ffffff",
               zIndex = 10
@@ -508,7 +516,7 @@ make_fantasy_table <- function(
   
     height = height,
     
-    defaultPageSize = 300,
+    defaultPageSize = 400,
     
     defaultSorted = default_sorted,
     
