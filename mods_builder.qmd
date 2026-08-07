@@ -169,6 +169,13 @@ df_roster_all =
         .default = team
       )
   )
+
+df_roster_all = 
+  load_rosters(
+    seasons = 2007:2026,
+    file_type = getOption("nflreadr.prefer", default = "rds")
+  )
+
   # %>% 
   # rows_update(
   #   tibble(
@@ -16285,7 +16292,7 @@ saveRDS(df_wr_project_fin, str_c("data/fantasy_data/", "df_wr_project_fin.rds"))
 
 # from: https://www.fantasypros.com/nfl/adp/ppr-overall.php
 df_adp =
-  read.csv(str_c("data/raw_data/fantasy_adp/", "FantasyPros_2026_Overall_ADP_Rankings_2026_08_05.csv")) %>% 
+  read.csv(str_c("data/raw_data/fantasy_adp/", "FantasyPros_2026_Overall_ADP_Rankings_2026_08_07.csv")) %>% 
   janitor::clean_names() %>% 
   tibble() %>% 
   rename(
@@ -16414,6 +16421,64 @@ df_wr_fantasy_table =
   )
 
 saveRDS(df_wr_fantasy_table, str_c("data/fantasy_data/", "df_wr_fantasy_table.rds"))
+
+df_wr_features_table =
+  df_fpts_wr_test %>% 
+  bind_rows(
+    df_fpts_wr_rookie_test %>% 
+      rename(player_display_name = full_name) %>% 
+      mutate(
+        player_display_name = str_c("(R) ", player_display_name)
+      )
+  ) %>% 
+  left_join(
+    df_wr_fantasy_table %>%
+      select(player_display_name, rank_mod, adp, pred_fpts),
+    by = "player_display_name"
+  ) %>%
+  mutate(
+    across(
+      c(starts_with("prior_") & -c(prior_ays, prior_tar_share, prior_n_pass, prior_off_pass_epa, prior_rz_eff), games_missed_rate, player_age),
+      ~ round(., 1)
+    ),
+    across(
+      c(prior_ays, prior_tar_share, prior_off_pass_epa, prior_rz_eff, def_pass_epa_sos),
+      ~ round(., 3)
+    ),
+    across(
+      c(starts_with("expect_")),
+      ~ round(., 0)
+    ),
+    new_qb_new_team = as.numeric(new_qb_new_team) - 1
+  ) %>%
+  select(player_display_name, team, rank_mod, adp, pred_fpts, prior_fpts_game,  starts_with("prior_") & -c(prior_n_pass, prior_qb_epa, prior_off_pass_epa, prior_rz_eff, prior_fpts_other), starts_with("expect_") & -c(expect_tar_other), new_qb_new_team, games_missed_rate, def_pass_epa_sos, prior_n_pass, expect_tar_other, draft_number, player_age, prior_qb_epa, prior_off_pass_epa, prior_rz_eff, prior_fpts_other, -player_id) %>% 
+  labelled::set_variable_labels(
+    "player_display_name" = "Player",
+    "team" = "Team",
+    "rank_mod" = "Rank",
+    "adp" = "ADP",
+    "pred_fpts" = "Projection",
+    "prior_fpts_game" = "Prior FPPG",
+    "prior_ays" = "Prior AYS",
+    "prior_tar_share" = "Prior Target Share",
+    "prior_yprr" = "Prior YPRR",
+    "expect_tar" = "Expected Targets",
+    "expect_ay" = "Expected Air Yards",
+    "expect_routes" = "Expected Routes Run",
+    "new_qb_new_team" = "New QB/Team",
+    "games_missed_rate" = "Missed Games Rate",
+    "def_pass_epa_sos" = "SOS",
+    "prior_n_pass" = "Team Pass Rate",
+    "expect_tar_other" = "Target Competition",
+    "draft_number" = "Draft Number",
+    "player_age" = "Age",
+    "prior_qb_epa" = "QB EPA", 
+    "prior_off_pass_epa" = "Team Passing EPA", 
+    "prior_rz_eff" = "RZ Efficiency", 
+    "prior_fpts_other" = "WR Competition"
+  )
+
+saveRDS(df_wr_features_table, str_c("data/fantasy_data/", "df_wr_features_table.rds"))
 
 # check missing players:
 
@@ -19911,8 +19976,8 @@ df_fpts_rb_test =
   mutate(
     expect_tar = prior_tar_share * prior_n_pass,
     expect_rush = prior_rush_share * prior_n_rush_team,
-    expect_gl_opp = prior_gl_att_share * prior_gl_trips,
-    expect_rush_other = log(expect_rush_other)
+    expect_gl_opp = prior_gl_att_share * prior_gl_trips#,
+    # expect_rush_other = log(expect_rush_other)
   ) %>% 
   select(player_id, player_display_name, team, prior_rush_rate, prior_fpts_game, prior_rb_epa, player_age, draft_number, rb_new_team, expect_rush_other, games_missed_rate, ol_grade_run_adj, expect_tar, expect_rush) %>% 
   # select(-c(prior_qb_epa)) %>% 
@@ -20100,11 +20165,11 @@ saveRDS(df_fpts_rb_sim_fin, str_c("data/fantasy_data/", "df_fpts_rb_sim_fin.rds"
 df_rb_project_fin =
   df_fpts_rb_sim_fin %>%
   # left_join(
-  #   df_fpts_rb_sim_fin %>% 
-  #     distinct(player_id, pred_fpts_svm) %>% 
-  #     rename(pred_fpts_fin = pred_fpts_svm) %>% 
-  #     arrange(-pred_fpts_fin) %>% 
-  #     rowid_to_column("rb_rank_fin") %>% 
+  #   df_fpts_rb_sim_fin %>%
+  #     distinct(player_id, pred_fpts_svm) %>%
+  #     rename(pred_fpts_fin = pred_fpts_svm) %>%
+  #     arrange(-pred_fpts_fin) %>%
+  #     rowid_to_column("rb_rank_fin") %>%
   #     select(player_id, rb_rank_fin, pred_fpts_fin),
   #   by = "player_id"
   # ) %>%
@@ -20305,6 +20370,59 @@ df_rb_fantasy_table =
   )
 
 saveRDS(df_rb_fantasy_table, str_c("data/fantasy_data/", "df_rb_fantasy_table.rds"))
+
+df_rb_features_table =
+  df_fpts_rb_test %>% 
+  bind_rows(
+    df_fpts_rb_rookie_test %>% 
+      rename(player_display_name = full_name) %>% 
+      mutate(
+        player_display_name = str_c("(R) ", player_display_name)
+      )
+  ) %>% 
+  left_join(
+    df_rb_fantasy_table %>%
+      select(player_display_name, rank_mod, adp, pred_fpts),
+    by = "player_display_name"
+  ) %>%
+  mutate(
+    across(
+      c(starts_with("prior_") & -c(prior_rush_rate, prior_rb_epa), games_missed_rate, player_age, ol_grade_run_adj),
+      ~ round(., 1)
+    ),
+    across(
+      c(prior_rush_rate, prior_rb_epa),
+      ~ round(., 3)
+    ),
+    across(
+      c(starts_with("expect_")),
+      ~ round(., 0)
+    )#,
+    # new_qb_new_team = as.numeric(new_qb_new_team) - 1
+  ) %>%
+  select(player_display_name, team, rank_mod, adp, pred_fpts, prior_fpts_game,  prior_rb_epa, starts_with("expect_") & -c(expect_rush_other), prior_rush_rate, rb_new_team, games_missed_rate, ol_grade_run_adj, expect_rush_other, draft_number, player_age, prior_off_rush_epa, prior_fpts_other, -player_id) %>% 
+  labelled::set_variable_labels(
+    "player_display_name" = "Player",
+    "team" = "Team",
+    "rank_mod" = "Rank",
+    "adp" = "ADP",
+    "pred_fpts" = "Projection",
+    "prior_fpts_game" = "Prior FPPG",
+    "prior_rb_epa" = "Prior EPA",
+    "expect_tar" = "Expected Targets",
+    "expect_rush" = "Expected Rushes",
+    "prior_rush_rate" = "Team Rush Rate",
+    "rb_new_team" = "New Team",
+    "games_missed_rate" = "Missed Games Rate",
+    "ol_grade_run_adj" = "OL Grade",
+    "expect_rush_other" = "Rushing Competition",
+    "draft_number" = "Draft Number",
+    "player_age" = "Age",
+    "prior_off_rush_epa" = "Team Rushing EPA",
+    "prior_fpts_other" = "RB Competition"
+  )
+
+saveRDS(df_rb_features_table, str_c("data/fantasy_data/", "df_rb_features_table.rds"))
 
 # check missing players:
 
@@ -23297,6 +23415,58 @@ df_te_fantasy_table =
   )
 
 saveRDS(df_te_fantasy_table, str_c("data/fantasy_data/", "df_te_fantasy_table.rds"))
+
+df_te_features_table =
+  df_fpts_te_test %>% 
+  bind_rows(
+    df_fpts_te_rookie_test %>% 
+      rename(player_display_name = full_name) %>% 
+      mutate(
+        player_display_name = str_c("(R) ", player_display_name)
+      )
+  ) %>% 
+  left_join(
+    df_te_fantasy_table %>%
+      select(player_display_name, rank_mod, adp, pred_fpts),
+    by = "player_display_name"
+  ) %>%
+  mutate(
+    across(
+      c(starts_with("prior_") & -c(prior_ays, prior_off_pass_epa, prior_te_use, prior_rz_trips), games_missed_rate, player_age),
+      ~ round(., 1)
+    ),
+    across(
+      c(prior_ays, prior_off_pass_epa, prior_te_use),
+      ~ round(., 3)
+    ),
+    across(
+      c(starts_with("expect_"), prior_rz_trips),
+      ~ round(., 0)
+    )#,
+    # new_qb_new_team = as.numeric(new_qb_new_team) - 1
+  ) %>%
+  select(player_display_name, team, rank_mod, adp, pred_fpts, prior_fpts_game, prior_ays, prior_yprr, starts_with("expect_") & -c(expect_tar_other), prior_off_pass_epa, expect_tar_other, games_missed_rate, draft_number, player_age, prior_n_pass, prior_rz_trips, prior_te_use, -player_id) %>% 
+  labelled::set_variable_labels(
+    "player_display_name" = "Player",
+    "team" = "Team",
+    "rank_mod" = "Rank",
+    "adp" = "ADP",
+    "pred_fpts" = "Projection",
+    "prior_fpts_game" = "Prior FPPG",
+    "prior_ays" = "Prior AYS",
+    "prior_yprr" = "Prior YPRR",
+    "expect_tar" = "Expected Targets",
+    "prior_off_pass_epa" = "Team Passing EPA",
+    "expect_tar_other" = "Target Competition",
+    "games_missed_rate" = "Missed Games Rate",
+    "draft_number" = "Draft Number",
+    "player_age" = "Age",
+    "prior_n_pass" = "Team Pass Rate",
+    "prior_rz_trips" = "Team RZ Trips",
+    "prior_te_use" = "Team TE Usage"
+  )
+
+saveRDS(df_te_features_table, str_c("data/fantasy_data/", "df_te_features_table.rds"))
 
 prob_pal =
   scales::col_numeric(
@@ -26477,6 +26647,51 @@ df_qb_fantasy_table =
   )
 
 saveRDS(df_qb_fantasy_table, str_c("data/fantasy_data/", "df_qb_fantasy_table.rds"))
+
+df_qb_features_table =
+  df_fpts_qb_test %>% 
+  bind_rows(
+    df_fpts_qb_rookie_test %>% 
+      rename(player_display_name = full_name) %>% 
+      mutate(
+        player_display_name = str_c("(R) ", player_display_name)
+      )
+  ) %>%
+  left_join(
+    df_qb_fantasy_table %>%
+      select(player_display_name, rank_mod, adp, pred_fpts),
+    by = "player_display_name"
+  ) %>% 
+  mutate(
+    across(
+      c(starts_with("prior_"), games_missed_rate, expect_rush, ol_grade_pass_adj),
+      ~ round(., 1)
+    ),
+    def_pass_epa_sos = round(def_pass_epa_sos, 3)
+  ) %>%
+  select(player_display_name, team, rank_mod, adp, pred_fpts, prior_fpts_game,  prior_adot, prior_qb_epa, expect_rush, qb_new_team, games_missed_rate, draft_number, ol_grade_pass_adj, prior_fpts_other, def_pass_epa_sos, -player_id) %>% 
+  labelled::set_variable_labels(
+    "player_display_name" = "Player",
+    "team" = "Team",
+    "rank_mod" = "Rank",
+    "adp" = "ADP",
+    "pred_fpts" = "Projection",
+    "prior_fpts_game" = "Prior FPPG",
+    "prior_adot" = "Prior ADOT",
+    "prior_qb_epa" = "Prior EPA",
+    "expect_rush" = "Expected Rushes",
+    "qb_new_team" = "New Team",
+    "games_missed_rate" = "Missed Games Rate",
+    "draft_number" = "Draft Number",
+    "prior_fpts_other" = "QB Competition",
+    "ol_grade_pass_adj" = "OL Grade",
+    "ol_grade_pass_adj" = "OL Grade", 
+    "def_pass_epa_sos" = "SOS"
+  )
+
+saveRDS(df_qb_features_table, str_c("data/fantasy_data/", "df_qb_features_table.rds"))
+
+# view(df_qb_features_table)
 
 # check missing players:
 

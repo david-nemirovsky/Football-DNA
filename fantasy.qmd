@@ -641,41 +641,41 @@ make_fantasy_table(
   default_sorted = "rank_mod",
   
   height = 700
+  
+)
+```
+
+```{r qb feat tbl}
+# df_fpts_qb_test = readRDS(str_c("data/fantasy_data/", "df_fpts_qb_test.rds"))
+
+df_qb_features_table = readRDS(str_c("data/fantasy_data/", "df_qb_features_table.rds"))
+
+qb_feature_direction = 
+  c(
+    prior_fpts_game = "higher",
+    prior_adot = "higher",
+    prior_qb_epa = "higher",
+    draft_number = "lower",
+    prior_fpts_other = "lower",
+    qb_new_team = "lower",
+    games_missed_rate = "lower",
+    expect_rush = "higher",
+    ol_grade_pass_adj = "higher",
+    def_pass_epa_sos = "higher"
+  )
+
+make_fantasy_table(
+  
+  data = df_qb_features_table,
+  
+  default_sorted = "rank_mod",
+  
+  direction = qb_feature_direction,
+  
+  height = 700
+  
 )
 
-
-# df_qb_features_table = 
-#   df_fpts_qb_test %>% 
-#   left_join(
-#     df_qb_fantasy_table %>% 
-#       select(player_display_name, rank_mod, pred_fpts),
-#     by = "player_display_name"
-#   ) %>% 
-#   mutate(
-#     across(
-#       c(starts_with("prior_"), games_missed_rate, expect_rush, ol_cont_grade_pass),
-#       ~ round(., 1)
-#     )
-#   ) %>% 
-#   select(player_display_name, team, rank_mod, pred_fpts, everything(), -player_id) %>% 
-#   labelled::set_variable_labels(
-#     "player_display_name" = "Player", 
-#     "team" = "Team", 
-#     "rank_mod" = "Rank", 
-#     "pred_fpts" = "Projection", 
-#     "prior_fpts" = "Weighted Prior FPTS", 
-#     "prior_adot" = "Weighted Prior ADOT", 
-#     "prior_qb_epa" = "Weighted Prior EPA", 
-#     "draft_number" = "Draft Number", 
-#     "prior_fpts_other" = "QB Competition", 
-#     "qb_new_team" = "New Team", 
-#     "games_missed_rate" = "Missed Games Rate", 
-#     "expect_rush" = "Expected Rushes", 
-#     "ol_cont_grade_pass" = "Returning OL Grade"
-#   )
-# 
-# view(df_qb_features_table)
-# 
 # proj_pal_qb =
 #   scales::col_numeric(
 #     palette = c("#d73027", "#fee08b", "#1a9850"),
@@ -1060,138 +1060,6 @@ make_fantasy_table(
 ```{r rb tbl}
 df_rb_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_rb_fantasy_table.rds"))
 
-# make_style <- function(data, column) {
-#   
-#   # Determine whether column is a probability variable
-#   is_probability <- grepl(
-#     "^prop_",
-#     column,
-#     ignore.case = TRUE
-#   )
-#   
-#   # Automatically determine palette domain
-#   domain <- if (is_probability) {
-#     c(0, 1)
-#   } else {
-#     range(data[[column]], na.rm = TRUE)
-#   }
-#   
-#   # Create palette
-#   pal <- scales::col_numeric(
-#     palette = c(
-#       "#d73027",
-#       "#fee08b",
-#       "#1a9850"
-#     ),
-#     domain = domain
-#   )
-#   
-#   # Return style function
-#   function(value) {
-#     
-#     # 70% through the color scale
-#     text_cutoff <- domain[1] + 0.70 * diff(domain)
-#     
-#     list(
-#       background = pal(value),
-#       color = ifelse(
-#         value > text_cutoff,
-#         "white",
-#         "black"
-#       ),
-#       fontWeight = "bold"
-#     )
-#   }
-# }
-# 
-# make_fantasy_table <- function(
-#     data,
-#     default_sorted
-# ) {
-#   
-#   columns <- names(data)
-#   
-#   column_defs <- setNames(
-#     lapply(columns, function(column) {
-#       
-#       # Get the label directly from the data
-#       label <- labelled::var_label(data[[column]])
-#       
-#       # Fall back to the column name if no label exists
-#       if (is.null(label)) {
-#         label <- column
-#       }
-#       
-#       # Identify probability columns
-#       is_probability <- grepl(
-#         "^(p_|prop_)",
-#         column,
-#         ignore.case = TRUE
-#       )
-#       
-#       # Identify columns to color
-#       is_edge <- grepl(
-#         "edge",
-#         column,
-#         ignore.case = TRUE
-#       )
-#       
-#       # Probability columns
-#       if (is_probability) {
-#         
-#         colDef(
-#           name = label,
-#           format = colFormat(
-#             percent = TRUE,
-#             digits = 1
-#           ),
-#           style = make_style(
-#             data,
-#             column
-#           ),
-#           minWidth = 60
-#         )
-#         
-#       # Edge columns
-#       } else if (is_edge) {
-#         
-#         colDef(
-#           name = label,
-#           style = make_style(
-#             data,
-#             column
-#           ),
-#           minWidth = 60
-#         )
-#         
-#       # All other columns
-#       } else {
-#         
-#         colDef(
-#           name = label,
-#           minWidth = 60
-#         )
-#       }
-#       
-#     }),
-#     columns
-#   )
-#   
-#   reactable(
-#     data,
-#     searchable = TRUE,
-#     filterable = TRUE,
-#     sortable = TRUE,
-#     striped = TRUE,
-#     highlight = TRUE,
-#     bordered = TRUE,
-#     defaultPageSize = 100,
-#     defaultSorted = default_sorted,
-#     defaultSortOrder = "asc",
-#     columns = column_defs
-#   )
-# }
-
 make_fantasy_table(
   
   df_rb_fantasy_table,
@@ -1203,10 +1071,37 @@ make_fantasy_table(
 )
 ```
 
-### **WR**
+```{r rb feat tbl}
+df_rb_features_table = readRDS(str_c("data/fantasy_data/", "df_rb_features_table.rds"))
 
-```{r wr tbl}
-df_wr_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_wr_fantasy_table.rds"))
+rb_feature_direction = 
+  c(
+    prior_fpts_game = "higher",
+    prior_rush_rate = "higher",
+    prior_rb_epa = "higher",
+    player_age = "lower",
+    draft_number = "lower",
+    expect_rush_other = "lower",
+    rb_new_team = "lower",
+    games_missed_rate = "lower",
+    expect_tar = "higher",
+    expect_rush = "higher",
+    ol_grade_run_adj = "higher",
+    prior_off_rush_epa = "higher",
+    prior_fpts_other = "lower"
+  )
+
+make_fantasy_table(
+  
+  data = df_rb_features_table,
+  
+  default_sorted = "rank_mod",
+  
+  direction = rb_feature_direction,
+  
+  height = 700
+  
+)
 
 # make_style <- function(data, column) {
 #   
@@ -1339,6 +1234,12 @@ df_wr_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_wr_fantasy_table.r
 #     columns = column_defs
 #   )
 # }
+```
+
+### **WR**
+
+```{r wr tbl}
+df_wr_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_wr_fantasy_table.rds"))
 
 make_fantasy_table(
   
@@ -1351,10 +1252,42 @@ make_fantasy_table(
 )
 ```
 
-### **TE**
+```{r wr feat tbl}
+df_wr_features_table = readRDS(str_c("data/fantasy_data/", "df_wr_features_table.rds"))
 
-```{r te tbl}
-df_te_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_te_fantasy_table.rds"))
+wr_feature_direction = 
+  c(
+    prior_fpts_game = "higher",
+    prior_ays = "higher",
+    prior_tar_share = "higher",
+    prior_n_pass = "higher",
+    prior_yprr = "higher",
+    player_age = "lower",
+    draft_number = "lower",
+    expect_tar_other = "lower",
+    new_qb_new_team = "lower",
+    games_missed_rate = "lower",
+    expect_tar = "higher",
+    expect_ay = "higher",
+    expect_routes = "higher",
+    def_pass_epa_sos = "higher",
+    prior_qb_epa = "higher",
+    prior_off_pass_epa = "higher",
+    prior_rz_eff = "higher",
+    prior_fpts_other = "lower"
+  )
+
+make_fantasy_table(
+  
+  data = df_wr_features_table,
+  
+  default_sorted = "rank_mod",
+  
+  direction = wr_feature_direction,
+  
+  height = 700
+  
+)
 
 # make_style <- function(data, column) {
 #   
@@ -1487,6 +1420,12 @@ df_te_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_te_fantasy_table.r
 #     columns = column_defs
 #   )
 # }
+```
+
+### **TE**
+
+```{r te tbl}
+df_te_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_te_fantasy_table.rds"))
 
 make_fantasy_table(
 
@@ -1497,6 +1436,170 @@ make_fantasy_table(
   height = 700
   
 )
+```
+
+```{r te feat tbl}
+df_te_features_table = readRDS(str_c("data/fantasy_data/", "df_te_features_table.rds"))
+
+te_feature_direction = 
+  c(
+    prior_fpts_game = "higher",
+    prior_ays = "higher",
+    prior_n_pass = "higher",
+    prior_yprr = "higher",
+    player_age = "lower",
+    draft_number = "lower",
+    expect_tar_other = "lower",
+    games_missed_rate = "lower",
+    expect_tar = "higher",
+    prior_off_pass_epa = "higher",
+    prior_rz_trips = "higher",
+    prior_te_use = "higher"
+  )
+
+make_fantasy_table(
+  
+  data = df_te_features_table,
+  
+  default_sorted = "rank_mod",
+  
+  direction = te_feature_direction,
+  
+  height = 700
+  
+)
+
+# make_style <- function(data, column) {
+#   
+#   # Determine whether column is a probability variable
+#   is_probability <- grepl(
+#     "^prop_",
+#     column,
+#     ignore.case = TRUE
+#   )
+#   
+#   # Automatically determine palette domain
+#   domain <- if (is_probability) {
+#     c(0, 1)
+#   } else {
+#     range(data[[column]], na.rm = TRUE)
+#   }
+#   
+#   # Create palette
+#   pal <- scales::col_numeric(
+#     palette = c(
+#       "#d73027",
+#       "#fee08b",
+#       "#1a9850"
+#     ),
+#     domain = domain
+#   )
+#   
+#   # Return style function
+#   function(value) {
+#     
+#     # 70% through the color scale
+#     text_cutoff <- domain[1] + 0.70 * diff(domain)
+#     
+#     list(
+#       background = pal(value),
+#       color = ifelse(
+#         value > text_cutoff,
+#         "white",
+#         "black"
+#       ),
+#       fontWeight = "bold"
+#     )
+#   }
+# }
+# 
+# make_fantasy_table <- function(
+#     data,
+#     default_sorted
+# ) {
+#   
+#   columns <- names(data)
+#   
+#   column_defs <- setNames(
+#     lapply(columns, function(column) {
+#       
+#       # Get the label directly from the data
+#       label <- labelled::var_label(data[[column]])
+#       
+#       # Fall back to the column name if no label exists
+#       if (is.null(label)) {
+#         label <- column
+#       }
+#       
+#       # Identify probability columns
+#       is_probability <- grepl(
+#         "^(p_|prop_)",
+#         column,
+#         ignore.case = TRUE
+#       )
+#       
+#       # Identify columns to color
+#       is_edge <- grepl(
+#         "edge",
+#         column,
+#         ignore.case = TRUE
+#       )
+#       
+#       # Probability columns
+#       if (is_probability) {
+#         
+#         colDef(
+#           name = label,
+#           format = colFormat(
+#             percent = TRUE,
+#             digits = 1
+#           ),
+#           style = make_style(
+#             data,
+#             column
+#           ),
+#           minWidth = 60
+#         )
+#         
+#       # Edge columns
+#       } else if (is_edge) {
+#         
+#         colDef(
+#           name = label,
+#           style = make_style(
+#             data,
+#             column
+#           ),
+#           minWidth = 60
+#         )
+#         
+#       # All other columns
+#       } else {
+#         
+#         colDef(
+#           name = label,
+#           minWidth = 60
+#         )
+#       }
+#       
+#     }),
+#     columns
+#   )
+#   
+#   reactable(
+#     data,
+#     searchable = TRUE,
+#     filterable = TRUE,
+#     sortable = TRUE,
+#     striped = TRUE,
+#     highlight = TRUE,
+#     bordered = TRUE,
+#     defaultPageSize = 100,
+#     defaultSorted = default_sorted,
+#     defaultSortOrder = "asc",
+#     columns = column_defs
+#   )
+# }
 ```
 
 :::

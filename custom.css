@@ -143,3 +143,7 @@
 .fantasy-table-dark button:hover {
   background-color: #444444;
 }
+
+.fantasy-table-dark {
+  margin-bottom: 40px;
+}
