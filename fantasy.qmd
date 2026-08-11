@@ -171,6 +171,12 @@ make_fantasy_table <- function(
         is_feature <- !is.null(direction) &&
           column %in% names(direction)
         
+        is_age_sos <- grepl(
+          "age_sos",
+          column,
+          ignore.case = TRUE
+        )
+        
         # ------------------------------------------------------
         # Alignment
         # ------------------------------------------------------
@@ -206,7 +212,7 @@ make_fantasy_table <- function(
         
         if (column == player_column) {
           
-          column_width <- 155
+          column_width <- 170
           
         } else if (column == team_column) {
           
@@ -218,15 +224,19 @@ make_fantasy_table <- function(
           
         } else if (is_edge) {
           
-          column_width <- 90
+          column_width <- 85
           
         } else if (is_rank_adp_fin) {
           
           column_width <- 85
           
+        } else if (is_age_sos) {
+          
+          column_width <- 85
+          
         } else {
           
-          column_width <- 110
+          column_width <- 125
           
         }
         
@@ -423,8 +433,8 @@ make_fantasy_table <- function(
             
             name = label,
             
-            minWidth = 150,
-            width = 150,
+            minWidth = column_width,
+            width = column_width,
             
             sticky = "left",
             
@@ -455,8 +465,8 @@ make_fantasy_table <- function(
             
             name = label,
             
-            minWidth = 70,
-            width = 70,
+            minWidth = column_width,
+            width = column_width,
             
             sticky = "left",
             
@@ -629,6 +639,10 @@ make_fantasy_table(
 
 ### **QB**
 
+::: panel-tabset
+
+#### Model Projections
+
 ```{r qb tbl}
 # df_fpts_qb_test = readRDS(str_c("data/fantasy_data/", "df_fpts_qb_test.rds"))
 
@@ -644,6 +658,8 @@ make_fantasy_table(
   
 )
 ```
+
+#### Model Features
 
 ```{r qb feat tbl}
 # df_fpts_qb_test = readRDS(str_c("data/fantasy_data/", "df_fpts_qb_test.rds"))
@@ -1055,7 +1071,13 @@ make_fantasy_table(
 # )
 ```
 
+:::
+
 ### **RB**
+
+::: panel-tabset
+
+#### Model Projections
 
 ```{r rb tbl}
 df_rb_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_rb_fantasy_table.rds"))
@@ -1070,6 +1092,8 @@ make_fantasy_table(
   
 )
 ```
+
+#### Model Features
 
 ```{r rb feat tbl}
 df_rb_features_table = readRDS(str_c("data/fantasy_data/", "df_rb_features_table.rds"))
@@ -1236,7 +1260,13 @@ make_fantasy_table(
 # }
 ```
 
+:::
+
 ### **WR**
+
+::: panel-tabset
+
+#### Model Projections
 
 ```{r wr tbl}
 df_wr_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_wr_fantasy_table.rds"))
@@ -1251,6 +1281,8 @@ make_fantasy_table(
   
 )
 ```
+
+#### Model Features
 
 ```{r wr feat tbl}
 df_wr_features_table = readRDS(str_c("data/fantasy_data/", "df_wr_features_table.rds"))
@@ -1422,7 +1454,13 @@ make_fantasy_table(
 # }
 ```
 
+:::
+
 ### **TE**
+
+::: panel-tabset
+
+#### Model Projections
 
 ```{r te tbl}
 df_te_fantasy_table = readRDS(str_c("data/fantasy_data/", "df_te_fantasy_table.rds"))
@@ -1437,6 +1475,8 @@ make_fantasy_table(
   
 )
 ```
+
+#### Model Features
 
 ```{r te feat tbl}
 df_te_features_table = readRDS(str_c("data/fantasy_data/", "df_te_features_table.rds"))
@@ -1601,6 +1641,8 @@ make_fantasy_table(
 #   )
 # }
 ```
+
+:::
 
 :::
 

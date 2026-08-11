@@ -174,6 +174,20 @@ df_roster_all =
   load_rosters(
     seasons = 2007:2026,
     file_type = getOption("nflreadr.prefer", default = "rds")
+  ) %>% 
+  mutate(
+    team = 
+      case_match(
+        team,
+        c("ARZ", "AZ") ~ "ARI",
+        "BLT" ~ "BAL",
+        "CLV" ~ "CLE",
+        "HST" ~ "HOU",
+        "OAK" ~ "LV",
+        "SD" ~ "LAC",
+        "SL" ~ "LA",
+        .default = team
+      )
   )
 
   # %>% 
@@ -16292,7 +16306,7 @@ saveRDS(df_wr_project_fin, str_c("data/fantasy_data/", "df_wr_project_fin.rds"))
 
 # from: https://www.fantasypros.com/nfl/adp/ppr-overall.php
 df_adp =
-  read.csv(str_c("data/raw_data/fantasy_adp/", "FantasyPros_2026_Overall_ADP_Rankings_2026_08_07.csv")) %>% 
+  read.csv(str_c("data/raw_data/fantasy_adp/", "FantasyPros_2026_Overall_ADP_Rankings_2026_08_10.csv")) %>% 
   janitor::clean_names() %>% 
   tibble() %>% 
   rename(
@@ -16380,6 +16394,41 @@ df_adp_beat_wr =
   summarise(
     prop_adp_beat = mean(fpts_sim_rank < adp)
   )
+
+# api_key = Sys.getenv("ODDS_API_KEY")
+# 
+# markets = 
+#   c(
+#     "player_pass_yds",
+#     "player_pass_tds",
+#     "player_pass_interceptions",
+#     "player_rush_yds",
+#     "player_rush_tds",
+#     "player_receptions",
+#     "player_reception_yds",
+#     "player_reception_tds"
+#   )
+# 
+# get_props <- function(event_id) {
+#   
+#   request(
+#     paste0(
+#       "https://api.the-odds-api.com/v4/sports/",
+#       "americanfootball_nfl/events/",
+#       event_id,
+#       "/odds"
+#     )
+#   ) |>
+#     req_url_query(
+#       apiKey = api_key,
+#       regions = "us",
+#       markets = paste(markets, collapse = ","),
+#       oddsFormat = "american"
+#     ) |>
+#     req_perform() |>
+#     resp_body_json()
+# }
+# 
 
 df_wr_project_market_fin = 
   df_wr_project_market %>% 
@@ -19799,61 +19848,6 @@ df_roster_rb_all %>%
 ### Run model on test data
 
 ```{r pred test rb}
-# fpts_rb_rookie_test_df = 
-#   roster_rb_all %>% 
-#   filter(rookie_year == 2025) %>% 
-#   mutate(player_age = as.double(as.Date(str_c(as.character(season), "-09-01")) - as.Date(birth_date)) / 365.25) %>% 
-#   mutate(draft_number = replace_na(as.integer(draft_number), 260)) %>% 
-#   left_join(
-#     fin_df %>% 
-#       filter(season == 2024) %>% 
-#       select(team, off_rush_epa, off_pass_epa) %>% 
-#       rename(
-#         prior_off_pass_epa = off_pass_epa,
-#         prior_off_rush_epa = off_rush_epa
-#       ),
-#     by = "team"
-#   ) %>% 
-#   left_join(coach_df, by = c("team", "season")) %>% 
-#   left_join(rush_rate_df, by = c("team", "season")) %>% 
-#   left_join(
-#     roster_rb_all %>% 
-#       left_join(fan_rb_season_finish, by = c("player_id", "season")) %>% 
-#       select(player_id, season, team, full_name, fpts_total, season_rank) %>% 
-#       mutate(
-#         ind_top_20 = ifelse(season_rank <= 20, 1, 0)
-#       ) %>% 
-#       group_by(player_id) %>% 
-#       arrange(player_id, season) %>% 
-#       mutate(
-#         prior_ind_top_20 = lag(ind_top_20),
-#         prior_fpts = lag(fpts_total),
-#         prior_rank = lag(season_rank)
-#       ) %>% 
-#       ungroup() %>% 
-#       group_by(season, team) %>% 
-#       arrange(season, team) %>% 
-#       filter(season != 2016) %>% 
-#       mutate(
-#         top_20_other = sum(prior_ind_top_20, na.rm = T),
-#         prior_fpts_other = sum(prior_fpts, na.rm = T)
-#       ) %>% 
-#       ungroup() %>% 
-#       select(season, team, prior_fpts_other) %>% 
-#       filter(season == 2025) %>% 
-#       distinct(),
-#     by = c("season", "team")
-#   ) %>% 
-#   group_by(season) %>% 
-#   arrange(season, draft_number) %>% 
-#   slice_min(draft_number, n = 15) %>% 
-#   ungroup() %>% 
-#   select(player_id, full_name, team, prior_off_rush_epa, prior_rush_rate, prior_fpts_other, player_age, draft_number, coach_exp_off) %>% 
-#   arrange(player_id) %>% 
-#   drop_na()
-# 
-# view(fpts_rb_rookie_test_df)
-
 df_fpts_rb_test_pre =
   df_roster_rb_all %>% 
   filter(season %in% c(2025, 2026)) %>% 
@@ -23429,7 +23423,8 @@ df_te_features_table =
     df_te_fantasy_table %>%
       select(player_display_name, rank_mod, adp, pred_fpts),
     by = "player_display_name"
-  ) %>%
+  ) %>% 
+  drop_na(pred_fpts) %>% 
   mutate(
     across(
       c(starts_with("prior_") & -c(prior_ays, prior_off_pass_epa, prior_te_use, prior_rz_trips), games_missed_rate, player_age),
@@ -27649,7 +27644,7 @@ df_all_fantasy_table =
   ) %>% 
   left_join(df_replacement, by = "position") %>% 
   mutate(
-    pred_replace = ifelse(rank_mod == rank_replace, pred_fpts_med, NA)
+    pred_replace = ifelse(rank_mod == rank_replace, pred_fpts, NA)
   ) %>% 
   group_by(position) %>% 
   fill(pred_replace, .direction = "downup") %>% 
@@ -27661,9 +27656,9 @@ df_all_fantasy_table =
         rookie_ind == 1 ~ str_c("(R) ", player_display_name),
         .default = player_display_name
       ),
-    rank_all = rank(-pred_fpts_med),
+    rank_all = rank(-pred_fpts),
     rank_edge = adp - rank_all,
-    vor = pred_fpts_med - pred_replace,
+    vor = pred_fpts - pred_replace,
     rank_vor = rank(-vor),
     z_vor = scale(vor)[ , 1],
     z_rank_edge = scale(rank_edge)[ , 1],
