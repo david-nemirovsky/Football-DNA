@@ -150,6 +150,12 @@ make_fantasy_table <- function(
         # Identify column types
         # ------------------------------------------------------
         
+        is_conc <- grepl(
+          "_conc",
+          column,
+          ignore.case = TRUE
+        )
+        
         is_probability <- grepl(
           "prop_",
           column,
@@ -218,7 +224,11 @@ make_fantasy_table <- function(
           
           column_width <- 70
           
-        } else if (is_probability) {
+        } else if (is_conc) {
+          
+          column_width <- 130
+          
+        }else if (is_probability) {
           
           column_width <- 85
           
@@ -375,6 +385,52 @@ make_fantasy_table <- function(
             )
           )
         }
+        
+        # ------------------------------------------------------
+        # Concordance columns
+        # ------------------------------------------------------
+        
+        else if (is_conc) {
+          
+          column_definition <- colDef(
+            
+            name = label,
+            
+            style = function(value) {
+
+              c(
+                base_style,
+            
+                make_style(
+                  data = data,
+                  column = column,
+                  direction = column_direction
+                )(value)
+              )
+            
+            },
+            
+            minWidth = column_width,
+            
+            width = column_width,
+            
+            sticky = if (
+              is_player | is_team
+            ) {
+              "left"
+            } else {
+              NULL
+            },
+            
+            headerStyle = list(
+              whiteSpace = "normal",
+              textAlign = "center",
+              lineHeight = "1.2",
+              padding = "8px 6px"
+            )
+          )
+        }
+        
         
         
         # ------------------------------------------------------
