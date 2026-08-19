@@ -163,16 +163,16 @@ df_szn_all =
 
 # saveRDS(df_szn_all, str_c("data/raw_data/pbp/", "df_szn_all.rds"))
 
-df_roster_all = 
-  fast_scraper_roster(2007:2026) %>% 
-  mutate(
-    team =  
-      case_when(
-        team == "SD" ~ "LAC",
-        team == "OAK" ~ "LV",
-        .default = team
-      )
-  )
+# df_roster_all = 
+#   fast_scraper_roster(2007:2026) %>% 
+#   mutate(
+#     team =  
+#       case_when(
+#         team == "SD" ~ "LAC",
+#         team == "OAK" ~ "LV",
+#         .default = team
+#       )
+#   )
 
 df_roster_all = 
   load_rosters(
@@ -13983,7 +13983,7 @@ df_roster_wr_all =
   ) %>% 
   # filter out injured players:
   filter(
-    !(season == 2026 & full_name %in% c("Ricky Pearsall", "Chris Brazzell"))
+    !(season == 2026 & full_name %in% c("Ricky Pearsall", "Chris Brazzell", "Jayden Higgins"))
   )
 
 saveRDS(df_roster_wr_all, str_c("data/fantasy_data/", "df_roster_wr_all.rds"))
@@ -14401,7 +14401,7 @@ view(df_rec_grades)
 df_rec_grades_players =
   df_rec_grades %>% 
   select(-player_id) %>% 
-  filter(position %in% c("WR")) %>% 
+  filter(position %in% c("WR", "TE")) %>% 
   # filter(player_game_count >= 10) %>% 
   mutate(
     player = 
@@ -14426,6 +14426,7 @@ df_rec_grades_players =
         "Joshua Palmer" ~ "Josh Palmer",
         "Will Fuller V" ~ "Will Fuller",
         "Willie Snead IV" ~ "Willie Snead",
+        "Chigoziem Okonkwo" ~ "Chig Okonkwo",
         .default = player
       )
   ) %>% 
@@ -14436,6 +14437,15 @@ df_rec_grades_players =
       rename(
         player = full_name#,
         # player_id = gsis_id
+      ) %>% 
+      rbind(
+        df_roster_te_all %>% 
+          # filter(position %in% c("C", "T", "G", "OL")) %>% 
+          select(season, team, player_id, full_name, jersey_number, status) %>% 
+          rename(
+            player = full_name#,
+            # player_id = gsis_id
+          )
       ),
     by = c("season", "team", "player")
   ) %>% 
@@ -14824,7 +14834,7 @@ df_feature_svm = readRDS("df_feature_svm_2026_07_04.rds")
 
 df_fpts_wr_train = 
   df_fan_wr_fin_all %>% 
-  filter(prior_rank <= 100 | (is.na(prior_rank)) & prior_fpts_game >= 5) %>% 
+  filter(prior_rank <= 100 | prior_fpts_game >= 5) %>% 
   left_join(df_off_epa, by = c("team", "season")) %>% 
   left_join(df_rz_eff, by = c("team", "season")) %>% 
   left_join(df_def_epa_sos, by = c("team", "season")) %>% 
@@ -16011,6 +16021,49 @@ mod_wr_rec =
     method = "REML"
   )
 
+df_mod_wr_rec_rook = 
+  df_fan_wr_all %>% 
+  select(season, week, player_id, player_display_name, receptions) %>% 
+  left_join(
+    df_roster_wr_all %>% 
+      filter(season == rookie_year) %>% 
+      mutate(
+        player_age = as.double(as.Date(str_c(as.character(season), "-09-01")) - as.Date(birth_date)) / 365.25,
+        draft_number = replace_na(as.integer(draft_number), 260),
+        team = 
+          case_when(
+            team == "SD" ~ "LAC",
+            team == "SL" ~ "LA",
+            team == "OAK" ~ "LV",
+            .default = team
+          )
+      ) %>% 
+      select(season, player_id, team, player_age, draft_number),
+    by = c("season", "player_id")
+  ) %>% 
+  drop_na(player_age, draft_number) %>% 
+  group_by(player_id, season, team) %>% 
+  mutate(
+    sum_rec = sum(receptions, na.rm = T),
+    games_played = n()
+  ) %>% 
+  distinct(player_display_name, player_id, season, team, player_age, draft_number, games_played, sum_rec) %>% 
+  ungroup() %>% 
+  filter(games_played >= 10) %>% 
+  left_join(
+    df_pass_rate %>% 
+      select(season, team, prior_pass_rate),
+    by = c("season", "team")
+  )
+
+mod_wr_rec_rook = 
+  df_mod_wr_rec_rook %>% 
+  gam(
+    sum_rec ~ s(draft_number) + s(prior_pass_rate),
+    data = .,
+    method = "REML"
+  )
+
 df_fpts_wr_test_pre =
   df_roster_wr_all %>% 
   filter(season %in% 2026) %>% 
@@ -16171,7 +16224,7 @@ df_fpts_wr_test =
   # filter(prior_rank <= 100 | (prior_rank > 100 & prior_games_missed > 8 | (is.na(prior_rank)))) %>% 
   left_join(df_games_missed_all, by = c("player_id", "season")) %>% 
   left_join(df_def_epa_sos, by = c("team", "season")) %>% 
-  filter(prior_rank <= 110 | (is.na(prior_rank) & prior_fpts_game >= 5)) %>% 
+  filter(prior_rank <= 110 | prior_fpts_game >= 5) %>% 
   mutate(
     expect_tar = prior_tar_share * prior_n_pass,
     expect_ay = prior_ays * prior_n_pass,
@@ -16300,7 +16353,12 @@ df_fpts_wr_rookie_test =
   filter(draft_number < 260) %>% 
   left_join(df_off_epa, by = c("team", "season")) %>% 
   left_join(df_rz_eff, by = c("team", "season")) %>% 
-  select(player_id, full_name, team, prior_qb_epa, prior_n_pass, prior_off_pass_epa, prior_rz_eff, prior_fpts_other, player_age, draft_number, expect_tar_other) %>% 
+  left_join(
+    df_pass_rate %>% 
+      select(team, season, prior_pass_rate),
+    by = c("team", "season")
+  ) %>% 
+  select(player_id, full_name, team, prior_qb_epa, prior_n_pass, prior_off_pass_epa, prior_rz_eff, prior_fpts_other, player_age, draft_number, expect_tar_other, prior_pass_rate) %>% 
   drop_na()
 
 saveRDS(df_fpts_wr_rookie_test, str_c("data/fantasy_data/", "df_fpts_wr_rookie_test.rds"))
@@ -16356,7 +16414,11 @@ df_fpts_wr_sim =
   mutate(
     pred_fpts_svm = predict(mod_svm_wr, newdata = df_fpts_wr_test),
     pred_resid_enet = predict(mod_enet_wr_resid, newdata = df_fpts_wr_test),
-    proj_rec = predict(mod_wr_rec, newdata = df_fpts_wr_test)
+    proj_rec = predict(mod_wr_rec, newdata = df_fpts_wr_test),
+    across(
+      starts_with("proj_"),
+      ~ round(. * 2) / 2
+    )
   ) %>% 
   group_by(player_id) %>% 
   arrange(-pred_fpts_svm) %>% 
@@ -16390,12 +16452,17 @@ df_fpts_wr_rook_sim =
   rename(player_display_name = full_name) %>% 
   mutate(
     pred_fpts_boost = predict(mod_boost_wr_rook, newdata = df_fpts_wr_rookie_test),
-    pred_resid_knn = predict(mod_knn_wr_rook_resid, newdata = df_fpts_wr_rookie_test)
+    pred_resid_knn = predict(mod_knn_wr_rook_resid, newdata = df_fpts_wr_rookie_test),
+    proj_rec = predict(mod_wr_rec_rook, newdata = df_fpts_wr_rookie_test),
+    across(
+      starts_with("proj_"),
+      ~ round(. * 2) / 2
+    )
   ) %>% 
   group_by(player_id) %>% 
   arrange(-pred_fpts_boost) %>% 
   rowid_to_column("wr_rank_boost") %>% 
-  select(wr_rank_boost, team, player_id, player_display_name, pred_fpts_boost, pred_resid_knn) %>% 
+  select(wr_rank_boost, team, player_id, player_display_name, pred_fpts_boost, pred_resid_knn, proj_rec) %>% 
   mutate(
     # pred_var_knn = exp(pred_resid_knn) * smearing_factor - 1,
     # pred_sd_knn = sqrt(pred_var_knn),
@@ -16626,7 +16693,7 @@ df_wr_project_fin_adp =
 
 market_curve_wr = 
   df_fan_wr_fin_all %>% 
-  filter(prior_rank <= 100 | (is.na(prior_rank)) | prior_fpts_game >= 5) %>% 
+  filter(prior_rank <= 100 | prior_fpts_game >= 5) %>% 
   left_join(df_off_epa, by = c("team", "season")) %>% 
   left_join(df_rz_eff, by = c("team", "season")) %>% 
   left_join(df_def_epa_sos, by = c("team", "season")) %>% 
@@ -16721,7 +16788,6 @@ df_wr_project_market_fin =
   left_join(df_adp_beat_wr, by = "player_id")
 
 # view(df_wr_project_market_fin)
-
 
 wr_markets <- tribble(
   ~ market_name, ~ market_id,
@@ -16985,6 +17051,7 @@ df_wr_vegas =
 
 df_wr_fantasy_table =
   df_wr_project_market_fin %>% 
+  left_join(df_wr_vegas, by = "player_display_name") %>% 
   mutate(
     across(c(market_proj, market_edge, pred_rank_med, exp_finish_edge), ~ round(., 1)),
     player_display_name = 
@@ -16994,7 +17061,6 @@ df_wr_fantasy_table =
       )
   ) %>% 
   rename(rank_mod = wr_rank_fin) %>% 
-  left_join(df_wr_vegas, by = "player_display_name") %>% 
   rename(
     # vegas_rec = receptions,
     vegas_rec_yds = receiving_yards,
@@ -17078,7 +17144,7 @@ df_wr_features_table =
     ),
     new_qb_new_team = as.numeric(new_qb_new_team) - 1
   ) %>%
-  select(player_display_name, team, rank_mod, adp, pred_fpts, prior_fpts_game,  starts_with("prior_") & -c(prior_n_pass, prior_qb_epa, prior_off_pass_epa, prior_rz_eff, prior_fpts_other, prior_rec), starts_with("expect_") & -c(expect_tar_other), new_qb_new_team, games_missed_rate, def_pass_epa_sos, prior_n_pass, expect_tar_other, draft_number, player_age, prior_qb_epa, prior_off_pass_epa, prior_rz_eff, prior_fpts_other, -player_id) %>% 
+  select(player_display_name, team, rank_mod, adp, pred_fpts, prior_fpts_game,  starts_with("prior_") & -c(prior_n_pass, prior_qb_epa, prior_off_pass_epa, prior_rz_eff, prior_fpts_other, prior_rec, prior_pass_rate), starts_with("expect_") & -c(expect_tar_other), new_qb_new_team, games_missed_rate, def_pass_epa_sos, prior_n_pass, expect_tar_other, draft_number, player_age, prior_qb_epa, prior_off_pass_epa, prior_rz_eff, prior_fpts_other, -player_id) %>% 
   arrange(rank_mod) %>% 
   labelled::set_variable_labels(
     "player_display_name" = "Player",
@@ -19366,7 +19432,7 @@ saveRDS(df_ol_cont_team, str_c("data/fantasy_data/", "df_ol_cont_team.rds"))
 df_fpts_rb_train = 
   df_fan_rb_fin_all %>% 
   # mutate(expect_rush_other = log(expect_rush_other)) %>% 
-  filter(prior_rank <= 90 | (is.na(prior_rank)) & prior_fpts_game >= 5) %>% 
+  filter(prior_rank <= 90 | prior_fpts_game >= 5) %>% 
   # left_join(df_rb_epa, by = c("team", "season")) %>% 
   left_join(df_qb_epa_teams, by = c("team", "season")) %>% 
   left_join(df_off_epa, by = c("team", "season")) %>% 
@@ -19532,7 +19598,7 @@ coef(mod_enet_rb$finalModel, mod_enet_rb$bestTune$lambda)
 set.seed(37564)
 res = resamples(list(GLM = mod_glm_rb, ENET = mod_enet_rb, MARS = mod_mars_rb, KNN = mod_knn_rb, BOOST = mod_boost_rb, SVM = mod_svm_rb))
 summary(res)
-bwplot(res, metric = "Rsquared", main = "RMSE for Repeated 5-Fold CV Using Various Models")
+bwplot(res, metric = "RMSE", main = "RMSE for Repeated 5-Fold CV Using Various Models")
 
 saveRDS(mod_glm_rb, str_c("data/fantasy_data/", "mod_glm_rb.rds"))
 saveRDS(mod_enet_rb, str_c("data/fantasy_data/", "mod_enet_rb.rds"))
@@ -20624,6 +20690,67 @@ mod_rb_rec =
     method = "REML"
   )
 
+df_mod_rb_rec_rook = 
+  df_fan_rb_all %>% 
+  select(season, week, player_id, player_display_name, receiving_yards, receiving_tds, receptions) %>% 
+  left_join(
+    df_roster_rb_all %>% 
+      filter(season == rookie_year) %>% 
+      mutate(
+        player_age = as.double(as.Date(str_c(as.character(season), "-09-01")) - as.Date(birth_date)) / 365.25,
+        draft_number = replace_na(as.integer(draft_number), 260),
+        team = 
+          case_when(
+            team == "SD" ~ "LAC",
+            team == "SL" ~ "LA",
+            team == "OAK" ~ "LV",
+            .default = team
+          )
+      ) %>% 
+      select(season, player_id, team, player_age, draft_number),
+    by = c("season", "player_id")
+  ) %>% 
+  drop_na(player_age, draft_number) %>% 
+  group_by(player_id, season, team) %>% 
+  mutate(
+    sum_rec_yds = sum(receiving_yards, na.rm = T),
+    sum_rec_td = sum(receiving_tds, na.rm = T),
+    sum_rec = sum(receptions, na.rm = T),
+    games_played = n()
+  ) %>% 
+  distinct(player_display_name, player_id, season, team, player_age, draft_number, games_played, sum_rec_yds, sum_rec_td, sum_rec) %>% 
+  ungroup() %>% 
+  filter(games_played >= 10) %>% 
+  left_join(
+    df_pass_rate %>% 
+      select(season, team, prior_n_pass, prior_pass_rate),
+    by = c("season", "team")
+  )
+
+mod_rb_rec_yds_rook = 
+  df_mod_rb_rec_rook %>% 
+  gam(
+    sum_rec_yds ~ s(draft_number),
+    data = .,
+    method = "REML"
+  )
+
+mod_rb_rec_td_rook = 
+  df_mod_rb_rec_rook %>% 
+  gam(
+    sum_rec_td ~ s(draft_number),
+    data = .,
+    method = "REML"
+  )
+
+mod_rb_rec_rook = 
+  df_mod_rb_rec_rook %>% 
+  gam(
+    sum_rec ~ s(draft_number),
+    data = .,
+    method = "REML"
+  )
+
 df_fpts_rb_test_pre =
   df_roster_rb_all %>% 
   filter(season %in% c(2025, 2026)) %>% 
@@ -20745,7 +20872,7 @@ df_fpts_rb_test =
   left_join(df_def_epa_sos, by = c("team", "season")) %>% 
   left_join(df_ol_cont_team, by = c("team", "season")) %>% 
   left_join(df_games_missed_rb_all, by = c("player_id", "season")) %>% 
-  filter(prior_rank <= 90 | (is.na(prior_rank) & prior_fpts_game >= 5)) %>% 
+  filter(prior_rank <= 90 | prior_fpts_game >= 5) %>% 
   mutate(
     expect_tar = prior_tar_share * prior_n_pass,
     expect_rush = prior_rush_share * prior_n_rush_team,
@@ -20899,12 +21026,19 @@ df_fpts_rb_rook_sim =
   rename(player_display_name = full_name) %>% 
   mutate(
     pred_fpts_svm = predict(mod_svm_rb_rook, newdata = df_fpts_rb_rookie_test),
-    pred_resid_enet = predict(mod_enet_rb_rook_resid, newdata = df_fpts_rb_rookie_test)
+    pred_resid_enet = predict(mod_enet_rb_rook_resid, newdata = df_fpts_rb_rookie_test),
+    proj_rec_yds = predict(mod_rb_rec_yds_rook, newdata = df_fpts_rb_rookie_test),
+    proj_rec_td = predict(mod_rb_rec_td_rook, newdata = df_fpts_rb_rookie_test),
+    proj_rec = predict(mod_rb_rec_rook, newdata = df_fpts_rb_rookie_test),
+    across(
+      starts_with("proj_"),
+      ~ round(. * 2) / 2
+    )
   ) %>% 
   group_by(player_id) %>% 
   arrange(-pred_fpts_svm) %>% 
   rowid_to_column("rb_rank_svm") %>% 
-  select(rb_rank_svm, team, player_id, player_display_name, pred_fpts_svm, pred_resid_enet) %>% 
+  select(rb_rank_svm, team, player_id, player_display_name, pred_fpts_svm, pred_resid_enet, proj_rec_yds, proj_rec_td, proj_rec) %>% 
   mutate(
     # pred_var_knn = exp(pred_resid_knn) * smearing_factor - 1,
     # pred_sd_knn = sqrt(pred_var_knn),
@@ -21079,7 +21213,7 @@ df_rb_project_fin_adp =
 market_curve_rb =
   df_fan_rb_fin_all %>% 
   # mutate(expect_rush_other = log(expect_rush_other)) %>% 
-  filter(prior_rank <= 90 | (is.na(prior_rank)) | prior_fpts_game >= 5) %>% 
+  filter(prior_rank <= 90 | prior_fpts_game >= 5) %>% 
   # left_join(df_rb_epa, by = c("team", "season")) %>% 
   left_join(df_qb_epa_teams, by = c("team", "season")) %>% 
   left_join(df_off_epa, by = c("team", "season")) %>% 
@@ -21229,6 +21363,7 @@ df_rb_vegas =
 
 df_rb_fantasy_table =
   df_rb_project_market_fin %>% 
+  left_join(df_rb_vegas, by = "player_display_name") %>% 
   mutate(
     across(c(market_proj, market_edge, pred_rank_med, exp_finish_edge), ~ round(., 1)),
     player_display_name = 
@@ -21238,7 +21373,6 @@ df_rb_fantasy_table =
       )
   ) %>% 
   rename(rank_mod = rb_rank_fin) %>% 
-  left_join(df_rb_vegas, by = "player_display_name") %>% 
   mutate(
     vegas_rush_yds = rushing_yards,
     vegas_rush_td = rushing_td,
@@ -22310,6 +22444,15 @@ df_roster_te_all =
   filter(position == "TE") %>% 
   rename(
     player_id = gsis_id
+  ) %>% 
+  mutate(
+    full_name = 
+      case_match(
+        full_name,
+        "Chigoziem Okonkwo" ~ "Chig Okonkwo",
+        "Oronde Gadsden II" ~ "Oronde Gadsden",
+        .default = full_name
+      )
   )
 
 saveRDS(df_roster_te_all, str_c("data/fantasy_data/", "df_roster_te_all.rds"))
@@ -22510,6 +22653,11 @@ df_fan_te_fin_pre =
   distinct() %>% 
   left_join(df_route_partic_te, by = c("season", "player_id")) %>% 
   left_join(df_rz_tar_wr, by = c("season", "player_id", "team")) %>% 
+  left_join(
+    df_rec_grades_players %>% 
+      select(season, team, player_id, slot_rate, wide_rate, contested_catch_rate), 
+    by = c("season", "player_id", "team")
+  ) %>% 
   mutate(
     yprr = sum_yards / n_routes
   ) %>% 
@@ -22545,7 +22693,7 @@ df_fan_te_fin_pre =
     #   .names = "prior_{col}"
     # ),
     across(
-      c(games_missed, mean_air_yards_share, mean_target_share, n_routes, route_partic, yprr, rz_tar_share, sum_fpts, fpts_game, sum_rec),
+      c(games_missed, mean_air_yards_share, mean_target_share, n_routes, route_partic, yprr, rz_tar_share, sum_fpts, fpts_game, sum_rec, slot_rate, wide_rate, contested_catch_rate),
       ~ case_when(
         row_number() == 2 ~ lag(replace_na(., 0)),
         row_number() == 3 ~ 0.65 * lag(replace_na(., 0)) + 0.35 * lag(lag(replace_na(., 0))),
@@ -22564,7 +22712,8 @@ df_fan_te_fin_pre =
     prior_ays = prior_mean_air_yards_share,
     prior_tar_share = prior_mean_target_share,
     prior_fpts = prior_sum_fpts,
-    prior_rec = prior_sum_rec
+    prior_rec = prior_sum_rec,
+    prior_ccr = prior_contested_catch_rate
   ) %>%
   left_join(df_te_new_team, by = c("season", "team", "player_id")) %>% 
   mutate(
@@ -22655,7 +22804,7 @@ df_fan_te_fin_all =
 
 saveRDS(df_fan_te_fin_all, str_c("data/fantasy_data/", "df_fan_te_fin_all.rds"))
 
-view(df_fan_te_fin_all)
+# view(df_fan_te_fin_all)
 
 # roster_wr_all %>% 
 #   left_join(fan_wr_season_finish, by = c("player_id", "season")) %>% 
@@ -22721,21 +22870,21 @@ df_games_missed_te_all = readRDS(str_c("data/fantasy_data/", "df_games_missed_te
 
 df_fpts_te_train = 
   df_fan_te_fin_all %>% 
-  filter(prior_rank <= 40 | (is.na(prior_rank)) | prior_fpts_game >= 5) %>% 
+  filter(prior_rank <= 40 | prior_fpts_game >= 5) %>% 
   left_join(df_off_epa, by = c("team", "season")) %>% 
   left_join(df_te_usage, by = c("team", "season")) %>% 
   left_join(df_rz_eff, by = c("team", "season")) %>% 
   left_join(df_def_epa_sos, by = c("team", "season")) %>%
   # left_join(coach_df, by = c("team", "season")) %>% 
   # left_join(mod_df, by = c("team", "season")) %>% 
-  select(player_id, sum_fpts, prior_ays, prior_tar_share, prior_fpts_game, prior_qb_epa, prior_n_pass, prior_off_pass_epa, def_pass_epa_sos, prior_rz_eff, prior_rz_trips, prior_n_routes, prior_route_partic, prior_yprr, prior_rz_tar_share, player_age, draft_number, prior_te_use, prior_fpts_other, expect_tar_other, new_qb_new_team, prior_games_missed, games_missed_rate) %>% 
+  select(player_id, sum_fpts, prior_ays, prior_tar_share, prior_fpts_game, prior_qb_epa, prior_n_pass, prior_off_pass_epa, def_pass_epa_sos, prior_rz_eff, prior_rz_trips, prior_n_routes, prior_route_partic, prior_yprr, prior_rz_tar_share, player_age, draft_number, prior_te_use, prior_fpts_other, expect_tar_other, new_qb_new_team, prior_games_missed, games_missed_rate, prior_slot_rate, prior_ccr) %>% 
   mutate(
     expect_tar = prior_tar_share * prior_n_pass,
     expect_ay = prior_ays * prior_n_pass,
     expect_routes = prior_route_partic * prior_n_pass,
     expect_rz_opp = prior_rz_tar_share * prior_rz_trips
   ) %>% 
-  select(-c(prior_games_missed, prior_rz_trips, prior_n_pass, prior_rz_eff, prior_fpts_other, prior_rz_tar_share, prior_n_routes, prior_route_partic, expect_ay, prior_tar_share, prior_qb_epa, prior_te_use, new_qb_new_team, expect_rz_opp, def_pass_epa_sos, expect_routes)) %>%
+  select(-c(prior_games_missed, prior_rz_trips, prior_n_pass, prior_rz_eff, prior_fpts_other, prior_rz_tar_share, prior_n_routes, prior_route_partic, expect_ay, prior_tar_share, prior_qb_epa, prior_te_use, new_qb_new_team, expect_rz_opp, def_pass_epa_sos, expect_routes, prior_slot_rate, prior_ccr, expect_tar_other)) %>%
   # select(-any_of(df_feature_svm %>% filter(delta_rmse < -0.06) %>% pull(var_svm))) %>%
   drop_na() %>% 
   arrange(player_id) %>% 
@@ -22828,7 +22977,7 @@ mod_boost_te = train(sum_fpts ~ .,
                   data = df_fpts_te_train, 
                   method = "gbm", 
                   tuneGrid = expand.grid(n.trees = c(5000, 9000, 13000),
-                                         interaction.depth = c(2:3),
+                                         interaction.depth = c(3),
                                          shrinkage = c(0.0003, 0.0005, 0.0007),
                                          n.minobsinnode = 1), 
                   trControl = ctrl,
@@ -22944,12 +23093,12 @@ df_oof_pred_te =
   #     select(rowIndex, pred, obs) %>% 
   #     mutate(model = "enet")
   # ) %>% 
-  # rbind(
-  #   mod_knn_te$pred %>% 
-  #     tibble() %>% 
-  #     select(rowIndex, pred, obs) %>% 
-  #     mutate(model = "knn")
-  # ) %>% 
+  rbind(
+    mod_knn_te$pred %>%
+      tibble() %>%
+      select(rowIndex, pred, obs) %>%
+      mutate(model = "knn")
+  ) %>%
   # rbind(
   #   mod_mars_te$pred %>% 
   #     tibble() %>% 
@@ -23842,6 +23991,49 @@ mod_te_rec =
     method = "REML"
   )
 
+df_mod_te_rec_rook = 
+  df_fan_te_all %>% 
+  select(season, week, player_id, player_display_name, receptions) %>% 
+  left_join(
+    df_roster_te_all %>% 
+      filter(season == rookie_year) %>% 
+      mutate(
+        player_age = as.double(as.Date(str_c(as.character(season), "-09-01")) - as.Date(birth_date)) / 365.25,
+        draft_number = replace_na(as.integer(draft_number), 260),
+        team = 
+          case_when(
+            team == "SD" ~ "LAC",
+            team == "SL" ~ "LA",
+            team == "OAK" ~ "LV",
+            .default = team
+          )
+      ) %>% 
+      select(season, player_id, team, player_age, draft_number),
+    by = c("season", "player_id")
+  ) %>% 
+  drop_na(player_age, draft_number) %>% 
+  group_by(player_id, season, team) %>% 
+  mutate(
+    sum_rec = sum(receptions, na.rm = T),
+    games_played = n()
+  ) %>% 
+  distinct(player_display_name, player_id, season, team, player_age, draft_number, games_played, sum_rec) %>% 
+  ungroup() %>% 
+  filter(games_played >= 10) %>% 
+  left_join(
+    df_pass_rate %>% 
+      select(season, team, prior_pass_rate, prior_n_pass),
+    by = c("season", "team")
+  )
+
+mod_te_rec_rook = 
+  df_mod_te_rec_rook %>% 
+  gam(
+    sum_rec ~ s(draft_number) + s(prior_n_pass),
+    data = .,
+    method = "REML"
+  )
+
 df_fpts_te_test_pre =
   df_roster_te_all %>% 
   filter(season %in% c(2025, 2026)) %>% 
@@ -23997,7 +24189,7 @@ df_fpts_te_test =
   left_join(df_games_missed_te_all, by = c("player_id", "season")) %>% 
   left_join(df_def_epa_sos, by = c("team", "season")) %>% 
   left_join(df_off_epa, by = c("team", "season")) %>% 
-  filter(prior_rank <= 40 | (is.na(prior_rank)) | prior_fpts_game >= 5) %>% 
+  filter(prior_rank <= 40 | prior_fpts_game >= 5) %>% 
   # filter(prior_rank <= 40 | is.na(prior_rank)) %>% 
   mutate(
     expect_tar = prior_tar_share * prior_n_pass,
@@ -24005,7 +24197,7 @@ df_fpts_te_test =
     expect_routes = prior_route_partic * prior_n_pass,
     # expect_rz_opp = prior_rz_tar_share * prior_rz_trips
   ) %>% 
-  select(player_id, player_display_name, team, prior_ays, prior_fpts_game, prior_off_pass_epa, prior_yprr, player_age, draft_number, expect_tar_other, games_missed_rate, expect_tar, prior_rec) %>% 
+  select(player_id, player_display_name, team, prior_ays, prior_fpts_game, prior_off_pass_epa, prior_yprr, draft_number, player_age, games_missed_rate, expect_tar, prior_rec) %>% 
   drop_na()
 
 saveRDS(df_fpts_te_test, str_c("data/fantasy_data/", "df_fpts_te_test.rds"))
@@ -24140,7 +24332,13 @@ df_fpts_te_sim =
   mutate(
     pred_fpts_boost = predict(mod_boost_te, newdata = df_fpts_te_test),
     pred_resid_knn = predict(mod_knn_te_resid, newdata = df_fpts_te_test),
-    proj_rec = predict(mod_te_rec, newdata = df_fpts_te_test)
+    # pred_fpts_knn = predict(mod_knn_te, newdata = df_fpts_te_test),
+    # pred_resid_enet = predict(mod_enet_te_resid, newdata = df_fpts_te_test),
+    proj_rec = predict(mod_te_rec, newdata = df_fpts_te_test),
+    across(
+      starts_with("proj_"),
+      ~ round(. * 2) / 2
+    )
   ) %>% 
   group_by(player_id) %>% 
   arrange(-pred_fpts_boost) %>% 
@@ -24180,12 +24378,17 @@ df_fpts_te_rook_sim =
   rename(player_display_name = full_name) %>% 
   mutate(
     pred_fpts_boost = predict(mod_boost_te_rook, newdata = df_fpts_te_rookie_test),
-    pred_resid_knn = predict(mod_knn_te_rook_resid, newdata = df_fpts_te_rookie_test)
+    pred_resid_knn = predict(mod_knn_te_rook_resid, newdata = df_fpts_te_rookie_test),
+    proj_rec = predict(mod_te_rec_rook, newdata = df_fpts_te_rookie_test),
+    across(
+      starts_with("proj_"),
+      ~ round(. * 2) / 2
+    )
   ) %>% 
   group_by(player_id) %>% 
   arrange(-pred_fpts_boost) %>% 
   rowid_to_column("te_rank_boost") %>% 
-  select(te_rank_boost, team, player_id, player_display_name, pred_fpts_boost, pred_resid_knn) %>% 
+  select(te_rank_boost, team, player_id, player_display_name, pred_fpts_boost, pred_resid_knn, proj_rec) %>% 
   mutate(
     # pred_var_knn = exp(pred_resid_knn) * smearing_factor - 1,
     # pred_sd_knn = sqrt(pred_var_knn),
@@ -24225,15 +24428,30 @@ saveRDS(df_fpts_te_sim_fin, str_c("data/fantasy_data/", "df_fpts_te_sim_fin.rds"
 
 df_te_project_fin =
   df_fpts_te_sim_fin %>%
+  # left_join(
+  #   df_fpts_te_sim_fin %>%
+  #     distinct(player_id, pred_fpts_knn, pred_fpts_boost) %>%
+  #     mutate(
+  #       pred_fpts_fin =
+  #         case_when(
+  #           is.na(pred_fpts_knn) ~ pred_fpts_boost,
+  #           .default = pred_fpts_knn
+  #         )
+  #     ) %>%
+  #     arrange(-pred_fpts_fin) %>%
+  #     rowid_to_column("te_rank_fin") %>%
+  #     select(player_id, te_rank_fin, pred_fpts_fin),
+  #   by = "player_id"
+  # ) %>%
   left_join(
-    df_fpts_te_sim_fin %>% 
-      distinct(player_id, pred_fpts_boost) %>% 
-      rename(pred_fpts_fin = pred_fpts_boost) %>% 
-      arrange(-pred_fpts_fin) %>% 
-      rowid_to_column("te_rank_fin") %>% 
+    df_fpts_te_sim_fin %>%
+      distinct(player_id, pred_fpts_boost) %>%
+      rename(pred_fpts_fin = pred_fpts_boost) %>%
+      arrange(-pred_fpts_fin) %>%
+      rowid_to_column("te_rank_fin") %>%
       select(player_id, te_rank_fin, pred_fpts_fin),
     by = "player_id"
-  ) %>% 
+  ) %>%
   mutate(
     top_1 = ifelse(fpts_sim_rank == 1, 1, 0),
     top_5 = ifelse(fpts_sim_rank <= 5, 1, 0),
@@ -24243,7 +24461,7 @@ df_te_project_fin =
     below_24 = ifelse(fpts_sim_rank > 24, 1, 0),
     below_36 = ifelse(fpts_sim_rank > 36, 1, 0),
     # below_50 = ifelse(fpts_sim_rank > 50, 1, 0),
-    pred_fpts = round(pred_fpts_boost, 1)
+    pred_fpts = round(pred_fpts_fin, 1)
   ) %>% 
   group_by(player_id, team, te_rank_fin, player_display_name, pred_fpts, proj_rec) %>% 
   summarise(
@@ -24346,7 +24564,7 @@ df_te_project_fin_adp =
 
 market_curve_te =
   df_fan_te_fin_all %>% 
-  filter(prior_rank <= 40 | (is.na(prior_rank)) | prior_fpts_game >= 5) %>% 
+  filter(prior_rank <= 40 | prior_fpts_game >= 5) %>% 
   left_join(df_off_epa, by = c("team", "season")) %>% 
   left_join(df_te_usage, by = c("team", "season")) %>% 
   left_join(df_rz_eff, by = c("team", "season")) %>% 
@@ -24494,6 +24712,7 @@ df_te_vegas =
 
 df_te_fantasy_table =
   df_te_project_market_fin %>% 
+  left_join(df_te_vegas, by = "player_display_name") %>% 
   mutate(
     across(c(market_proj, market_edge, pred_rank_med, exp_finish_edge), ~ round(., 1)),
     player_display_name = 
@@ -24503,7 +24722,6 @@ df_te_fantasy_table =
       )
   ) %>% 
   rename(rank_mod = te_rank_fin) %>% 
-  left_join(df_te_vegas, by = "player_display_name") %>% 
   rename(
     # vegas_rec = receptions,
     vegas_rec_yds = receiving_yards,
@@ -24589,7 +24807,7 @@ df_te_features_table =
     )#,
     # new_qb_new_team = as.numeric(new_qb_new_team) - 1
   ) %>%
-  select(player_display_name, team, rank_mod, adp, pred_fpts, prior_fpts_game, prior_ays, prior_yprr, starts_with("expect_") & -c(expect_tar_other), prior_off_pass_epa, expect_tar_other, games_missed_rate, draft_number, player_age, prior_n_pass, prior_rz_trips, prior_te_use, -player_id) %>% 
+  select(player_display_name, team, rank_mod, adp, pred_fpts, prior_fpts_game, prior_ays, prior_yprr, starts_with("expect_"), prior_off_pass_epa, games_missed_rate, draft_number, player_age, prior_n_pass, prior_rz_trips, prior_te_use, -player_id) %>% 
   drop_na(rank_mod) %>% 
   arrange(rank_mod) %>% 
   labelled::set_variable_labels(
@@ -24603,7 +24821,7 @@ df_te_features_table =
     "prior_yprr" = "Prior YPRR",
     "expect_tar" = "Expected Targets",
     "prior_off_pass_epa" = "Team Passing EPA",
-    "expect_tar_other" = "Target Competition",
+    # "expect_tar_other" = "Target Competition",
     "games_missed_rate" = "Missed Games Rate",
     "draft_number" = "Draft Number",
     "player_age" = "Age",
@@ -26011,7 +26229,7 @@ df_fan_qb_fin_pre =
   ungroup() %>% 
   left_join(df_qb_new_team, by = c("player_id", "season", "team"))
 
-view(df_fan_qb_fin_pre)
+# view(df_fan_qb_fin_pre)
 
 saveRDS(df_fan_qb_fin_pre, str_c("data/fantasy_data/", "df_fan_qb_fin_pre.rds"))
 
@@ -26224,7 +26442,7 @@ df_def_epa_sos = readRDS(str_c("data/fantasy_data/", "df_def_epa_sos.rds"))
 
 df_fpts_qb_train =
   df_fan_qb_fin_all %>% 
-  filter(prior_rank <= 30 | (is.na(prior_rank)) | prior_fpts_game >= 10) %>% 
+  filter(prior_rank <= 35 | prior_fpts_game >= 10) %>% 
   # left_join(fin_df, by = c("team", "season")) %>% 
   # left_join(coach_df, by = c("team", "season")) %>% 
   # left_join(mod_df, by = c("team", "season")) %>% 
@@ -26383,7 +26601,14 @@ coef(mod_enet_qb$finalModel, mod_enet_qb$bestTune$lambda)
 set.seed(37564)
 res = resamples(list(GLM = mod_glm_qb, ENET = mod_enet_qb, MARS = mod_mars_qb, KNN = mod_knn_qb, BOOST = mod_boost_qb, SVM = mod_svm_qb))
 summary(res)
-bwplot(res, metric = "RMSE", main = "RMSE for Repeated 5-Fold CV Using Various Models")
+bwplot(res, metric = "Rsquared", main = "RMSE for Repeated 5-Fold CV Using Various Models")
+
+saveRDS(mod_glm_qb, str_c("data/fantasy_data/", "mod_glm_qb.rds"))
+saveRDS(mod_enet_qb, str_c("data/fantasy_data/", "mod_enet_qb.rds"))
+saveRDS(mod_mars_qb, str_c("data/fantasy_data/", "mod_mars_qb.rds"))
+saveRDS(mod_knn_qb, str_c("data/fantasy_data/", "mod_knn_qb.rds"))
+saveRDS(mod_boost_qb, str_c("data/fantasy_data/", "mod_boost_qb.rds"))
+saveRDS(mod_svm_qb, str_c("data/fantasy_data/", "mod_svm_qb.rds"))
 
 # list_mod_svm_features_qb = list()
 # list_min_rmse_svm_qb = list()
@@ -26672,6 +26897,11 @@ res_resid = resamples(list(GLM = mod_glm_qb_resid, ENET = mod_enet_qb_resid, MAR
 summary(res_resid)
 bwplot(res_resid, metric = "RMSE", main = "RMSE for Repeated 5-Fold CV Using Various Models")
 
+saveRDS(mod_glm_qb_resid, str_c("data/fantasy_data/", "mod_glm_qb_resid.rds"))
+saveRDS(mod_enet_qb_resid, str_c("data/fantasy_data/", "mod_enet_qb_resid.rds"))
+saveRDS(mod_mars_qb_resid, str_c("data/fantasy_data/", "mod_mars_qb_resid.rds"))
+saveRDS(mod_knn_qb_resid, str_c("data/fantasy_data/", "mod_knn_qb_resid.rds"))
+
 # smearing_factor = 
 #   df_resid_wr_train %>% 
 #   cbind(
@@ -26746,17 +26976,17 @@ df_resid_qb_train %>%
 
 
 
-mod_errors = 
-  tibble(
-    resid_glm = as.vector(fpts_wr_train_df$sum_fpts - predict(mod_glm_wr, newdata = fpts_wr_train_df)),
-    resid_knn = fpts_wr_train_df$sum_fpts - predict(mod_knn_wr, newdata = fpts_wr_train_df),
-    resid_lasso = as.vector(fpts_wr_train_df$sum_fpts - predict(mod_lass_wr, newdata = fpts_wr_train_df)),
-    resid_mars = as.vector(fpts_wr_train_df$sum_fpts - predict(mod_mars_wr, newdata = fpts_wr_train_df)),
-    resid_boost = fpts_wr_train_df$sum_fpts - predict(mod_boost_wr, newdata = fpts_wr_train_df),
-    resid_svm = fpts_wr_train_df$sum_fpts - predict(mod_svm_wr, newdata = fpts_wr_train_df)
-  )
-
-corrplot(cor(mod_errors, use = "complete.obs"), diag = F, method = "shade", type = "lower")
+# mod_errors = 
+#   tibble(
+#     resid_glm = as.vector(fpts_wr_train_df$sum_fpts - predict(mod_glm_wr, newdata = fpts_wr_train_df)),
+#     resid_knn = fpts_wr_train_df$sum_fpts - predict(mod_knn_wr, newdata = fpts_wr_train_df),
+#     resid_lasso = as.vector(fpts_wr_train_df$sum_fpts - predict(mod_lass_wr, newdata = fpts_wr_train_df)),
+#     resid_mars = as.vector(fpts_wr_train_df$sum_fpts - predict(mod_mars_wr, newdata = fpts_wr_train_df)),
+#     resid_boost = fpts_wr_train_df$sum_fpts - predict(mod_boost_wr, newdata = fpts_wr_train_df),
+#     resid_svm = fpts_wr_train_df$sum_fpts - predict(mod_svm_wr, newdata = fpts_wr_train_df)
+#   )
+# 
+# corrplot(cor(mod_errors, use = "complete.obs"), diag = F, method = "shade", type = "lower")
 
 # mod_glm_wr$finalModel$residuals %>% as.vector()
 
@@ -27434,7 +27664,7 @@ df_fpts_qb_test =
     expect_gl_opp = prior_gl_att_share * prior_gl_trips
   ) %>% 
   # filter(prior_rank <= 30 | (is.na(prior_rank)) | prior_fpts >= 150) %>% 
-  filter(prior_rank <= 35 | (is.na(prior_rank)) | prior_fpts_game >= 10) %>%
+  filter(prior_rank <= 35 | prior_fpts_game >= 10) %>%
   select(player_id, player_display_name, team, prior_fpts_game, prior_adot, prior_qb_epa, draft_number, prior_fpts_other, qb_new_team, games_missed_rate, expect_rush, ol_grade_pass_adj, player_age, prior_rush_yds, prior_rush_td) %>% 
   # select(-c(prior_qb_epa)) %>% 
   drop_na()
@@ -27736,10 +27966,29 @@ df_qb_project_fin_adp =
   )
 
 market_curve_qb = 
-  df_qb_project_fin_adp %>% 
-  drop_na(rank_edge) %>% 
+  df_fan_qb_fin_all %>% 
+  filter(prior_rank <= 35 | prior_fpts_game >= 10) %>% 
+  # left_join(fin_df, by = c("team", "season")) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_gl_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>% 
+  mutate(
+    expect_rush = prior_rush_share * prior_n_rush_team,
+    expect_gl_opp = prior_gl_att_share * prior_gl_trips
+  ) %>% 
+  select(player_id, player_display_name, season, sum_fpts, prior_qb_epa, prior_n_pass, prior_n_rush, prior_fpts_game, prior_cpoe, prior_adot, prior_off_pass_epa, player_age, draft_number, prior_fpts_other, qb_new_team, games_missed_rate, expect_gl_opp, expect_rush, ol_grade_pass_adj) %>% 
+  select(-c(prior_n_pass, prior_n_rush, prior_cpoe, expect_gl_opp, player_age, prior_off_pass_epa)) %>%
+  drop_na() %>% 
+  arrange(player_id) %>% 
+  left_join(df_adp_old, by = c("player_display_name", "season")) %>%   mutate(
+    adp = as.integer(str_extract(pos_rank_adp, "\\d+"))
+  ) %>%  
+  drop_na(adp) %>% 
   gam(
-    pred_fpts ~ s(adp),
+    sum_fpts ~ s(adp),
     data = .,
     method = "REML"
   )
@@ -27778,6 +28027,7 @@ df_qb_project_market_fin =
 
 df_qb_fantasy_table =
   df_qb_project_market_fin %>% 
+  left_join(df_qb_vegas, by = "player_display_name") %>% 
   mutate(
     across(c(market_proj, market_edge, pred_rank_med, exp_finish_edge), ~ round(., 1)),
     player_display_name = 
@@ -27787,7 +28037,6 @@ df_qb_fantasy_table =
       )
   ) %>% 
   rename(rank_mod = qb_rank_fin) %>% 
-  left_join(df_qb_vegas, by = "player_display_name") %>% 
   mutate(
     vegas_pass_yds = passing_yards,
     vegas_pass_td = passing_td,
@@ -28858,6 +29107,13 @@ df_all_fantasy_table =
   fill(pred_replace, .direction = "downup") %>% 
   ungroup() %>% 
   left_join(df_adp, by = c("player_display_name", "team")) %>% 
+  mutate(
+    player_display_name = 
+      case_when(
+        rookie_ind == 1 ~ str_c("(R) ", player_display_name),
+        .default = player_display_name
+      )
+  ) %>% 
   left_join(
     df_qb_fantasy_table %>% 
       select(player_display_name, team, model_vegas_conc) %>% 
@@ -28876,11 +29132,6 @@ df_all_fantasy_table =
     by = c("player_display_name", "team")
   ) %>% 
   mutate(
-    player_display_name = 
-      case_when(
-        rookie_ind == 1 ~ str_c("(R) ", player_display_name),
-        .default = player_display_name
-      ),
     rank_all = rank(-pred_fpts),
     rank_edge = adp - rank_all,
     vor = pred_fpts - pred_replace,
@@ -28890,6 +29141,7 @@ df_all_fantasy_table =
     draft_value = vor * 0.65 + rank_edge * 0.35
   ) %>% 
   select(player_display_name, team, position, rank_vor, adp, pred_fpts, draft_value, model_vegas_conc) %>% 
+  arrange(rank_vor) %>% 
   mutate(
     across(c(draft_value, pred_fpts), ~ round(., 1)),
     across(c(rank_vor, adp), ~ round(., 0))

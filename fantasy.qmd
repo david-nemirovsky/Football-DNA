@@ -178,7 +178,7 @@ make_fantasy_table <- function(
           column %in% names(direction)
         
         is_age_sos <- grepl(
-          "age_sos",
+          "age|sos",
           column,
           ignore.case = TRUE
         )
