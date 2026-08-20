@@ -156,6 +156,12 @@ make_fantasy_table <- function(
           ignore.case = TRUE
         )
         
+        is_pred <- grepl(
+          "pred_",
+          column,
+          ignore.case = TRUE
+        )
+        
         is_probability <- grepl(
           "prop_",
           column,
@@ -189,14 +195,19 @@ make_fantasy_table <- function(
         
         is_center <- column %in% c(
           "team",
-          "position"
+          "position",
+          "pred_fpts",
+          "pred_fpts_10p",
+          "pred_fpts_90p"
         )
+        
+        is_center_header <- is_center | is_rank_adp_fin
         
         base_style <- list(
           whiteSpace = "normal",
           lineHeight = "1.2",
           padding = "8px 6px",
-          textAlign = if (is_center) "center" else "left"
+          textAlign = "center"
         )
         
         # ------------------------------------------------------
@@ -240,6 +251,10 @@ make_fantasy_table <- function(
           
           column_width <- 85
           
+        } else if (is_pred) {
+          
+          column_width <- 110
+          
         } else if (is_age_sos) {
           
           column_width <- 85
@@ -271,6 +286,8 @@ make_fantasy_table <- function(
         
           width = column_width,
         
+          align = if (is_player) "left" else "center",
+          
           sticky = if (
             is_player | is_team
           ) {
@@ -322,6 +339,8 @@ make_fantasy_table <- function(
             minWidth = column_width,
             
             width = column_width,
+        
+            align = if (is_player) "left" else "center",
             
             sticky = if (
               is_player | is_team
@@ -368,6 +387,8 @@ make_fantasy_table <- function(
             minWidth = column_width,
             
             width = column_width,
+        
+            align = if (is_player) "left" else "center",
             
             sticky = if (
               is_player | is_team
@@ -413,6 +434,8 @@ make_fantasy_table <- function(
             minWidth = column_width,
             
             width = column_width,
+        
+            align = if (is_player) "left" else "center",
             
             sticky = if (
               is_player | is_team
@@ -460,6 +483,8 @@ make_fantasy_table <- function(
             minWidth = column_width,
             
             width = column_width,
+        
+            align = if (is_player) "left" else "center",
             
             sticky = if (
               is_player | is_team
@@ -490,7 +515,10 @@ make_fantasy_table <- function(
             name = label,
             
             minWidth = column_width,
+            
             width = column_width,
+        
+            align = if (is_player) "left" else "center",
             
             sticky = "left",
             
@@ -522,7 +550,10 @@ make_fantasy_table <- function(
             name = label,
             
             minWidth = column_width,
+            
             width = column_width,
+        
+            align = if (is_player) "left" else "center",
             
             sticky = "left",
             
@@ -596,7 +627,7 @@ make_fantasy_table <- function(
         lineHeight = "1.2",
         padding = "8px 6px"
       ),
-      
+        
       style = list(
         whiteSpace = "normal",
         lineHeight = "1.2",
@@ -1168,7 +1199,8 @@ rb_feature_direction =
     expect_rush = "higher",
     ol_grade_run_adj = "higher",
     prior_off_rush_epa = "higher",
-    prior_fpts_other = "lower"
+    prior_fpts_other = "lower",
+    prior_elusive_rating = "higher"
   )
 
 make_fantasy_table(
@@ -1545,7 +1577,7 @@ te_feature_direction =
     prior_yprr = "higher",
     player_age = "lower",
     draft_number = "lower",
-    expect_tar_other = "lower",
+    # expect_tar_other = "lower",
     games_missed_rate = "lower",
     expect_tar = "higher",
     prior_off_pass_epa = "higher",

@@ -362,7 +362,8 @@ get_weather <- function(
     end_date   = as.character(end_date)
   )
 
-  url <- "https://api.open-meteo.com/v1/forecast"
+  # url <- "https://api.open-meteo.com/v1/forecast"
+  url <- "https://archive-api.open-meteo.com/v1/archive"
   resp <- GET(url, query = query)
   stop_for_status(resp)
 
@@ -462,10 +463,10 @@ df_lines_open =
   ) %>% 
   relocate(game_id)
 
-mod_total_team_svm = readRDS("mod_total_team_svm_2026_01_08.rds")
-mod_total_playoffs_team_svm = readRDS("mod_playoffs_total_team_svm_2026_01_04.rds")
-mod_total_correct_enet = readRDS("mod_total_correct_enet.rds")
-mod_spread_correct_enet = readRDS("mod_spread_correct_enet.rds")
+mod_total_team_svm = readRDS(str_c("data/mods/", "mod_total_team_svm_2026_01_08.rds"))
+mod_total_playoffs_team_svm = readRDS(str_c("data/mods/","mod_playoffs_total_team_svm_2026_01_04.rds"))
+mod_total_correct_enet = readRDS(str_c("data/mods/", "mod_total_correct_enet.rds"))
+mod_spread_correct_enet = readRDS(str_c("data/mods/", "mod_spread_correct_enet.rds"))
 df_total_team_train = readRDS("total_team_train_df.rds")
 df_playoffs_total_team_train = readRDS("playoffs_total_team_train_df.rds")
 ```

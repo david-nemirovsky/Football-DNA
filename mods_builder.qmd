@@ -17945,6 +17945,88 @@ write.csv(fpts_wr_2025_fin_rank_export, glue::glue("fpts_wr_2025_fin_rank_{forma
 # view(wr_boot_pred_bands)
 ```
 
+### Backtest
+
+```{r}
+df_fpts_wr_test_25 = 
+  df_fan_wr_fin_all %>% 
+  filter(prior_rank <= 100 | prior_fpts_game >= 5) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_rz_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>%
+  filter(season == 2025) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  select(player_id, player_display_name, prior_ays, prior_tar_share, prior_fpts_game, prior_qb_epa, prior_n_pass, prior_off_pass_epa, def_pass_epa_sos, prior_rz_eff, prior_rz_trips, prior_n_routes, prior_route_partic, prior_yprr, prior_rz_tar_share, player_age, draft_number, prior_fpts_other, expect_tar_other, new_qb_new_team, prior_games_missed, games_missed_rate, ol_grade_pass_adj, prior_slot_rate, prior_wide_rate, prior_ccr, sum_fpts) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_ay = prior_ays * prior_n_pass,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_rz_opp = prior_rz_tar_share * prior_rz_trips
+  ) %>% 
+  select(-c(prior_games_missed, prior_rz_trips, prior_fpts_other, def_pass_epa_sos, expect_ay, expect_tar, ol_grade_pass_adj, prior_wide_rate, prior_slot_rate, prior_ccr)) %>% 
+  select(-any_of(df_feature_svm %>% filter(delta_rmse < -0.06) %>% pull(var_svm))) %>%
+  drop_na() %>% 
+  arrange(player_id)
+
+view(df_fpts_wr_test_25)
+
+df_fpts_wr_test_25 %>% 
+  mutate(
+    pred_fpts = predict(mod_svm_wr, newdata = .),
+    rank_mod = rank(-pred_fpts),
+    rank_fin = rank(-sum_fpts)
+  ) %>% 
+  left_join(
+    df_adp_old %>% 
+      filter(season == 2025) %>% 
+      mutate(adp = as.integer(str_extract(pos_rank_adp, "\\d+"))) %>% 
+      select(player_display_name, adp),
+    by = "player_display_name"
+  ) %>% 
+  mutate(
+    market_proj =
+      predict(
+        market_curve_wr,
+        newdata = .
+      ),
+    market_edge = pred_fpts - market_proj,
+    market_edge_z = round(as.numeric(scale(market_edge)), 2)
+  ) %>% 
+  arrange(rank_mod) %>% 
+  # filter() %>% 
+  mutate(
+    ind_mod_val_high = 
+      case_when(
+        market_edge_z >= 0.5 & adp - rank_mod > 3 ~ 1,
+        .default = 0 
+      ),
+    ind_hit_high = 
+      case_when(
+        ind_mod_val_high == 1 & abs(abs(adp - rank_fin) - abs(rank_mod - rank_fin)) > 3 ~ 1,
+        ind_mod_val_high == 1 ~ 0
+      ),
+    ind_mod_val_low = 
+      case_when(
+        market_edge_z <= -0.5 & adp - rank_mod < -3 ~ 1,
+        .default = 0 
+      ),
+    ind_hit_low = 
+      case_when(
+        ind_mod_val_low == 1 & abs(abs(adp - rank_fin) - abs(rank_mod - rank_fin)) > 3 ~ 1,
+        ind_mod_val_low == 1 ~ 0
+      )
+  ) %>% 
+  select(player_display_name, sum_fpts, pred_fpts, market_proj, rank_fin, rank_mod, adp, market_edge_z, starts_with("ind_")) %>% 
+  view
+  tbl_summary(
+    include = starts_with("ind_hit_")
+  ) %>% 
+  bold_labels()
+
+```
+
 ## RB
 
 ### Get prior data
@@ -21448,8 +21530,13 @@ df_rb_features_table =
     by = "player_display_name"
   ) %>%
   mutate(
+    prior_elusive_rating = 
+      case_when(
+        prior_elusive_rating > 150 ~ 125,
+        .default = prior_elusive_rating
+      ),
     across(
-      c(starts_with("prior_") & -c(prior_rush_rate, prior_rb_epa), games_missed_rate, player_age, ol_grade_run_adj, prior_elusive_rating),
+      c(starts_with("prior_") & -c(prior_rush_rate, prior_rb_epa), games_missed_rate, player_age, ol_grade_run_adj),
       ~ round(., 1)
     ),
     across(
@@ -29140,7 +29227,7 @@ df_all_fantasy_table =
     z_rank_edge = scale(rank_edge)[ , 1],
     draft_value = vor * 0.65 + rank_edge * 0.35
   ) %>% 
-  select(player_display_name, team, position, rank_vor, adp, pred_fpts, draft_value, model_vegas_conc) %>% 
+  select(player_display_name, team, position, rank_vor, adp, pred_fpts, pred_fpts_10p, pred_fpts_90p, draft_value, model_vegas_conc) %>% 
   arrange(rank_vor) %>% 
   mutate(
     across(c(draft_value, pred_fpts), ~ round(., 1)),
@@ -29154,6 +29241,8 @@ df_all_fantasy_table =
     "adp" = "ADP", 
     # "rank_edge" = "Rank Edge",
     "pred_fpts" = "Model Projection", 
+    "pred_fpts_10p" = "Floor", 
+    "pred_fpts_90p" = "Ceiling",
     "draft_value" = "Draft Value",
     "model_vegas_conc" = "Vegas Concordance"
     # "pred_replace" = "Replacement Projection",
