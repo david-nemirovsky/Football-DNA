@@ -34,7 +34,7 @@ library(caret)
 library(rsample)
 # library(gbm)
 # library(e1071)
-# library(gtsummary)
+library(gtsummary)
 library(reactable)
 
 knitr::opts_chunk$set(
@@ -1158,6 +1158,294 @@ make_fantasy_table(
 # )
 ```
 
+#### Prior Seasons' Hits & Misses
+
+```{r history qb}
+df_backtest_qb_23_25 = readRDS(str_c("data/fantasy_data/", "df_backtest_qb_23_25.rds"))
+
+df_qb_hit_miss_25 =
+  df_backtest_qb_23_25 %>% 
+  filter(season == 2025) %>% 
+  mutate(
+    model_edge = pred_fpts - market_proj,
+    actual_edge = sum_fpts - market_proj,
+    hit = ifelse(sign(model_edge) == sign(actual_edge), 1, 0),
+    model_edge_z = as.numeric(scale(model_edge)),
+    actual_edge_z = as.numeric(scale(actual_edge)),
+    rank_edge = rank_mod - adp,
+    rank_fin_edge = rank_fin - adp,
+    pred_fpts = round(pred_fpts, 2),
+    market_proj = round(market_proj, 2),
+    ind_mod_val_high =
+      case_when(
+        market_edge_z > 0 & rank_edge < 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_high =
+      case_when(
+        ind_mod_val_high == 1 & (model_edge_z < actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z > 0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_high == 1 ~ 0
+      ),
+    ind_mod_val_low =
+      case_when(
+        market_edge_z < 0 & rank_edge > 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_low =
+      case_when(
+        ind_mod_val_low == 1 & (model_edge_z > actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z < -0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_low == 1 ~ 0
+      )
+  )
+
+df_qb_hit_miss_25 %>%
+  filter(ind_hit_high == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "QB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Hits on Undervalued PLayers**")
+
+df_qb_hit_miss_25 %>%
+  filter(ind_hit_low == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>% 
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "QB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Hits on Overvalued PLayers**")
+
+df_qb_hit_miss_25 %>%
+  filter(ind_hit_high == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "QB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Misses on Undervalued Players**")
+
+df_qb_hit_miss_25 %>%
+  filter(ind_hit_low == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "QB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Misses on Overvalued Players**")
+
+df_qb_hit_miss_24 =
+  df_backtest_qb_23_25 %>% 
+  filter(season == 2024) %>% 
+  mutate(
+    model_edge = pred_fpts - market_proj,
+    actual_edge = sum_fpts - market_proj,
+    hit = ifelse(sign(model_edge) == sign(actual_edge), 1, 0),
+    model_edge_z = as.numeric(scale(model_edge)),
+    actual_edge_z = as.numeric(scale(actual_edge)),
+    rank_edge = rank_mod - adp,
+    rank_fin_edge = rank_fin - adp,
+    pred_fpts = round(pred_fpts, 2),
+    market_proj = round(market_proj, 2),
+    ind_mod_val_high =
+      case_when(
+        market_edge_z > 0 & rank_edge < 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_high =
+      case_when(
+        ind_mod_val_high == 1 & (model_edge_z < actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z > 0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_high == 1 ~ 0
+      ),
+    ind_mod_val_low =
+      case_when(
+        market_edge_z < 0 & rank_edge > 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_low =
+      case_when(
+        ind_mod_val_low == 1 & (model_edge_z > actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z < -0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_low == 1 ~ 0
+      )
+  )
+
+df_qb_hit_miss_24 %>%
+  filter(ind_hit_high == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "QB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Hits on Undervalued PLayers**")
+
+df_qb_hit_miss_24 %>%
+  filter(ind_hit_low == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>% 
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "QB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Hits on Overvalued PLayers**")
+
+df_qb_hit_miss_24 %>%
+  filter(ind_hit_high == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "QB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Misses on Undervalued Players**")
+
+df_qb_hit_miss_24 %>%
+  filter(ind_hit_low == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "QB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Misses on Overvalued Players**")
+```
+
 :::
 
 ### **RB**
@@ -1346,6 +1634,295 @@ make_fantasy_table(
 #     columns = column_defs
 #   )
 # }
+```
+
+#### Prior Seasons' Hits & Misses
+
+```{r history rb}
+df_backtest_rb_23_25 = readRDS(str_c("data/fantasy_data/", "df_backtest_rb_23_25.rds"))
+
+df_rb_hit_miss_25 =
+  df_backtest_rb_23_25 %>% 
+  filter(season == 2025) %>% 
+  mutate(
+    model_edge = pred_fpts - market_proj,
+    actual_edge = sum_fpts - market_proj,
+    hit = ifelse(sign(model_edge) == sign(actual_edge), 1, 0),
+    model_edge_z = as.numeric(scale(model_edge)),
+    actual_edge_z = as.numeric(scale(actual_edge)),
+    rank_edge = rank_mod - adp,
+    rank_fin_edge = rank_fin - adp,
+    pred_fpts = round(pred_fpts, 2),
+    market_proj = round(market_proj, 2),
+    ind_mod_val_high =
+      case_when(
+        market_edge_z > 0 & rank_edge < 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_high =
+      case_when(
+        ind_mod_val_high == 1 & (model_edge_z < actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z > 0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_high == 1 ~ 0
+      ),
+    ind_mod_val_low =
+      case_when(
+        market_edge_z < 0 & rank_edge > 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_low =
+      case_when(
+        ind_mod_val_low == 1 & (model_edge_z > actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z < -0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_low == 1 ~ 0
+      )
+  )
+
+df_rb_hit_miss_25 %>%
+  filter(ind_hit_high == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 8) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "RB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Hits on Undervalued PLayers**")
+
+df_rb_hit_miss_25 %>%
+  filter(ind_hit_low == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>% 
+  slice_head(n = 8) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "RB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Hits on Overvalued PLayers**")
+
+df_rb_hit_miss_25 %>%
+  filter(ind_hit_high == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 8) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "RB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Misses on Undervalued Players**")
+
+df_rb_hit_miss_25 %>%
+  filter(ind_hit_low == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 8) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "RB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Misses on Overvalued Players**")
+
+df_rb_hit_miss_24 =
+  df_backtest_rb_23_25 %>% 
+  filter(season == 2024) %>% 
+  mutate(
+    model_edge = pred_fpts - market_proj,
+    actual_edge = sum_fpts - market_proj,
+    hit = ifelse(sign(model_edge) == sign(actual_edge), 1, 0),
+    model_edge_z = as.numeric(scale(model_edge)),
+    actual_edge_z = as.numeric(scale(actual_edge)),
+    rank_edge = rank_mod - adp,
+    rank_fin_edge = rank_fin - adp,
+    pred_fpts = round(pred_fpts, 2),
+    market_proj = round(market_proj, 2),
+    ind_mod_val_high =
+      case_when(
+        market_edge_z > 0 & rank_edge < 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_high =
+      case_when(
+        ind_mod_val_high == 1 & (model_edge_z < actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z > 0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_high == 1 ~ 0
+      ),
+    ind_mod_val_low =
+      case_when(
+        market_edge_z < 0 & rank_edge > 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_low =
+      case_when(
+        ind_mod_val_low == 1 & (model_edge_z > actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z < -0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_low == 1 ~ 0
+      )
+  )
+
+df_rb_hit_miss_24 %>%
+  filter(ind_hit_high == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 8) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "RB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Hits on Undervalued PLayers**")
+
+df_rb_hit_miss_24 %>%
+  filter(ind_hit_low == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>% 
+  slice_head(n = 8) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "RB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Hits on Overvalued PLayers**")
+
+df_rb_hit_miss_24 %>%
+  filter(ind_hit_high == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 8) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "RB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Misses on Undervalued Players**")
+
+df_rb_hit_miss_24 %>%
+  filter(ind_hit_low == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 8) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "RB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Misses on Overvalued Players**")
+
 ```
 
 :::
@@ -1542,6 +2119,295 @@ make_fantasy_table(
 # }
 ```
 
+#### Prior Seasons' Hits & Misses
+
+```{r wr history}
+df_backtest_wr_23_25 = readRDS(str_c("data/fantasy_data/", "df_backtest_wr_23_25.rds"))
+
+df_wr_hit_miss_25 =
+  df_backtest_wr_23_25 %>% 
+  filter(season == 2025) %>% 
+  mutate(
+    model_edge = pred_fpts - market_proj,
+    actual_edge = sum_fpts - market_proj,
+    hit = ifelse(sign(model_edge) == sign(actual_edge), 1, 0),
+    model_edge_z = as.numeric(scale(model_edge)),
+    actual_edge_z = as.numeric(scale(actual_edge)),
+    rank_edge = rank_mod - adp,
+    rank_fin_edge = rank_fin - adp,
+    pred_fpts = round(pred_fpts, 2),
+    market_proj = round(market_proj, 2),
+    ind_mod_val_high =
+      case_when(
+        market_edge_z > 0 & rank_edge < 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_high =
+      case_when(
+        ind_mod_val_high == 1 & (model_edge_z < actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z > 0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_high == 1 ~ 0
+      ),
+    ind_mod_val_low =
+      case_when(
+        market_edge_z < 0 & rank_edge > 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_low =
+      case_when(
+        ind_mod_val_low == 1 & (model_edge_z > actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z < -0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_low == 1 ~ 0
+      )
+  )
+
+df_wr_hit_miss_25 %>%
+  filter(ind_hit_high == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 10) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "WR Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Hits on Undervalued PLayers**")
+
+df_wr_hit_miss_25 %>%
+  filter(ind_hit_low == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>% 
+  slice_head(n = 10) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "WR Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Hits on Overvalued PLayers**")
+
+df_wr_hit_miss_25 %>%
+  filter(ind_hit_high == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 10) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "WR Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Misses on Undervalued Players**")
+
+df_wr_hit_miss_25 %>%
+  filter(ind_hit_low == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 10) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "WR Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Misses on Overvalued Players**")
+
+df_wr_hit_miss_24 =
+  df_backtest_wr_23_25 %>% 
+  filter(season == 2024) %>% 
+  mutate(
+    model_edge = pred_fpts - market_proj,
+    actual_edge = sum_fpts - market_proj,
+    hit = ifelse(sign(model_edge) == sign(actual_edge), 1, 0),
+    model_edge_z = as.numeric(scale(model_edge)),
+    actual_edge_z = as.numeric(scale(actual_edge)),
+    rank_edge = rank_mod - adp,
+    rank_fin_edge = rank_fin - adp,
+    pred_fpts = round(pred_fpts, 2),
+    market_proj = round(market_proj, 2),
+    ind_mod_val_high =
+      case_when(
+        market_edge_z > 0 & rank_edge < 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_high =
+      case_when(
+        ind_mod_val_high == 1 & (model_edge_z < actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z > 0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_high == 1 ~ 0
+      ),
+    ind_mod_val_low =
+      case_when(
+        market_edge_z < 0 & rank_edge > 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_low =
+      case_when(
+        ind_mod_val_low == 1 & (model_edge_z > actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z < -0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_low == 1 ~ 0
+      )
+  )
+
+df_wr_hit_miss_24 %>%
+  filter(ind_hit_high == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 10) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "WR Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Hits on Undervalued PLayers**")
+
+df_wr_hit_miss_24 %>%
+  filter(ind_hit_low == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>% 
+  slice_head(n = 10) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "WR Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Hits on Overvalued PLayers**")
+
+df_wr_hit_miss_24 %>%
+  filter(ind_hit_high == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 10) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "WR Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Misses on Undervalued Players**")
+
+df_wr_hit_miss_24 %>%
+  filter(ind_hit_low == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 10) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "WR Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Misses on Overvalued Players**")
+
+```
+
 :::
 
 ### **TE**
@@ -1728,6 +2594,294 @@ make_fantasy_table(
 #     columns = column_defs
 #   )
 # }
+```
+
+#### Prior Seasons' Hits & Misses
+
+```{r te history}
+df_backtest_te_23_25 = readRDS(str_c("data/fantasy_data/", "df_backtest_te_23_25.rds"))
+
+df_te_hit_miss_25 =
+  df_backtest_te_23_25 %>% 
+  filter(season == 2025) %>% 
+  mutate(
+    model_edge = pred_fpts - market_proj,
+    actual_edge = sum_fpts - market_proj,
+    hit = ifelse(sign(model_edge) == sign(actual_edge), 1, 0),
+    model_edge_z = as.numeric(scale(model_edge)),
+    actual_edge_z = as.numeric(scale(actual_edge)),
+    rank_edge = rank_mod - adp,
+    rank_fin_edge = rank_fin - adp,
+    pred_fpts = round(pred_fpts, 2),
+    market_proj = round(market_proj, 2),
+    ind_mod_val_high =
+      case_when(
+        market_edge_z > 0 & rank_edge < 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_high =
+      case_when(
+        ind_mod_val_high == 1 & (model_edge_z < actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z > 0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_high == 1 ~ 0
+      ),
+    ind_mod_val_low =
+      case_when(
+        market_edge_z < 0 & rank_edge > 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_low =
+      case_when(
+        ind_mod_val_low == 1 & (model_edge_z > actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z < -0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_low == 1 ~ 0
+      )
+  )
+
+df_te_hit_miss_25 %>%
+  filter(ind_hit_high == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "TE Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Hits on Undervalued PLayers**")
+
+df_te_hit_miss_25 %>%
+  filter(ind_hit_low == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>% 
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "TE Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Hits on Overvalued PLayers**")
+
+df_te_hit_miss_25 %>%
+  filter(ind_hit_high == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "TE Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Misses on Undervalued Players**")
+
+df_te_hit_miss_25 %>%
+  filter(ind_hit_low == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "TE Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Misses on Overvalued Players**")
+
+df_te_hit_miss_24 =
+  df_backtest_te_23_25 %>% 
+  filter(season == 2024) %>% 
+  mutate(
+    model_edge = pred_fpts - market_proj,
+    actual_edge = sum_fpts - market_proj,
+    hit = ifelse(sign(model_edge) == sign(actual_edge), 1, 0),
+    model_edge_z = as.numeric(scale(model_edge)),
+    actual_edge_z = as.numeric(scale(actual_edge)),
+    rank_edge = rank_mod - adp,
+    rank_fin_edge = rank_fin - adp,
+    pred_fpts = round(pred_fpts, 2),
+    market_proj = round(market_proj, 2),
+    ind_mod_val_high =
+      case_when(
+        market_edge_z > 0 & rank_edge < 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_high =
+      case_when(
+        ind_mod_val_high == 1 & (model_edge_z < actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z > 0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_high == 1 ~ 0
+      ),
+    ind_mod_val_low =
+      case_when(
+        market_edge_z < 0 & rank_edge > 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_low =
+      case_when(
+        ind_mod_val_low == 1 & (model_edge_z > actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z < -0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_low == 1 ~ 0
+      )
+  )
+
+df_te_hit_miss_24 %>%
+  filter(ind_hit_high == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "TE Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Hits on Undervalued PLayers**")
+
+df_te_hit_miss_24 %>%
+  filter(ind_hit_low == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>% 
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "TE Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Hits on Overvalued PLayers**")
+
+df_te_hit_miss_24 %>%
+  filter(ind_hit_high == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "TE Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Misses on Undervalued Players**")
+
+df_te_hit_miss_24 %>%
+  filter(ind_hit_low == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "TE Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Misses on Overvalued Players**")
 ```
 
 :::

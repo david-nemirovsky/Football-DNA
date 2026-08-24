@@ -15975,6 +15975,50 @@ df_resid_wr_train_rook %>%
 ### Run model on test data
 
 ```{r pred test}
+df_injuries =
+  read_excel(str_c("data/raw_data/injuries_yahoo/", "injuries_2026_08_24.xlsx")) %>% 
+  janitor::clean_names() %>% 
+  mutate(
+    proj_games_miss = 
+      case_when(
+        projected_weeks_missed %in% c("0", "0–1") ~ 0,
+        projected_weeks_missed %in% c("0–2", "0-2", "1", "1–2") ~ 1,
+        projected_weeks_missed %in% c("1–3", "2", "2–3") ~ 2,
+        projected_weeks_missed %in% c("1–4+", "3") ~ 3,
+        projected_weeks_missed %in% c("4–6") ~ 5,
+        str_detect(projected_weeks_missed, "\\+") ~ as.integer(str_remove(projected_weeks_missed, "\\+")),
+        projected_weeks_missed == "TBD" & player == "Zach Charbonnet" ~ 7,
+        projected_weeks_missed == "TBD" & player == "Alec Pierce" ~ 2,
+        projected_weeks_missed == "TBD" & player == "Keon Coleman" ~ 3,
+        projected_weeks_missed == "TBD" & player == "Makai Lemon" ~ 3,
+        injury %in% c("Undisclosed", "Tightness") ~ 0,
+        .default = NA
+      ),
+    player_display_name = 
+      case_match(
+        player,
+        "Michael Pittman Jr." ~ "Michael Pittman",
+        .default = player
+      ),
+    full_name = player_display_name
+  ) %>% 
+  rows_insert(
+    tibble(
+      player_display_name = "Ashton Jeanty",
+      pos = "RB",
+      proj_games_miss = 1
+    )
+  )
+
+# fix names:
+
+# df_injuries %>% 
+#   left_join(
+#     df_fpts_wr_test %>% select(player_id, player_display_name),
+#     by = "player_display_name"
+#   ) %>% 
+#   view
+
 df_mod_wr_rec = 
   df_fan_wr_all %>% 
   select(season, week, player_id, player_display_name, receptions) %>% 
@@ -16233,7 +16277,13 @@ df_fpts_wr_test =
   ) %>% 
   select(player_id, player_display_name, team, prior_ays, prior_tar_share, games_missed_rate, prior_fpts_game, prior_n_pass, player_age, draft_number, expect_tar_other, new_qb_new_team, expect_tar, expect_ay, expect_routes, prior_yprr, def_pass_epa_sos, prior_rec) %>% 
   # select(-c(prior_qb_epa)) %>% 
-  drop_na()
+  drop_na() %>% 
+  left_join(
+    df_injuries %>% 
+      filter(pos == "WR") %>% 
+      select(player_display_name, proj_games_miss),
+    by = "player_display_name"
+  )
 
 saveRDS(df_fpts_wr_test, str_c("data/fantasy_data/", "df_fpts_wr_test.rds"))
 
@@ -16359,7 +16409,13 @@ df_fpts_wr_rookie_test =
     by = c("team", "season")
   ) %>% 
   select(player_id, full_name, team, prior_qb_epa, prior_n_pass, prior_off_pass_epa, prior_rz_eff, prior_fpts_other, player_age, draft_number, expect_tar_other, prior_pass_rate) %>% 
-  drop_na()
+  drop_na() %>% 
+  left_join(
+    df_injuries %>% 
+      filter(pos == "WR") %>% 
+      select(full_name, proj_games_miss),
+    by = "full_name"
+  )
 
 saveRDS(df_fpts_wr_rookie_test, str_c("data/fantasy_data/", "df_fpts_wr_rookie_test.rds"))
 
@@ -16413,6 +16469,11 @@ df_fpts_wr_sim =
   df_fpts_wr_test %>% 
   mutate(
     pred_fpts_svm = predict(mod_svm_wr, newdata = df_fpts_wr_test),
+    pred_fpts_svm = 
+      case_when(
+        !is.na(proj_games_miss) ~ pred_fpts_svm * (17 - proj_games_miss) / 17,
+        .default = pred_fpts_svm
+      ),
     pred_resid_enet = predict(mod_enet_wr_resid, newdata = df_fpts_wr_test),
     proj_rec = predict(mod_wr_rec, newdata = df_fpts_wr_test),
     across(
@@ -16452,6 +16513,11 @@ df_fpts_wr_rook_sim =
   rename(player_display_name = full_name) %>% 
   mutate(
     pred_fpts_boost = predict(mod_boost_wr_rook, newdata = df_fpts_wr_rookie_test),
+    pred_fpts_boost = 
+      case_when(
+        !is.na(proj_games_miss) ~ pred_fpts_boost * (17 - proj_games_miss) / 17,
+        .default = pred_fpts_boost
+      ),
     pred_resid_knn = predict(mod_knn_wr_rook_resid, newdata = df_fpts_wr_rookie_test),
     proj_rec = predict(mod_wr_rec_rook, newdata = df_fpts_wr_rookie_test),
     across(
@@ -16579,7 +16645,7 @@ saveRDS(df_wr_project_fin, str_c("data/fantasy_data/", "df_wr_project_fin.rds"))
 
 # from: https://www.fantasypros.com/nfl/adp/ppr-overall.php
 df_adp =
-  read.csv(str_c("data/raw_data/fantasy_adp/", "FantasyPros_2026_Overall_ADP_Rankings_2026_08_17.csv")) %>% 
+  read.csv(str_c("data/raw_data/fantasy_adp/", "FantasyPros_2026_Overall_ADP_Rankings_2026_08_24.csv")) %>% 
   janitor::clean_names() %>% 
   tibble() %>% 
   rename(
@@ -17948,6 +18014,214 @@ write.csv(fpts_wr_2025_fin_rank_export, glue::glue("fpts_wr_2025_fin_rank_{forma
 ### Backtest
 
 ```{r}
+market_curve_wr_25 = 
+  df_fan_wr_fin_all %>% 
+  filter(prior_rank <= 100 | prior_fpts_game >= 5) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_rz_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>%
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  filter(season < 2025) %>% 
+  select(season, player_id, player_display_name, sum_fpts, prior_ays, prior_tar_share, prior_fpts_game, prior_qb_epa, prior_n_pass, prior_off_pass_epa, def_pass_epa_sos, prior_rz_eff, prior_rz_trips, prior_n_routes, prior_route_partic, prior_yprr, prior_rz_tar_share, player_age, draft_number, prior_fpts_other, expect_tar_other, new_qb_new_team, prior_games_missed, games_missed_rate, ol_grade_pass_adj) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_ay = prior_ays * prior_n_pass,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_rz_opp = prior_rz_tar_share * prior_rz_trips
+  ) %>% 
+  select(-c(prior_games_missed, prior_rz_trips, prior_fpts_other, def_pass_epa_sos, expect_ay, expect_tar, ol_grade_pass_adj)) %>% 
+  # select(-any_of(df_feature_svm %>% filter(delta_rmse < -0.06) %>% pull(var_svm))) %>%
+  select(season, player_id, player_display_name, sum_fpts, prior_tar_share, prior_fpts_game, prior_yprr, player_age, draft_number, expect_tar_other, new_qb_new_team, games_missed_rate, expect_routes) %>% 
+  drop_na() %>% 
+  arrange(player_id) %>% 
+  left_join(df_adp_old, by = c("player_display_name", "season")) %>%   mutate(
+    adp = as.integer(str_extract(pos_rank_adp, "\\d+"))
+  ) %>%  
+  drop_na(adp) %>% 
+  gam(
+    sum_fpts ~ s(adp),
+    data = .,
+    method = "REML"
+  )
+market_curve_wr_24 = 
+  df_fan_wr_fin_all %>% 
+  filter(prior_rank <= 100 | prior_fpts_game >= 5) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_rz_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>%
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  filter(season < 2024) %>% 
+  select(season, player_id, player_display_name, sum_fpts, prior_ays, prior_tar_share, prior_fpts_game, prior_qb_epa, prior_n_pass, prior_off_pass_epa, def_pass_epa_sos, prior_rz_eff, prior_rz_trips, prior_n_routes, prior_route_partic, prior_yprr, prior_rz_tar_share, player_age, draft_number, prior_fpts_other, expect_tar_other, new_qb_new_team, prior_games_missed, games_missed_rate, ol_grade_pass_adj) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_ay = prior_ays * prior_n_pass,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_rz_opp = prior_rz_tar_share * prior_rz_trips
+  ) %>% 
+  select(-c(prior_games_missed, prior_rz_trips, prior_fpts_other, def_pass_epa_sos, expect_ay, expect_tar, ol_grade_pass_adj)) %>% 
+  # select(-any_of(df_feature_svm %>% filter(delta_rmse < -0.06) %>% pull(var_svm))) %>%
+  select(season, player_id, player_display_name, sum_fpts, prior_tar_share, prior_fpts_game, prior_yprr, player_age, draft_number, expect_tar_other, new_qb_new_team, games_missed_rate, expect_routes) %>% 
+  drop_na() %>% 
+  arrange(player_id) %>% 
+  left_join(df_adp_old, by = c("player_display_name", "season")) %>%   mutate(
+    adp = as.integer(str_extract(pos_rank_adp, "\\d+"))
+  ) %>%  
+  drop_na(adp) %>% 
+  gam(
+    sum_fpts ~ s(adp),
+    data = .,
+    method = "REML"
+  )
+market_curve_wr_23 = 
+  df_fan_wr_fin_all %>% 
+  filter(prior_rank <= 100 | prior_fpts_game >= 5) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_rz_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>%
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  filter(season < 2023) %>% 
+  select(season, player_id, player_display_name, sum_fpts, prior_ays, prior_tar_share, prior_fpts_game, prior_qb_epa, prior_n_pass, prior_off_pass_epa, def_pass_epa_sos, prior_rz_eff, prior_rz_trips, prior_n_routes, prior_route_partic, prior_yprr, prior_rz_tar_share, player_age, draft_number, prior_fpts_other, expect_tar_other, new_qb_new_team, prior_games_missed, games_missed_rate, ol_grade_pass_adj) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_ay = prior_ays * prior_n_pass,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_rz_opp = prior_rz_tar_share * prior_rz_trips
+  ) %>% 
+  select(-c(prior_games_missed, prior_rz_trips, prior_fpts_other, def_pass_epa_sos, expect_ay, expect_tar, ol_grade_pass_adj)) %>% 
+  # select(-any_of(df_feature_svm %>% filter(delta_rmse < -0.06) %>% pull(var_svm))) %>%
+  select(season, player_id, player_display_name, sum_fpts, prior_tar_share, prior_fpts_game, prior_yprr, player_age, draft_number, expect_tar_other, new_qb_new_team, games_missed_rate, expect_routes) %>% 
+  drop_na() %>% 
+  arrange(player_id) %>% 
+  left_join(df_adp_old, by = c("player_display_name", "season")) %>%   mutate(
+    adp = as.integer(str_extract(pos_rank_adp, "\\d+"))
+  ) %>%  
+  drop_na(adp) %>% 
+  gam(
+    sum_fpts ~ s(adp),
+    data = .,
+    method = "REML"
+  )
+
+df_fpts_wr_train_25 = 
+  df_fan_wr_fin_all %>% 
+  filter(prior_rank <= 100 | prior_fpts_game >= 5) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_rz_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>%
+  filter(season < 2025) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  select(player_id, prior_ays, prior_tar_share, prior_fpts_game, prior_qb_epa, prior_n_pass, prior_off_pass_epa, def_pass_epa_sos, prior_rz_eff, prior_rz_trips, prior_n_routes, prior_route_partic, prior_yprr, prior_rz_tar_share, player_age, draft_number, prior_fpts_other, expect_tar_other, new_qb_new_team, prior_games_missed, games_missed_rate, ol_grade_pass_adj, prior_slot_rate, prior_wide_rate, prior_ccr, sum_fpts) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_ay = prior_ays * prior_n_pass,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_rz_opp = prior_rz_tar_share * prior_rz_trips
+  ) %>% 
+  select(-c(prior_games_missed, prior_rz_trips, prior_fpts_other, def_pass_epa_sos, expect_ay, expect_tar, ol_grade_pass_adj, prior_wide_rate, prior_slot_rate, prior_ccr)) %>% 
+  select(-any_of(df_feature_svm %>% filter(delta_rmse < -0.06) %>% pull(var_svm))) %>%
+  drop_na() %>% 
+  arrange(player_id) %>% 
+  select(-player_id) %>% 
+  relocate(sum_fpts, .after = last_col())
+
+df_fpts_wr_train_24 = 
+  df_fan_wr_fin_all %>% 
+  filter(prior_rank <= 100 | prior_fpts_game >= 5) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_rz_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>%
+  filter(season < 2024) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  select(player_id, prior_ays, prior_tar_share, prior_fpts_game, prior_qb_epa, prior_n_pass, prior_off_pass_epa, def_pass_epa_sos, prior_rz_eff, prior_rz_trips, prior_n_routes, prior_route_partic, prior_yprr, prior_rz_tar_share, player_age, draft_number, prior_fpts_other, expect_tar_other, new_qb_new_team, prior_games_missed, games_missed_rate, ol_grade_pass_adj, prior_slot_rate, prior_wide_rate, prior_ccr, sum_fpts) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_ay = prior_ays * prior_n_pass,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_rz_opp = prior_rz_tar_share * prior_rz_trips
+  ) %>% 
+  select(-c(prior_games_missed, prior_rz_trips, prior_fpts_other, def_pass_epa_sos, expect_ay, expect_tar, ol_grade_pass_adj, prior_wide_rate, prior_slot_rate, prior_ccr)) %>% 
+  select(-any_of(df_feature_svm %>% filter(delta_rmse < -0.06) %>% pull(var_svm))) %>%
+  drop_na() %>% 
+  arrange(player_id) %>% 
+  select(-player_id) %>% 
+  relocate(sum_fpts, .after = last_col())
+
+df_fpts_wr_train_23 = 
+  df_fan_wr_fin_all %>% 
+  filter(prior_rank <= 100 | prior_fpts_game >= 5) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_rz_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>%
+  filter(season < 2023) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  select(player_id, prior_ays, prior_tar_share, prior_fpts_game, prior_qb_epa, prior_n_pass, prior_off_pass_epa, def_pass_epa_sos, prior_rz_eff, prior_rz_trips, prior_n_routes, prior_route_partic, prior_yprr, prior_rz_tar_share, player_age, draft_number, prior_fpts_other, expect_tar_other, new_qb_new_team, prior_games_missed, games_missed_rate, ol_grade_pass_adj, prior_slot_rate, prior_wide_rate, prior_ccr, sum_fpts) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_ay = prior_ays * prior_n_pass,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_rz_opp = prior_rz_tar_share * prior_rz_trips
+  ) %>% 
+  select(-c(prior_games_missed, prior_rz_trips, prior_fpts_other, def_pass_epa_sos, expect_ay, expect_tar, ol_grade_pass_adj, prior_wide_rate, prior_slot_rate, prior_ccr)) %>% 
+  select(-any_of(df_feature_svm %>% filter(delta_rmse < -0.06) %>% pull(var_svm))) %>%
+  drop_na() %>% 
+  arrange(player_id) %>% 
+  select(-player_id) %>% 
+  relocate(sum_fpts, .after = last_col())
+
+set.seed(37564)
+mod_svm_wr_25 = train(sum_fpts ~ .,
+                na.action = na.exclude, 
+                data = df_fpts_wr_train_25,
+                preProcess = c("scale", "center"),
+                method = "svmRadialSigma",
+                tuneGrid = mod_svm_wr$bestTune,
+                trControl = ctrl)
+# ggplot(mod_svm_wr_25, highlight = T) + 
+#   ggtitle("SVM Radial") +
+#   theme(plot.title = element_text(hjust = 0.5))
+mod_svm_wr_25$bestTune
+min(mod_svm_wr_25$results$RMSE)
+
+set.seed(37564)
+mod_svm_wr_24 = train(sum_fpts ~ .,
+                na.action = na.exclude, 
+                data = df_fpts_wr_train_24,
+                preProcess = c("scale", "center"),
+                method = "svmRadialSigma",
+                tuneGrid = mod_svm_wr$bestTune,
+                trControl = ctrl)
+# ggplot(mod_svm_wr_24, highlight = T) + 
+#   ggtitle("SVM Radial") +
+#   theme(plot.title = element_text(hjust = 0.5))
+mod_svm_wr_24$bestTune
+min(mod_svm_wr_24$results$RMSE)
+
+set.seed(37564)
+mod_svm_wr_23 = train(sum_fpts ~ .,
+                na.action = na.exclude, 
+                data = df_fpts_wr_train_23,
+                preProcess = c("scale", "center"),
+                method = "svmRadialSigma",
+                tuneGrid = mod_svm_wr$bestTune,
+                trControl = ctrl)
+# ggplot(mod_svm_wr_23, highlight = T) + 
+#   ggtitle("SVM Radial") +
+#   theme(plot.title = element_text(hjust = 0.5))
+mod_svm_wr_23$bestTune
+min(mod_svm_wr_23$results$RMSE)
+
 df_fpts_wr_test_25 = 
   df_fan_wr_fin_all %>% 
   filter(prior_rank <= 100 | prior_fpts_game >= 5) %>% 
@@ -17958,7 +18232,7 @@ df_fpts_wr_test_25 =
   filter(season == 2025) %>% 
   # left_join(coach_df, by = c("team", "season")) %>% 
   # left_join(mod_df, by = c("team", "season")) %>% 
-  select(player_id, player_display_name, prior_ays, prior_tar_share, prior_fpts_game, prior_qb_epa, prior_n_pass, prior_off_pass_epa, def_pass_epa_sos, prior_rz_eff, prior_rz_trips, prior_n_routes, prior_route_partic, prior_yprr, prior_rz_tar_share, player_age, draft_number, prior_fpts_other, expect_tar_other, new_qb_new_team, prior_games_missed, games_missed_rate, ol_grade_pass_adj, prior_slot_rate, prior_wide_rate, prior_ccr, sum_fpts) %>% 
+  select(season, player_id, player_display_name, prior_ays, prior_tar_share, prior_fpts_game, prior_qb_epa, prior_n_pass, prior_off_pass_epa, def_pass_epa_sos, prior_rz_eff, prior_rz_trips, prior_n_routes, prior_route_partic, prior_yprr, prior_rz_tar_share, player_age, draft_number, prior_fpts_other, expect_tar_other, new_qb_new_team, prior_games_missed, games_missed_rate, ol_grade_pass_adj, prior_slot_rate, prior_wide_rate, prior_ccr, sum_fpts) %>% 
   mutate(
     expect_tar = prior_tar_share * prior_n_pass,
     expect_ay = prior_ays * prior_n_pass,
@@ -17970,60 +18244,1250 @@ df_fpts_wr_test_25 =
   drop_na() %>% 
   arrange(player_id)
 
-view(df_fpts_wr_test_25)
-
-df_fpts_wr_test_25 %>% 
+df_fpts_wr_test_24 = 
+  df_fan_wr_fin_all %>% 
+  filter(prior_rank <= 100 | prior_fpts_game >= 5) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_rz_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>%
+  filter(season == 2024) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  select(season, player_id, player_display_name, prior_ays, prior_tar_share, prior_fpts_game, prior_qb_epa, prior_n_pass, prior_off_pass_epa, def_pass_epa_sos, prior_rz_eff, prior_rz_trips, prior_n_routes, prior_route_partic, prior_yprr, prior_rz_tar_share, player_age, draft_number, prior_fpts_other, expect_tar_other, new_qb_new_team, prior_games_missed, games_missed_rate, ol_grade_pass_adj, prior_slot_rate, prior_wide_rate, prior_ccr, sum_fpts) %>% 
   mutate(
-    pred_fpts = predict(mod_svm_wr, newdata = .),
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_ay = prior_ays * prior_n_pass,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_rz_opp = prior_rz_tar_share * prior_rz_trips
+  ) %>% 
+  select(-c(prior_games_missed, prior_rz_trips, prior_fpts_other, def_pass_epa_sos, expect_ay, expect_tar, ol_grade_pass_adj, prior_wide_rate, prior_slot_rate, prior_ccr)) %>% 
+  select(-any_of(df_feature_svm %>% filter(delta_rmse < -0.06) %>% pull(var_svm))) %>%
+  drop_na() %>% 
+  arrange(player_id)
+
+df_fpts_wr_test_23 = 
+  df_fan_wr_fin_all %>% 
+  filter(prior_rank <= 100 | prior_fpts_game >= 5) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_rz_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>%
+  filter(season == 2023) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  select(season, player_id, player_display_name, prior_ays, prior_tar_share, prior_fpts_game, prior_qb_epa, prior_n_pass, prior_off_pass_epa, def_pass_epa_sos, prior_rz_eff, prior_rz_trips, prior_n_routes, prior_route_partic, prior_yprr, prior_rz_tar_share, player_age, draft_number, prior_fpts_other, expect_tar_other, new_qb_new_team, prior_games_missed, games_missed_rate, ol_grade_pass_adj, prior_slot_rate, prior_wide_rate, prior_ccr, sum_fpts) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_ay = prior_ays * prior_n_pass,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_rz_opp = prior_rz_tar_share * prior_rz_trips
+  ) %>% 
+  select(-c(prior_games_missed, prior_rz_trips, prior_fpts_other, def_pass_epa_sos, expect_ay, expect_tar, ol_grade_pass_adj, prior_wide_rate, prior_slot_rate, prior_ccr)) %>% 
+  select(-any_of(df_feature_svm %>% filter(delta_rmse < -0.06) %>% pull(var_svm))) %>%
+  drop_na() %>% 
+  arrange(player_id)
+
+# view(df_fpts_wr_test_25)
+
+mod_rank_val_25 = 
+  gam(
+    sum_fpts ~ s(rank_fin),
+    data = df_fpts_wr_train_25 %>% mutate(rank_fin = rank(-sum_fpts)),
+    method = "REML"
+  )
+
+mod_rank_val_24 = 
+  gam(
+    sum_fpts ~ s(rank_fin),
+    data = df_fpts_wr_train_24 %>% mutate(rank_fin = rank(-sum_fpts)),
+    method = "REML"
+  )
+
+mod_rank_val_23 = 
+  gam(
+    sum_fpts ~ s(rank_fin),
+    data = df_fpts_wr_train_23 %>% mutate(rank_fin = rank(-sum_fpts)),
+    method = "REML"
+  )
+
+df_backtest_wr_23_25 = 
+  df_fpts_wr_test_25 %>% 
+  mutate(
+    pred_fpts = predict(mod_svm_wr_25, newdata = .),
     rank_mod = rank(-pred_fpts),
     rank_fin = rank(-sum_fpts)
   ) %>% 
   left_join(
     df_adp_old %>% 
-      filter(season == 2025) %>% 
       mutate(adp = as.integer(str_extract(pos_rank_adp, "\\d+"))) %>% 
-      select(player_display_name, adp),
-    by = "player_display_name"
+      select(season, player_display_name, adp),
+    by = c("player_display_name", "season")
   ) %>% 
   mutate(
-    market_proj =
+    market_proj = 
       predict(
-        market_curve_wr,
+        market_curve_wr_25,
         newdata = .
       ),
-    market_edge = pred_fpts - market_proj,
-    market_edge_z = round(as.numeric(scale(market_edge)), 2)
+    adp_value = 
+      predict(
+        mod_rank_val_25,
+        newdata = tibble(rank_fin = adp)
+      ),
+    model_value = 
+      predict(
+        mod_rank_val_25,
+        newdata = tibble(rank_fin = rank_mod)
+     )
   ) %>% 
-  arrange(rank_mod) %>% 
-  # filter() %>% 
-  mutate(
-    ind_mod_val_high = 
-      case_when(
-        market_edge_z >= 0.5 & adp - rank_mod > 3 ~ 1,
-        .default = 0 
-      ),
-    ind_hit_high = 
-      case_when(
-        ind_mod_val_high == 1 & abs(abs(adp - rank_fin) - abs(rank_mod - rank_fin)) > 3 ~ 1,
-        ind_mod_val_high == 1 ~ 0
-      ),
-    ind_mod_val_low = 
-      case_when(
-        market_edge_z <= -0.5 & adp - rank_mod < -3 ~ 1,
-        .default = 0 
-      ),
-    ind_hit_low = 
-      case_when(
-        ind_mod_val_low == 1 & abs(abs(adp - rank_fin) - abs(rank_mod - rank_fin)) > 3 ~ 1,
-        ind_mod_val_low == 1 ~ 0
+  rbind(
+    df_fpts_wr_test_24 %>% 
+      mutate(
+        pred_fpts = predict(mod_svm_wr_24, newdata = .),
+        rank_mod = rank(-pred_fpts),
+        rank_fin = rank(-sum_fpts)
+      ) %>% 
+      left_join(
+        df_adp_old %>% 
+          mutate(adp = as.integer(str_extract(pos_rank_adp, "\\d+"))) %>% 
+          select(season, player_display_name, adp),
+        by = c("player_display_name", "season")
+      ) %>% 
+      mutate(
+        market_proj = 
+          predict(
+            market_curve_wr_24,
+            newdata = .
+          ),
+        adp_value = 
+          predict(
+            mod_rank_val_24,
+            newdata = tibble(rank_fin = adp)
+          ),
+        model_value = 
+          predict(
+            mod_rank_val_24,
+            newdata = tibble(rank_fin = rank_mod)
+         )
       )
   ) %>% 
-  select(player_display_name, sum_fpts, pred_fpts, market_proj, rank_fin, rank_mod, adp, market_edge_z, starts_with("ind_")) %>% 
-  view
-  tbl_summary(
-    include = starts_with("ind_hit_")
+  rbind(
+    df_fpts_wr_test_23 %>% 
+      mutate(
+        pred_fpts = predict(mod_svm_wr_23, newdata = .),
+        rank_mod = rank(-pred_fpts),
+        rank_fin = rank(-sum_fpts)
+      ) %>% 
+      left_join(
+        df_adp_old %>% 
+          mutate(adp = as.integer(str_extract(pos_rank_adp, "\\d+"))) %>% 
+          select(season, player_display_name, adp),
+        by = c("player_display_name", "season")
+      ) %>% 
+      mutate(
+        market_proj = 
+          predict(
+            market_curve_wr_23,
+            newdata = .
+          ),
+        adp_value = 
+          predict(
+            mod_rank_val_23,
+            newdata = tibble(rank_fin = adp)
+          ),
+        model_value = 
+          predict(
+            mod_rank_val_23,
+            newdata = tibble(rank_fin = rank_mod)
+         )
+      )
   ) %>% 
-  bold_labels()
+  filter(adp <= 125) %>% 
+  mutate(
+    market_edge = pred_fpts - market_proj,
+    mod_market_edge = pred_fpts - market_proj,
+    actual_market_edge = sum_fpts - market_proj,
+    mod_over = ifelse(mod_market_edge > 0, 1, 0),
+    actual_over = ifelse(actual_market_edge > 0, 1, 0),
+    hit = 
+      case_when(
+        mod_over == actual_over ~ 1,
+        .default = 0
+      ),
+    # Strong conviction
+    strong_over = ifelse(mod_market_edge >= 0.5 * sd(mod_market_edge, na.rm = T), 1, 0), 
+    strong_under = ifelse(mod_market_edge <= -0.5 * sd(mod_market_edge, na.rm = T), 1, 0),
+    rank_diff_model = adp - rank_mod,
+    rank_diff_actual = adp - rank_fin,
+    actual_value = sum_fpts,
+    model_rank_change = adp - rank_mod,
+    actual_rank_change = adp - rank_fin,
+    model_value_change = model_value - adp_value,
+    actual_value_change = actual_value - adp_value,
+    market_edge_z = round(as.numeric(scale(mod_market_edge)), 2),
+    fin_market_edge = market_proj - sum_fpts,
+    fin_market_edge_z = round(as.numeric(scale(fin_market_edge)), 2),
+    fin_mod_edge = pred_fpts - sum_fpts,
+    fin_mod_edge_z = round(as.numeric(scale(fin_mod_edge)), 2)
+  ) %>% 
+  # filter() %>% 
+  # mutate(
+  #   ind_mod_val_high = 
+  #     case_when(
+  #       market_edge_z >= 0.5 ~ 1,
+  #       .default = 0 
+  #     ),
+  #   ind_hit_high = 
+  #     case_when(
+  #       ind_mod_val_high == 1 & (abs(fin_mod_edge_z) < abs(fin_market_edge_z) | abs(fin_mod_edge) < abs(fin_market_edge)) ~ 1,
+  #       ind_mod_val_high == 1 ~ 0
+  #     ),
+  #   ind_mod_val_low = 
+  #     case_when(
+  #       market_edge_z <= -0.5 ~ 1,
+  #       .default = 0 
+  #     ),
+  #   ind_hit_low = 
+  #     case_when(
+  #       ind_mod_val_low == 1 & (abs(fin_mod_edge_z) < abs(fin_market_edge_z) | abs(fin_mod_edge) < abs(fin_market_edge)) ~ 1,
+  #       ind_mod_val_low == 1 ~ 0
+  #     )
+  # ) %>% 
+  # select(season, player_display_name, sum_fpts, pred_fpts, market_proj, rank_fin, rank_mod, adp, market_edge_z, fin_mod_edge_z, fin_market_edge_z, starts_with("ind_")) %>% 
+  # tbl_summary(
+  #   include = starts_with("ind_hit_")
+  # ) %>% 
+  # bold_labels() %>% 
+  select(season, player_id, player_display_name, sum_fpts:last_col(), -expect_routes) %>% 
+  drop_na()
+
+view(df_backtest_wr_23_25)
+
+saveRDS(df_backtest_wr_23_25, str_c("data/fantasy_data/", "df_backtest_wr_23_25.rds"))
+
+df_backtest_wr_results = 
+  tibble(
+    threshold = c(0, 5, 10, 15, 20, 25, 30)
+  ) %>% 
+  mutate(
+    results = map(
+      threshold,
+      ~ df_backtest_wr_23_25 %>% 
+        filter(mod_market_edge >= .x) %>% 
+        group_by(season) %>% 
+        summarise(
+          n = n(),
+          hit_rate = mean(actual_market_edge > 0),
+          avg_actual_edge = mean(actual_market_edge)
+        )
+    )
+  ) %>% 
+  unnest(results) %>% 
+  arrange(season)
+
+tibble(
+    threshold = c(0, 5, 10, 15, 20, 25, 30)
+  ) %>% 
+  mutate(
+    results = map(
+      threshold,
+      ~ df_backtest_wr_23_25 %>% 
+        filter(mod_market_edge >= .x) %>% 
+        # group_by(season) %>% 
+        summarise(
+          n = n(),
+          hit_rate = mean(actual_market_edge > 0),
+          avg_actual_edge = mean(actual_market_edge)
+        )
+    )
+  ) %>% 
+  unnest(results)
+
+# df_backtest_wr_23_25 %>% 
+#   summarise(
+#     edge_cor = cor(
+#       mod_market_edge,
+#       actual_market_edge,
+#       use = "complete.obs"
+#     )
+#   )
+
+df_backtest_wr_23_25 %>% 
+  mutate(
+    abs_edge = abs(mod_market_edge),
+    edge_bucket = 
+      fct_relevel(as.factor(
+        case_when(
+          abs_edge < 10 ~ "< 10",
+          abs_edge < 20 ~ "10 – 20",
+          abs_edge < 30 ~ "20 – 30",
+          abs_edge < 40 ~ "30 – 40",
+          TRUE ~ "40+"
+        )),
+      "< 10"
+      )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    avg_abs_actual_edge = mean(abs(actual_market_edge)),
+    hit_rate = mean(
+      sign(mod_market_edge) == sign(actual_market_edge)
+    ),
+    .groups = "drop"
+  ) %>% view
+
+df_backtest_wr_23_25 %>% 
+  filter(mod_market_edge >= 0) %>% 
+  mutate(
+    abs_edge = abs(mod_market_edge),
+    edge_bucket = 
+      fct_relevel(as.factor(
+        case_when(
+          abs_edge < 10 ~ "< 10",
+          abs_edge < 20 ~ "10 – 20",
+          abs_edge < 30 ~ "20 – 30",
+          abs_edge < 40 ~ "30 – 40",
+          TRUE ~ "40+"
+        )),
+      "< 10"
+      )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    avg_abs_actual_edge = mean(abs(actual_market_edge)),
+    hit_rate = mean(
+      sign(mod_market_edge) == sign(actual_market_edge)
+    ),
+    .groups = "drop"
+  ) %>% view
+
+df_backtest_wr_23_25 %>% 
+  filter(mod_market_edge < 0) %>% 
+  mutate(
+    abs_edge = abs(mod_market_edge),
+    edge_bucket = 
+      fct_relevel(as.factor(
+        case_when(
+          abs_edge < 10 ~ "< 10",
+          abs_edge < 20 ~ "10 – 20",
+          abs_edge < 30 ~ "20 – 30",
+          abs_edge < 40 ~ "30 – 40",
+          TRUE ~ "40+"
+        )),
+      "< 10"
+      )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    avg_abs_actual_edge = mean(abs(actual_market_edge)),
+    hit_rate = mean(
+      sign(mod_market_edge) == sign(actual_market_edge)
+    ),
+    .groups = "drop"
+  ) %>% view
+
+df_backtest_wr_23_25 %>% 
+  summarise(
+    market_cor = cor(market_proj, sum_fpts),
+    market_mae = mean(abs(market_proj - sum_fpts)),
+    market_bias = mean(market_proj - sum_fpts)
+  )
+
+df_backtest_wr_23_25 %>% 
+  summarise(
+    model_cor = cor(pred_fpts, sum_fpts),
+    model_mae = mean(abs(pred_fpts - sum_fpts)),
+    model_bias = mean(pred_fpts - sum_fpts)
+  )
+
+mod_market <- lm(
+  sum_fpts ~ market_proj,
+  data = df_backtest_wr_23_25
+)
+
+mod_market_plus <- lm(
+  sum_fpts ~ market_proj + pred_fpts,
+  data = df_backtest_wr_23_25
+)
+
+anova(mod_market, mod_market_plus)
+
+df_backtest_wr_23_25 %>% 
+  summarise(
+    market_r2 = summary(mod_market)$r.squared,
+    market_plus_model_r2 = summary(mod_market_plus)$r.squared
+  )
+
+df_backtest_wr_23_25 %>% 
+  mutate(
+    edge_bucket = case_when(
+      abs(mod_market_edge) < 20 ~ "<20",
+      abs(mod_market_edge) < 40 ~ "20–40",
+      TRUE ~ "40+"
+    )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    market_mae = mean(abs(sum_fpts - market_proj)),
+    model_mae = mean(abs(sum_fpts - pred_fpts)),
+    .groups = "drop"
+  )
+
+df_backtest_wr_23_25 %>% 
+  mutate(
+    edge_bucket = case_when(
+      abs(mod_market_edge) < 20 ~ "<20",
+      abs(mod_market_edge) < 40 ~ "20–40",
+      TRUE ~ "40+"
+    )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  nest() %>% 
+  mutate(
+    market_r2 = map_dbl(
+      data,
+      ~ summary(
+        lm(sum_fpts ~ market_proj, data = .x)
+      )$r.squared
+    ),
+    market_plus_model_r2 = map_dbl(
+      data,
+      ~ summary(
+        lm(sum_fpts ~ market_proj + pred_fpts, data = .x)
+      )$r.squared
+    )
+  ) %>% 
+  select(edge_bucket, market_r2, market_plus_model_r2)
+
+df_backtest_wr_23_25 %>% 
+  filter(abs(mod_market_edge) >= 20) %>% 
+  summarise(
+    n = n(),
+    hit_rate = mean(
+      sign(mod_market_edge) == sign(actual_market_edge)
+    ),
+    avg_actual_edge = mean(actual_market_edge),
+    median_actual_edge = median(actual_market_edge),
+    model_mae = mean(abs(sum_fpts - pred_fpts)),
+    market_mae = mean(abs(sum_fpts - market_proj))
+  ) %>% 
+  view
+
+df_backtest_wr_23_25 %>% 
+  filter(mod_market_edge >= 20) %>% 
+  summarise(
+    n = n(),
+    hit_rate = mean(actual_market_edge > 0),
+    avg_actual_edge = mean(actual_market_edge),
+    median_actual_edge = median(actual_market_edge),
+    model_mae = mean(abs(sum_fpts - pred_fpts)),
+    market_mae = mean(abs(sum_fpts - market_proj))
+  ) %>% 
+  view
+
+df_backtest_wr_23_25 %>% 
+  filter(mod_market_edge <= -20) %>% 
+  summarise(
+    n = n(),
+    hit_rate = mean(actual_market_edge < 0),
+    avg_actual_edge = mean(actual_market_edge),
+    median_actual_edge = median(actual_market_edge),
+    model_mae = mean(abs(sum_fpts - pred_fpts)),
+    market_mae = mean(abs(sum_fpts - market_proj))
+  ) %>% 
+  view
+
+df_backtest_wr_23_25 %>% 
+  filter(mod_market_edge > 0) %>% 
+  summarise(
+    edge_cor = cor(
+      mod_market_edge,
+      actual_market_edge
+    )
+  )
+
+df_backtest_wr_23_25 %>% 
+  filter(mod_market_edge < 0) %>% 
+  summarise(
+    edge_cor = cor(
+      mod_market_edge,
+      actual_market_edge
+    )
+  )
+
+ggplot(
+  df_backtest_wr_23_25,
+  aes(
+    x = mod_market_edge,
+    y = actual_market_edge
+  )
+) +
+  geom_hline(
+    yintercept = 0,
+    linetype = "dashed"
+  ) +
+  geom_vline(
+    xintercept = 0,
+    linetype = "dashed"
+  ) +
+  geom_point(
+    alpha = 0.4
+  ) +
+  geom_smooth(
+    method = "gam",
+    formula = y ~ s(x),
+    se = TRUE
+  ) +
+  labs(
+    x = "Model edge vs. ADP",
+    y = "Actual edge vs. ADP",
+    title = "Fantasy DNA Model vs. ADP",
+    subtitle = "2023–2025 out-of-sample WR predictions"
+  ) +
+  theme_minimal()
+
+# df_backtest_wr_23_25 %>% 
+#   filter(mod_market_edge >= 20) %>% 
+#   lm(
+#     actual_market_edge ~ mod_market_edge,
+#     data = .
+# ) %>% 
+#   broom::tidy()
+# 
+# df_backtest_wr_23_25 %>% 
+#   filter(mod_market_edge <= -20) %>% 
+#   lm(
+#     actual_market_edge ~ mod_market_edge,
+#     data = .
+# ) %>% 
+#   broom::tidy()
+
+# df_backtest_wr_23_25 %>% 
+#   mutate(
+#     pred_rank_fpts = predict(rank_value_model, newdata = .)
+#   ) %>% 
+#   view
+
+# rank_value = 
+#   df_backtest_wr_23_25 %>% 
+#   group_by(rank_fin) %>% 
+#   summarise(
+#     avg_fpts = mean(sum_fpts),
+#     .groups = "drop"
+#   )
+
+# df_backtest_wr_23_25 %>% 
+#   summarise(
+#     n = n(),
+#     hit_rate = mean(
+#       sign(model_value_change) == sign(actual_value_change)
+#     ),
+#     value_cor = cor(
+#       model_value_change,
+#       actual_value_change,
+#       use = "complete.obs"
+#     )
+#   )
+# 
+# df_backtest_wr_23_25 %>% 
+#   mutate(
+#     value_bucket = case_when(
+#       abs(model_value_change) < 10 ~ "<10 FPTS",
+#       abs(model_value_change) < 20 ~ "10–20 FPTS",
+#       abs(model_value_change) < 30 ~ "20–30 FPTS",
+#       TRUE ~ "30+ FPTS"
+#     )
+#   ) %>% 
+#   group_by(value_bucket) %>% 
+#   summarise(
+#     n = n(),
+#     avg_pred_value = mean(model_value_change),
+#     avg_actual_value = mean(actual_value_change),
+#     hit_rate = mean(
+#       sign(model_value_change) == sign(actual_value_change)
+#     ),
+#     .groups = "drop"
+#   )
+
+df_backtest_wr_23_25 %>% 
+  summarise(
+    n = n(),
+    hit_rate = mean(
+      sign(model_rank_change) == sign(actual_rank_change)
+    ),
+    rank_cor = cor(
+      model_rank_change,
+      actual_rank_change,
+      use = "complete.obs"
+    ),
+    rank_mae = mean(
+      abs(model_rank_change - actual_rank_change)
+    )
+  )
+
+df_backtest_wr_23_25 %>% 
+  summarise(
+    model_mae = mean(abs(model_rank_change - actual_rank_change)),
+    market_mae = mean(abs(actual_rank_change)),
+    improvement = 1 - model_mae / market_mae
+  )
+
+df_backtest_wr_23_25 %>% 
+  mutate(
+    edge_bucket = case_when(
+      abs(mod_market_edge) < 20 ~ "<20",
+      abs(mod_market_edge) < 40 ~ "20–40",
+      TRUE ~ "40+"
+    )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    model_mae = mean(
+      abs(model_rank_change - actual_rank_change)
+    ),
+    market_mae = mean(
+      abs(actual_rank_change)
+    ),
+    improvement = 1 - model_mae / market_mae,
+    hit_rate = mean(
+      sign(model_rank_change) == sign(actual_rank_change)
+    ),
+    rank_cor = cor(
+      model_rank_change,
+      actual_rank_change,
+      use = "complete.obs"
+    ),
+    .groups = "drop"
+  )
+
+df_backtest_wr_23_25 %>% 
+  filter(
+    mod_market_edge >= 20,
+    mod_market_edge < 40
+  ) %>% 
+  summarise(
+    n = n(),
+    model_mae = mean(
+      abs(model_rank_change - actual_rank_change)
+    ),
+    market_mae = mean(
+      abs(actual_rank_change)
+    ),
+    improvement = 1 - model_mae / market_mae,
+    hit_rate = mean(
+      sign(model_rank_change) == sign(actual_rank_change)
+    )
+  ) %>% 
+  view
+
+df_backtest_wr_23_25 %>% 
+  filter(
+    mod_market_edge <= -20,
+    mod_market_edge > -40
+  ) %>% 
+  summarise(
+    n = n(),
+    model_mae = mean(
+      abs(model_rank_change - actual_rank_change)
+    ),
+    market_mae = mean(
+      abs(actual_rank_change)
+    ),
+    improvement = 1 - model_mae / market_mae,
+    hit_rate = mean(
+      sign(model_rank_change) == sign(actual_rank_change)
+    )
+  ) %>% 
+  view
+
+# df_backtest_wr_23_25 %>% 
+#   ggplot(aes(x = mod_market_edge, y = actual_market_edge, color = factor(season))) +
+#   geom_hline(
+#     yintercept = 0,
+#     linetype = "dashed"
+#   ) +
+#   geom_vline(
+#     xintercept = 0,
+#     linetype = "dashed"
+#   ) +
+#   geom_point(
+#     alpha = 0.5
+#   ) +
+#   geom_smooth(
+#     method = "loess",
+#     se = TRUE
+#   ) +
+#   labs(
+#     x = "Predicted edge vs. ADP",
+#     y = "Actual edge vs. ADP",
+#     title = "WR Model Edge vs. Realized Edge",
+#     subtitle = "2023–2025 out-of-sample predictions"
+#   ) +
+#   theme_minimal()
+
+# df_wr_hit_miss_25 =
+#   df_backtest_wr_23_25 %>% 
+#   filter(season == 2025) %>% 
+#   mutate(
+#     model_edge = pred_fpts - market_proj,
+#     actual_edge = sum_fpts - market_proj,
+#     hit = ifelse(sign(model_edge) == sign(actual_edge), 1, 0),
+#     model_edge_z = as.numeric(scale(model_edge)),
+#     rank_edge = rank_mod - adp,
+#     rank_fin_edge = rank_fin - adp,
+#     pred_fpts = round(pred_fpts, 2),
+#     market_proj = round(market_proj, 2),
+#     ind_mod_val_high =
+#       case_when(
+#         market_edge_z > 0 ~ 1,
+#         .default = 0
+#       ),
+#     ind_hit_high =
+#       case_when(
+#         ind_mod_val_high == 1 & (abs(fin_mod_edge_z) < abs(fin_market_edge_z) & abs(fin_mod_edge) < abs(fin_market_edge)) ~ 1,
+#         ind_mod_val_high == 1 ~ 0
+#       ),
+#     ind_mod_val_low =
+#       case_when(
+#         market_edge_z < 0 ~ 1,
+#         .default = 0
+#       ),
+#     ind_hit_low =
+#       case_when(
+#         ind_mod_val_low == 1 & (abs(fin_mod_edge_z) < abs(fin_market_edge_z) & abs(fin_mod_edge) < abs(fin_market_edge)) ~ 1,
+#         ind_mod_val_low == 1 ~ 0
+#       )
+#   )
+# 
+# df_wr_hit_miss_25 %>%
+#   filter(ind_hit_high == 1 & abs(rank_edge) >= 2 & abs(rank_fin_edge) > 2 & rank_mod < adp) %>% 
+#   arrange(desc(abs(model_edge_z))) %>%
+#   slice_head(n = 10) %>% 
+#   arrange(adp) %>% 
+#   select(
+#     player_display_name,
+#     adp,
+#     rank_mod,
+#     rank_fin,
+#     market_proj,
+#     pred_fpts,
+#     sum_fpts
+#   ) %>% 
+#   labelled::set_variable_labels(
+#     player_display_name = "Player",
+#     adp = "ADP",
+#     rank_mod = "Model Rank",
+#     rank_fin = "WR Finish",
+#     market_proj = "ADP Projection",
+#     pred_fpts = "Model Projection",
+#     sum_fpts = "Final Points"
+#   ) %>% 
+#   gtreg::tbl_listing() %>% 
+#   modify_caption("**2025 - Top 10 Hits on Undervalued PLayers**")
+# 
+# df_wr_hit_miss_25 %>%
+#   filter(ind_hit_low == 1 & abs(rank_edge) >= 2 & abs(rank_fin_edge) > 2 & rank_mod > adp) %>% 
+#   arrange(desc(abs(model_edge_z))) %>%
+#   slice_head(n = 10) %>% 
+#   arrange(adp) %>% 
+#   select(
+#     player_display_name,
+#     adp,
+#     rank_mod,
+#     rank_fin,
+#     market_proj,
+#     pred_fpts,
+#     sum_fpts
+#   ) %>% 
+#   labelled::set_variable_labels(
+#     player_display_name = "Player",
+#     adp = "ADP",
+#     rank_mod = "Model Rank",
+#     rank_fin = "WR Finish",
+#     market_proj = "ADP Projection",
+#     pred_fpts = "Model Projection",
+#     sum_fpts = "Final Points"
+#   ) %>% 
+#   gtreg::tbl_listing() %>% 
+#   modify_caption("**2025 - Top 10 Hits on Overvalued PLayers**")
+# 
+# df_wr_hit_miss_25 %>%
+#   filter(ind_hit_high == 0 & abs(rank_edge) >= 2 & rank_mod < adp) %>% 
+#   arrange(desc(abs(model_edge_z))) %>%
+#   slice_head(n = 10) %>% 
+#   arrange(adp) %>% 
+#   select(
+#     player_display_name,
+#     adp,
+#     rank_mod,
+#     rank_fin,
+#     market_proj,
+#     pred_fpts,
+#     sum_fpts
+#   ) %>% 
+#   labelled::set_variable_labels(
+#     player_display_name = "Player",
+#     adp = "ADP",
+#     rank_mod = "Model Rank",
+#     rank_fin = "WR Finish",
+#     market_proj = "ADP Projection",
+#     pred_fpts = "Model Projection",
+#     sum_fpts = "Final Points"
+#   ) %>% 
+#   gtreg::tbl_listing() %>% 
+#   modify_caption("**2025 - Top 10 Misses on Undervalued Players**")
+# 
+# df_wr_hit_miss_25 %>%
+#   filter(ind_hit_low == 0 & abs(rank_edge) >= 2 & rank_mod > adp) %>% 
+#   arrange(desc(abs(model_edge_z))) %>%
+#   slice_head(n = 10) %>% 
+#   arrange(adp) %>% 
+#   select(
+#     player_display_name,
+#     adp,
+#     rank_mod,
+#     rank_fin,
+#     market_proj,
+#     pred_fpts,
+#     sum_fpts
+#   ) %>% 
+#   labelled::set_variable_labels(
+#     player_display_name = "Player",
+#     adp = "ADP",
+#     rank_mod = "Model Rank",
+#     rank_fin = "WR Finish",
+#     market_proj = "ADP Projection",
+#     pred_fpts = "Model Projection",
+#     sum_fpts = "Final Points"
+#   ) %>% 
+#   gtreg::tbl_listing() %>% 
+#   modify_caption("**2025 - Top 10 Misses on Overvalued Players**")
+# 
+# df_wr_hit_miss_24 =
+#   df_backtest_wr_23_25 %>% 
+#   filter(season == 2024) %>% 
+#   mutate(
+#     model_edge = pred_fpts - market_proj,
+#     actual_edge = sum_fpts - market_proj,
+#     hit = ifelse(sign(model_edge) == sign(actual_edge), 1, 0),
+#     model_edge_z = as.numeric(scale(model_edge)),
+#     rank_edge = rank_mod - adp,
+#     rank_fin_edge = rank_fin - adp,
+#     pred_fpts = round(pred_fpts, 2),
+#     market_proj = round(market_proj, 2),
+#     ind_mod_val_high =
+#       case_when(
+#         market_edge_z > 0 ~ 1,
+#         .default = 0
+#       ),
+#     ind_hit_high =
+#       case_when(
+#         ind_mod_val_high == 1 & (abs(fin_mod_edge_z) < abs(fin_market_edge_z) & abs(fin_mod_edge) < abs(fin_market_edge)) ~ 1,
+#         ind_mod_val_high == 1 ~ 0
+#       ),
+#     ind_mod_val_low =
+#       case_when(
+#         market_edge_z < 0 ~ 1,
+#         .default = 0
+#       ),
+#     ind_hit_low =
+#       case_when(
+#         ind_mod_val_low == 1 & (abs(fin_mod_edge_z) < abs(fin_market_edge_z) & abs(fin_mod_edge) < abs(fin_market_edge)) ~ 1,
+#         ind_mod_val_low == 1 ~ 0
+#       )
+#   )
+# 
+# df_wr_hit_miss_24 %>%
+#   filter(ind_hit_high == 1 & abs(rank_edge) >= 2 & abs(rank_fin_edge) > 2 & rank_mod < adp) %>% 
+#   arrange(desc(abs(model_edge_z))) %>%
+#   slice_head(n = 10) %>% 
+#   arrange(adp) %>% 
+#   select(
+#     player_display_name,
+#     adp,
+#     rank_mod,
+#     rank_fin,
+#     market_proj,
+#     pred_fpts,
+#     sum_fpts
+#   ) %>% 
+#   labelled::set_variable_labels(
+#     player_display_name = "Player",
+#     adp = "ADP",
+#     rank_mod = "Model Rank",
+#     rank_fin = "WR Finish",
+#     market_proj = "ADP Projection",
+#     pred_fpts = "Model Projection",
+#     sum_fpts = "Final Points"
+#   ) %>% 
+#   gtreg::tbl_listing() %>% 
+#   modify_caption("**2024 - Top 10 Hits on Undervalued Players**")
+# 
+# df_wr_hit_miss_24 %>%
+#   filter(ind_hit_low == 1 & abs(rank_edge) >= 2 & abs(rank_fin_edge) > 2 & rank_mod > adp) %>% 
+#   arrange(desc(abs(model_edge_z))) %>%
+#   slice_head(n = 10) %>% 
+#   arrange(adp) %>% 
+#   select(
+#     player_display_name,
+#     adp,
+#     rank_mod,
+#     rank_fin,
+#     market_proj,
+#     pred_fpts,
+#     sum_fpts
+#   ) %>% 
+#   labelled::set_variable_labels(
+#     player_display_name = "Player",
+#     adp = "ADP",
+#     rank_mod = "Model Rank",
+#     rank_fin = "WR Finish",
+#     market_proj = "ADP Projection",
+#     pred_fpts = "Model Projection",
+#     sum_fpts = "Final Points"
+#   ) %>% 
+#   gtreg::tbl_listing() %>% 
+#   modify_caption("**2024 - Top 10 Hits on Overvalued Players**")
+# 
+# df_wr_hit_miss_24 %>%
+#   filter(ind_hit_high == 0 & abs(rank_edge) >= 2 & rank_mod < adp) %>% 
+#   arrange(desc(abs(model_edge_z))) %>% 
+#   slice_head(n = 10) %>% 
+#   arrange(adp) %>% 
+#   select(
+#     player_display_name,
+#     adp,
+#     rank_mod,
+#     rank_fin,
+#     market_proj,
+#     pred_fpts,
+#     sum_fpts
+#   ) %>% 
+#   labelled::set_variable_labels(
+#     player_display_name = "Player",
+#     adp = "ADP",
+#     rank_mod = "Model Rank",
+#     rank_fin = "WR Finish",
+#     market_proj = "ADP Projection",
+#     pred_fpts = "Model Projection",
+#     sum_fpts = "Final Points"
+#   ) %>% 
+#   gtreg::tbl_listing() %>% 
+#   modify_caption("**2024 - Top 10 Misses on Undervalued Players**")
+# 
+# df_wr_hit_miss_24 %>%
+#   filter(ind_hit_low == 0 & abs(rank_edge) >= 2 & rank_mod > adp) %>% 
+#   arrange(desc(abs(model_edge_z))) %>%
+#   slice_head(n = 10) %>% 
+#   arrange(adp) %>% 
+#   select(
+#     player_display_name,
+#     adp,
+#     rank_mod,
+#     rank_fin,
+#     market_proj,
+#     pred_fpts,
+#     sum_fpts
+#   ) %>% 
+#   labelled::set_variable_labels(
+#     player_display_name = "Player",
+#     adp = "ADP",
+#     rank_mod = "Model Rank",
+#     rank_fin = "WR Finish",
+#     market_proj = "ADP Projection",
+#     pred_fpts = "Model Projection",
+#     sum_fpts = "Final Points"
+#   ) %>% 
+#   gtreg::tbl_listing() %>% 
+#   modify_caption("**2024 - Top 10 Misses on Overvalued Players**")
+
+df_wr_hit_miss_25 =
+  df_backtest_wr_23_25 %>% 
+  filter(season == 2025) %>% 
+  mutate(
+    model_edge = pred_fpts - market_proj,
+    actual_edge = sum_fpts - market_proj,
+    hit = ifelse(sign(model_edge) == sign(actual_edge), 1, 0),
+    model_edge_z = as.numeric(scale(model_edge)),
+    actual_edge_z = as.numeric(scale(actual_edge)),
+    rank_edge = rank_mod - adp,
+    rank_fin_edge = rank_fin - adp,
+    pred_fpts = round(pred_fpts, 2),
+    market_proj = round(market_proj, 2),
+    ind_mod_val_high =
+      case_when(
+        market_edge_z > 0 & rank_edge < 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_high =
+      case_when(
+        ind_mod_val_high == 1 & (model_edge_z < actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z > 0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_high == 1 ~ 0
+      ),
+    ind_mod_val_low =
+      case_when(
+        market_edge_z < 0 & rank_edge > 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_low =
+      case_when(
+        ind_mod_val_low == 1 & (model_edge_z > actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z < -0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_low == 1 ~ 0
+      )
+  )
+
+df_wr_hit_miss_25 %>%
+  filter(ind_hit_high == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 10) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "WR Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Hits on Undervalued PLayers**")
+
+df_wr_hit_miss_25 %>%
+  filter(ind_hit_low == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>% 
+  slice_head(n = 10) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "WR Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Hits on Overvalued PLayers**")
+
+df_wr_hit_miss_25 %>%
+  filter(ind_hit_high == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 10) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "WR Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Misses on Undervalued Players**")
+
+df_wr_hit_miss_25 %>%
+  filter(ind_hit_low == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 10) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "WR Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Misses on Overvalued Players**")
+
+df_wr_hit_miss_24 =
+  df_backtest_wr_23_25 %>% 
+  filter(season == 2024) %>% 
+  mutate(
+    model_edge = pred_fpts - market_proj,
+    actual_edge = sum_fpts - market_proj,
+    hit = ifelse(sign(model_edge) == sign(actual_edge), 1, 0),
+    model_edge_z = as.numeric(scale(model_edge)),
+    actual_edge_z = as.numeric(scale(actual_edge)),
+    rank_edge = rank_mod - adp,
+    rank_fin_edge = rank_fin - adp,
+    pred_fpts = round(pred_fpts, 2),
+    market_proj = round(market_proj, 2),
+    ind_mod_val_high =
+      case_when(
+        market_edge_z > 0 & rank_edge < 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_high =
+      case_when(
+        ind_mod_val_high == 1 & (model_edge_z < actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z > 0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_high == 1 ~ 0
+      ),
+    ind_mod_val_low =
+      case_when(
+        market_edge_z < 0 & rank_edge > 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_low =
+      case_when(
+        ind_mod_val_low == 1 & (model_edge_z > actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z < -0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_low == 1 ~ 0
+      )
+  )
+
+df_wr_hit_miss_24 %>%
+  filter(ind_hit_high == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 10) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "WR Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Hits on Undervalued PLayers**")
+
+df_wr_hit_miss_24 %>%
+  filter(ind_hit_low == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>% 
+  slice_head(n = 10) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "WR Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Hits on Overvalued PLayers**")
+
+df_wr_hit_miss_24 %>%
+  filter(ind_hit_high == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 10) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "WR Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Misses on Undervalued Players**")
+
+df_wr_hit_miss_24 %>%
+  filter(ind_hit_low == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 10) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "WR Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Misses on Overvalued Players**")
 
 ```
 
@@ -20963,9 +22427,22 @@ df_fpts_rb_test =
   ) %>% 
   select(player_id, player_display_name, team, prior_rush_rate, prior_fpts_game, prior_rb_epa, player_age, draft_number, rb_new_team, expect_rush_other, games_missed_rate, ol_grade_run_adj, expect_tar, expect_rush, prior_rec_yds, prior_rec_td, prior_rec, prior_elusive_rating) %>% 
   # select(-c(prior_qb_epa)) %>% 
-  drop_na()
+  drop_na() %>% 
+  left_join(
+    df_injuries %>% 
+      filter(pos == "RB") %>% 
+      select(player_display_name, proj_games_miss),
+    by = "player_display_name"
+  )
 
 saveRDS(df_fpts_rb_test, str_c("data/fantasy_data/", "df_fpts_rb_test.rds"))
+
+# df_injuries %>%
+#   left_join(
+#     df_fpts_rb_test %>% select(player_id, player_display_name),
+#     by = "player_display_name"
+#   ) %>%
+#   view
 
 df_fpts_rb_rookie_test =
   df_roster_rb_all %>% 
@@ -21048,7 +22525,13 @@ df_fpts_rb_rookie_test =
   left_join(df_off_epa, by = c("team", "season")) %>% 
   # left_join(df_rz_eff, by = c("team", "season")) %>% 
   select(player_id, full_name, team, prior_off_rush_epa, prior_fpts_other, player_age, draft_number, expect_rush_other) %>% 
-  drop_na()
+  drop_na() %>% 
+  left_join(
+    df_injuries %>% 
+      filter(pos == "RB") %>% 
+      select(full_name, proj_games_miss),
+    by = "full_name"
+  )
 
 saveRDS(df_fpts_rb_rookie_test, str_c("data/fantasy_data/", "df_fpts_rb_rookie_test.rds"))
 
@@ -21061,6 +22544,11 @@ df_fpts_rb_sim =
     # pred_fpts_svm = predict(mod_svm_rb, newdata = df_fpts_rb_test),
     # pred_resid_enet = predict(mod_enet_rb_resid, newdata = df_fpts_rb_test),
     pred_fpts_boost = predict(mod_boost_rb, newdata = df_fpts_rb_test),
+    pred_fpts_boost = 
+      case_when(
+        !is.na(proj_games_miss) ~ pred_fpts_boost * (17 - proj_games_miss) / 17,
+        .default = pred_fpts_boost
+      ),
     pred_resid_enet = predict(mod_enet_rb_resid, newdata = df_fpts_rb_test),
     proj_rec_yds = predict(mod_rb_rec_yds, newdata = .),
     proj_rec_td = predict(mod_rb_rec_td, newdata = .),
@@ -21108,6 +22596,11 @@ df_fpts_rb_rook_sim =
   rename(player_display_name = full_name) %>% 
   mutate(
     pred_fpts_svm = predict(mod_svm_rb_rook, newdata = df_fpts_rb_rookie_test),
+    pred_fpts_svm = 
+      case_when(
+        !is.na(proj_games_miss) ~ pred_fpts_svm * (17 - proj_games_miss) / 17,
+        .default = pred_fpts_svm
+      ),
     pred_resid_enet = predict(mod_enet_rb_rook_resid, newdata = df_fpts_rb_rookie_test),
     proj_rec_yds = predict(mod_rb_rec_yds_rook, newdata = df_fpts_rb_rookie_test),
     proj_rec_td = predict(mod_rb_rec_td_rook, newdata = df_fpts_rb_rookie_test),
@@ -22163,6 +23656,1358 @@ fpts_rb_2025_fin_rank_export =
   # )
 
 write.csv(fpts_rb_2025_fin_rank_export, glue::glue("fpts_rb_2025_fin_rank_{format(Sys.Date(), '%Y_%m_%d')}.csv"), row.names = F)
+```
+
+### Backtest
+
+```{r}
+market_curve_rb_25 = 
+  df_fan_rb_fin_all %>% 
+  # mutate(expect_rush_other = log(expect_rush_other)) %>% 
+  filter(prior_rank <= 90 | prior_fpts_game >= 5) %>% 
+  # left_join(df_rb_epa, by = c("team", "season")) %>% 
+  left_join(df_qb_epa_teams, by = c("team", "season")) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_gl_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  # left_join(df_run_block_team, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>%
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  filter(season < 2025) %>% 
+  select(season, player_id, player_display_name, sum_fpts, prior_rush_rate, prior_tar_share, prior_fpts_game, prior_n_pass, prior_rush_share, prior_n_rush_team, prior_off_rush_epa, def_rush_epa_sos, prior_gl_eff, prior_gl_trips, prior_gl_att_share, prior_route_partic, prior_ryoe_att, prior_rb_epa, player_age, draft_number, prior_fpts_other, rb_new_team, prior_fpts_other, expect_rush_other, games_missed_rate, ol_grade_run_adj, prior_elusive_rating, prior_yco_attempt) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_rush = prior_rush_share * prior_n_rush_team,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_gl_opp = prior_gl_att_share * prior_gl_trips
+  ) %>% 
+  select(-c(prior_route_partic, prior_fpts_other, prior_tar_share, prior_gl_eff, expect_routes, prior_ryoe_att, def_rush_epa_sos, prior_rush_share, prior_gl_att_share, prior_gl_trips, prior_off_rush_epa, prior_n_rush_team, expect_gl_opp, prior_n_pass, prior_rb_epa, prior_yco_attempt)) %>% 
+  drop_na() %>% 
+  # select(-c(prior_n_pass, prior_route_partic, prior_fpts_other, prior_gl_eff, prior_tar_share, expect_gl_opp, prior_n_rush_team, expect_routes, expect_rush)) %>%
+  # select(-any_of(df_feature_svm_rb %>% filter(delta_rmse < -0.1) %>% pull(var_svm))) %>%
+  arrange(player_id) %>% 
+  left_join(df_adp_old, by = c("player_display_name", "season")) %>%   mutate(
+    adp = as.integer(str_extract(pos_rank_adp, "\\d+"))
+  ) %>%  
+  drop_na(adp) %>% 
+  gam(
+    sum_fpts ~ s(adp),
+    data = .,
+    method = "REML"
+  )
+
+market_curve_rb_24 = 
+  df_fan_rb_fin_all %>% 
+  # mutate(expect_rush_other = log(expect_rush_other)) %>% 
+  filter(prior_rank <= 90 | prior_fpts_game >= 5) %>% 
+  # left_join(df_rb_epa, by = c("team", "season")) %>% 
+  left_join(df_qb_epa_teams, by = c("team", "season")) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_gl_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  # left_join(df_run_block_team, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>%
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  filter(season < 2024) %>% 
+  select(season, player_id, player_display_name, sum_fpts, prior_rush_rate, prior_tar_share, prior_fpts_game, prior_n_pass, prior_rush_share, prior_n_rush_team, prior_off_rush_epa, def_rush_epa_sos, prior_gl_eff, prior_gl_trips, prior_gl_att_share, prior_route_partic, prior_ryoe_att, prior_rb_epa, player_age, draft_number, prior_fpts_other, rb_new_team, prior_fpts_other, expect_rush_other, games_missed_rate, ol_grade_run_adj, prior_elusive_rating, prior_yco_attempt) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_rush = prior_rush_share * prior_n_rush_team,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_gl_opp = prior_gl_att_share * prior_gl_trips
+  ) %>% 
+  select(-c(prior_route_partic, prior_fpts_other, prior_tar_share, prior_gl_eff, expect_routes, prior_ryoe_att, def_rush_epa_sos, prior_rush_share, prior_gl_att_share, prior_gl_trips, prior_off_rush_epa, prior_n_rush_team, expect_gl_opp, prior_n_pass, prior_rb_epa, prior_yco_attempt)) %>% 
+  drop_na() %>% 
+  # select(-c(prior_n_pass, prior_route_partic, prior_fpts_other, prior_gl_eff, prior_tar_share, expect_gl_opp, prior_n_rush_team, expect_routes, expect_rush)) %>%
+  # select(-any_of(df_feature_svm_rb %>% filter(delta_rmse < -0.1) %>% pull(var_svm))) %>%
+  arrange(player_id) %>% 
+  left_join(df_adp_old, by = c("player_display_name", "season")) %>%   mutate(
+    adp = as.integer(str_extract(pos_rank_adp, "\\d+"))
+  ) %>%  
+  drop_na(adp) %>% 
+  gam(
+    sum_fpts ~ s(adp),
+    data = .,
+    method = "REML"
+  )
+
+market_curve_rb_23 = 
+  df_fan_rb_fin_all %>% 
+  # mutate(expect_rush_other = log(expect_rush_other)) %>% 
+  filter(prior_rank <= 90 | prior_fpts_game >= 5) %>% 
+  # left_join(df_rb_epa, by = c("team", "season")) %>% 
+  left_join(df_qb_epa_teams, by = c("team", "season")) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_gl_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  # left_join(df_run_block_team, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>%
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  filter(season < 2023) %>% 
+  select(season, player_id, player_display_name, sum_fpts, prior_rush_rate, prior_tar_share, prior_fpts_game, prior_n_pass, prior_rush_share, prior_n_rush_team, prior_off_rush_epa, def_rush_epa_sos, prior_gl_eff, prior_gl_trips, prior_gl_att_share, prior_route_partic, prior_ryoe_att, prior_rb_epa, player_age, draft_number, prior_fpts_other, rb_new_team, prior_fpts_other, expect_rush_other, games_missed_rate, ol_grade_run_adj, prior_elusive_rating, prior_yco_attempt) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_rush = prior_rush_share * prior_n_rush_team,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_gl_opp = prior_gl_att_share * prior_gl_trips
+  ) %>% 
+  select(-c(prior_route_partic, prior_fpts_other, prior_tar_share, prior_gl_eff, expect_routes, prior_ryoe_att, def_rush_epa_sos, prior_rush_share, prior_gl_att_share, prior_gl_trips, prior_off_rush_epa, prior_n_rush_team, expect_gl_opp, prior_n_pass, prior_rb_epa, prior_yco_attempt)) %>% 
+  drop_na() %>% 
+  # select(-c(prior_n_pass, prior_route_partic, prior_fpts_other, prior_gl_eff, prior_tar_share, expect_gl_opp, prior_n_rush_team, expect_routes, expect_rush)) %>%
+  # select(-any_of(df_feature_svm_rb %>% filter(delta_rmse < -0.1) %>% pull(var_svm))) %>%
+  arrange(player_id) %>% 
+  left_join(df_adp_old, by = c("player_display_name", "season")) %>%   mutate(
+    adp = as.integer(str_extract(pos_rank_adp, "\\d+"))
+  ) %>%  
+  drop_na(adp) %>% 
+  gam(
+    sum_fpts ~ s(adp),
+    data = .,
+    method = "REML"
+  )
+
+df_fpts_rb_train_25 = 
+  df_fan_rb_fin_all %>% 
+  # mutate(expect_rush_other = log(expect_rush_other)) %>% 
+  filter(prior_rank <= 90 | prior_fpts_game >= 5) %>% 
+  # left_join(df_rb_epa, by = c("team", "season")) %>% 
+  left_join(df_qb_epa_teams, by = c("team", "season")) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_gl_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  # left_join(df_run_block_team, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>%
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  filter(season < 2025) %>% 
+  select(player_id, sum_fpts, prior_rush_rate, prior_tar_share, prior_fpts_game, prior_n_pass, prior_rush_share, prior_n_rush_team, prior_off_rush_epa, def_rush_epa_sos, prior_gl_eff, prior_gl_trips, prior_gl_att_share, prior_route_partic, prior_ryoe_att, prior_rb_epa, player_age, draft_number, prior_fpts_other, rb_new_team, prior_fpts_other, expect_rush_other, games_missed_rate, ol_grade_run_adj, prior_elusive_rating, prior_yco_attempt) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_rush = prior_rush_share * prior_n_rush_team,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_gl_opp = prior_gl_att_share * prior_gl_trips
+  ) %>% 
+  select(-c(prior_route_partic, prior_fpts_other, prior_tar_share, prior_gl_eff, expect_routes, prior_ryoe_att, def_rush_epa_sos, prior_rush_share, prior_gl_att_share, prior_gl_trips, prior_off_rush_epa, prior_n_rush_team, expect_gl_opp, prior_n_pass, prior_rb_epa, prior_yco_attempt)) %>% 
+  drop_na() %>% 
+  # select(-c(prior_n_pass, prior_route_partic, prior_fpts_other, prior_gl_eff, prior_tar_share, expect_gl_opp, prior_n_rush_team, expect_routes, expect_rush)) %>%
+  # select(-any_of(df_feature_svm_rb %>% filter(delta_rmse < -0.1) %>% pull(var_svm))) %>%
+  arrange(player_id) %>% 
+  select(-player_id) %>% 
+  relocate(sum_fpts, .after = last_col())
+
+df_fpts_rb_train_24 = 
+  df_fan_rb_fin_all %>% 
+  # mutate(expect_rush_other = log(expect_rush_other)) %>% 
+  filter(prior_rank <= 90 | prior_fpts_game >= 5) %>% 
+  # left_join(df_rb_epa, by = c("team", "season")) %>% 
+  left_join(df_qb_epa_teams, by = c("team", "season")) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_gl_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  # left_join(df_run_block_team, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>%
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  filter(season < 2024) %>% 
+  select(player_id, sum_fpts, prior_rush_rate, prior_tar_share, prior_fpts_game, prior_n_pass, prior_rush_share, prior_n_rush_team, prior_off_rush_epa, def_rush_epa_sos, prior_gl_eff, prior_gl_trips, prior_gl_att_share, prior_route_partic, prior_ryoe_att, prior_rb_epa, player_age, draft_number, prior_fpts_other, rb_new_team, prior_fpts_other, expect_rush_other, games_missed_rate, ol_grade_run_adj, prior_elusive_rating, prior_yco_attempt) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_rush = prior_rush_share * prior_n_rush_team,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_gl_opp = prior_gl_att_share * prior_gl_trips
+  ) %>% 
+  select(-c(prior_route_partic, prior_fpts_other, prior_tar_share, prior_gl_eff, expect_routes, prior_ryoe_att, def_rush_epa_sos, prior_rush_share, prior_gl_att_share, prior_gl_trips, prior_off_rush_epa, prior_n_rush_team, expect_gl_opp, prior_n_pass, prior_rb_epa, prior_yco_attempt)) %>% 
+  drop_na() %>% 
+  # select(-c(prior_n_pass, prior_route_partic, prior_fpts_other, prior_gl_eff, prior_tar_share, expect_gl_opp, prior_n_rush_team, expect_routes, expect_rush)) %>%
+  # select(-any_of(df_feature_svm_rb %>% filter(delta_rmse < -0.1) %>% pull(var_svm))) %>%
+  arrange(player_id) %>% 
+  select(-player_id) %>% 
+  relocate(sum_fpts, .after = last_col())
+
+df_fpts_rb_train_23 = 
+  df_fan_rb_fin_all %>% 
+  # mutate(expect_rush_other = log(expect_rush_other)) %>% 
+  filter(prior_rank <= 90 | prior_fpts_game >= 5) %>% 
+  # left_join(df_rb_epa, by = c("team", "season")) %>% 
+  left_join(df_qb_epa_teams, by = c("team", "season")) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_gl_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  # left_join(df_run_block_team, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>%
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  filter(season < 2023) %>% 
+  select(player_id, sum_fpts, prior_rush_rate, prior_tar_share, prior_fpts_game, prior_n_pass, prior_rush_share, prior_n_rush_team, prior_off_rush_epa, def_rush_epa_sos, prior_gl_eff, prior_gl_trips, prior_gl_att_share, prior_route_partic, prior_ryoe_att, prior_rb_epa, player_age, draft_number, prior_fpts_other, rb_new_team, prior_fpts_other, expect_rush_other, games_missed_rate, ol_grade_run_adj, prior_elusive_rating, prior_yco_attempt) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_rush = prior_rush_share * prior_n_rush_team,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_gl_opp = prior_gl_att_share * prior_gl_trips
+  ) %>% 
+  select(-c(prior_route_partic, prior_fpts_other, prior_tar_share, prior_gl_eff, expect_routes, prior_ryoe_att, def_rush_epa_sos, prior_rush_share, prior_gl_att_share, prior_gl_trips, prior_off_rush_epa, prior_n_rush_team, expect_gl_opp, prior_n_pass, prior_rb_epa, prior_yco_attempt)) %>% 
+  drop_na() %>% 
+  # select(-c(prior_n_pass, prior_route_partic, prior_fpts_other, prior_gl_eff, prior_tar_share, expect_gl_opp, prior_n_rush_team, expect_routes, expect_rush)) %>%
+  # select(-any_of(df_feature_svm_rb %>% filter(delta_rmse < -0.1) %>% pull(var_svm))) %>%
+  arrange(player_id) %>% 
+  select(-player_id) %>% 
+  relocate(sum_fpts, .after = last_col())
+
+set.seed(37564)
+mod_boost_rb_25 = train(sum_fpts ~ .,
+                  na.action = na.exclude, 
+                  data = df_fpts_rb_train_25, 
+                  method = "gbm", 
+                  tuneGrid = mod_boost_rb$bestTune, 
+                  trControl = ctrl,
+                  verbose = F)
+# ggplot(mod_boost_rb_25, highlight = T) + 
+#   ggtitle("Boost") +
+#   theme(plot.title = element_text(hjust = 0.5))
+mod_boost_rb_25$bestTune
+min(mod_boost_rb_25$results$RMSE)
+
+set.seed(37564)
+mod_boost_rb_24 = train(sum_fpts ~ .,
+                  na.action = na.exclude, 
+                  data = df_fpts_rb_train_24, 
+                  method = "gbm", 
+                  tuneGrid = mod_boost_rb$bestTune, 
+                  trControl = ctrl,
+                  verbose = F)
+# ggplot(mod_boost_rb_24, highlight = T) + 
+#   ggtitle("Boost") +
+#   theme(plot.title = element_text(hjust = 0.5))
+mod_boost_rb_24$bestTune
+min(mod_boost_rb_24$results$RMSE)
+
+set.seed(37564)
+mod_boost_rb_23 = train(sum_fpts ~ .,
+                  na.action = na.exclude, 
+                  data = df_fpts_rb_train_23, 
+                  method = "gbm", 
+                  tuneGrid = mod_boost_rb$bestTune, 
+                  trControl = ctrl,
+                  verbose = F)
+# ggplot(mod_boost_rb_23, highlight = T) + 
+#   ggtitle("Boost") +
+#   theme(plot.title = element_text(hjust = 0.5))
+mod_boost_rb_23$bestTune
+min(mod_boost_rb_23$results$RMSE)
+
+df_fpts_rb_test_25 = 
+  df_fan_rb_fin_all %>% 
+  # mutate(expect_rush_other = log(expect_rush_other)) %>% 
+  filter(prior_rank <= 90 | prior_fpts_game >= 5) %>% 
+  # left_join(df_rb_epa, by = c("team", "season")) %>% 
+  left_join(df_qb_epa_teams, by = c("team", "season")) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_gl_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  # left_join(df_run_block_team, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>%
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  filter(season == 2025) %>% 
+  select(season, player_id, player_display_name, sum_fpts, prior_rush_rate, prior_tar_share, prior_fpts_game, prior_n_pass, prior_rush_share, prior_n_rush_team, prior_off_rush_epa, def_rush_epa_sos, prior_gl_eff, prior_gl_trips, prior_gl_att_share, prior_route_partic, prior_ryoe_att, prior_rb_epa, player_age, draft_number, prior_fpts_other, rb_new_team, prior_fpts_other, expect_rush_other, games_missed_rate, ol_grade_run_adj, prior_elusive_rating, prior_yco_attempt) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_rush = prior_rush_share * prior_n_rush_team,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_gl_opp = prior_gl_att_share * prior_gl_trips
+  ) %>% 
+  select(-c(prior_route_partic, prior_fpts_other, prior_tar_share, prior_gl_eff, expect_routes, prior_ryoe_att, def_rush_epa_sos, prior_rush_share, prior_gl_att_share, prior_gl_trips, prior_off_rush_epa, prior_n_rush_team, expect_gl_opp, prior_n_pass, prior_rb_epa, prior_yco_attempt)) %>% 
+  drop_na() %>% 
+  # select(-c(prior_n_pass, prior_route_partic, prior_fpts_other, prior_gl_eff, prior_tar_share, expect_gl_opp, prior_n_rush_team, expect_routes, expect_rush)) %>%
+  # select(-any_of(df_feature_svm_rb %>% filter(delta_rmse < -0.1) %>% pull(var_svm))) %>%
+  arrange(player_id)
+
+df_fpts_rb_test_24 = 
+  df_fan_rb_fin_all %>% 
+  # mutate(expect_rush_other = log(expect_rush_other)) %>% 
+  filter(prior_rank <= 90 | prior_fpts_game >= 5) %>% 
+  # left_join(df_rb_epa, by = c("team", "season")) %>% 
+  left_join(df_qb_epa_teams, by = c("team", "season")) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_gl_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  # left_join(df_run_block_team, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>%
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  filter(season == 2024) %>% 
+  select(season, player_id, player_display_name, sum_fpts, prior_rush_rate, prior_tar_share, prior_fpts_game, prior_n_pass, prior_rush_share, prior_n_rush_team, prior_off_rush_epa, def_rush_epa_sos, prior_gl_eff, prior_gl_trips, prior_gl_att_share, prior_route_partic, prior_ryoe_att, prior_rb_epa, player_age, draft_number, prior_fpts_other, rb_new_team, prior_fpts_other, expect_rush_other, games_missed_rate, ol_grade_run_adj, prior_elusive_rating, prior_yco_attempt) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_rush = prior_rush_share * prior_n_rush_team,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_gl_opp = prior_gl_att_share * prior_gl_trips
+  ) %>% 
+  select(-c(prior_route_partic, prior_fpts_other, prior_tar_share, prior_gl_eff, expect_routes, prior_ryoe_att, def_rush_epa_sos, prior_rush_share, prior_gl_att_share, prior_gl_trips, prior_off_rush_epa, prior_n_rush_team, expect_gl_opp, prior_n_pass, prior_rb_epa, prior_yco_attempt)) %>% 
+  drop_na() %>% 
+  # select(-c(prior_n_pass, prior_route_partic, prior_fpts_other, prior_gl_eff, prior_tar_share, expect_gl_opp, prior_n_rush_team, expect_routes, expect_rush)) %>%
+  # select(-any_of(df_feature_svm_rb %>% filter(delta_rmse < -0.1) %>% pull(var_svm))) %>%
+  arrange(player_id)
+
+df_fpts_rb_test_23 = 
+  df_fan_rb_fin_all %>% 
+  # mutate(expect_rush_other = log(expect_rush_other)) %>% 
+  filter(prior_rank <= 90 | prior_fpts_game >= 5) %>% 
+  # left_join(df_rb_epa, by = c("team", "season")) %>% 
+  left_join(df_qb_epa_teams, by = c("team", "season")) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_gl_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  # left_join(df_run_block_team, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>%
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  filter(season == 2023) %>% 
+  select(season, player_id, player_display_name, sum_fpts, prior_rush_rate, prior_tar_share, prior_fpts_game, prior_n_pass, prior_rush_share, prior_n_rush_team, prior_off_rush_epa, def_rush_epa_sos, prior_gl_eff, prior_gl_trips, prior_gl_att_share, prior_route_partic, prior_ryoe_att, prior_rb_epa, player_age, draft_number, prior_fpts_other, rb_new_team, prior_fpts_other, expect_rush_other, games_missed_rate, ol_grade_run_adj, prior_elusive_rating, prior_yco_attempt) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_rush = prior_rush_share * prior_n_rush_team,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_gl_opp = prior_gl_att_share * prior_gl_trips
+  ) %>% 
+  select(-c(prior_route_partic, prior_fpts_other, prior_tar_share, prior_gl_eff, expect_routes, prior_ryoe_att, def_rush_epa_sos, prior_rush_share, prior_gl_att_share, prior_gl_trips, prior_off_rush_epa, prior_n_rush_team, expect_gl_opp, prior_n_pass, prior_rb_epa, prior_yco_attempt)) %>% 
+  drop_na() %>% 
+  # select(-c(prior_n_pass, prior_route_partic, prior_fpts_other, prior_gl_eff, prior_tar_share, expect_gl_opp, prior_n_rush_team, expect_routes, expect_rush)) %>%
+  # select(-any_of(df_feature_svm_rb %>% filter(delta_rmse < -0.1) %>% pull(var_svm))) %>%
+  arrange(player_id)
+
+# view(df_fpts_wr_test_25)
+
+mod_rank_val_rb_25 = 
+  gam(
+    sum_fpts ~ s(rank_fin),
+    data = df_fpts_rb_train_25 %>% mutate(rank_fin = rank(-sum_fpts)),
+    method = "REML"
+  )
+
+mod_rank_val_rb_24 = 
+  gam(
+    sum_fpts ~ s(rank_fin),
+    data = df_fpts_rb_train_24 %>% mutate(rank_fin = rank(-sum_fpts)),
+    method = "REML"
+  )
+
+mod_rank_val_rb_23 = 
+  gam(
+    sum_fpts ~ s(rank_fin),
+    data = df_fpts_rb_train_23 %>% mutate(rank_fin = rank(-sum_fpts)),
+    method = "REML"
+  )
+
+df_backtest_rb_23_25 = 
+  df_fpts_rb_test_25 %>% 
+  mutate(
+    pred_fpts = predict(mod_boost_rb_25, newdata = .),
+    rank_mod = rank(-pred_fpts),
+    rank_fin = rank(-sum_fpts)
+  ) %>% 
+  left_join(
+    df_adp_old %>% 
+      mutate(adp = as.integer(str_extract(pos_rank_adp, "\\d+"))) %>% 
+      select(season, player_display_name, adp),
+    by = c("player_display_name", "season")
+  ) %>% 
+  mutate(
+    market_proj = 
+      predict(
+        market_curve_rb_25,
+        newdata = .
+      ),
+    adp_value = 
+      predict(
+        mod_rank_val_rb_25,
+        newdata = tibble(rank_fin = adp)
+      ),
+    model_value = 
+      predict(
+        mod_rank_val_rb_25,
+        newdata = tibble(rank_fin = rank_mod)
+     )
+  ) %>% 
+  rbind(
+    df_fpts_rb_test_24 %>% 
+      mutate(
+        pred_fpts = predict(mod_boost_rb_24, newdata = .),
+        rank_mod = rank(-pred_fpts),
+        rank_fin = rank(-sum_fpts)
+      ) %>% 
+      left_join(
+        df_adp_old %>% 
+          mutate(adp = as.integer(str_extract(pos_rank_adp, "\\d+"))) %>% 
+          select(season, player_display_name, adp),
+        by = c("player_display_name", "season")
+      ) %>% 
+      mutate(
+        market_proj = 
+          predict(
+            market_curve_rb_24,
+            newdata = .
+          ),
+        adp_value = 
+          predict(
+            mod_rank_val_rb_24,
+            newdata = tibble(rank_fin = adp)
+          ),
+        model_value = 
+          predict(
+            mod_rank_val_rb_24,
+            newdata = tibble(rank_fin = rank_mod)
+         )
+      )
+  ) %>% 
+  rbind(
+    df_fpts_rb_test_23 %>% 
+      mutate(
+        pred_fpts = predict(mod_boost_rb_23, newdata = .),
+        rank_mod = rank(-pred_fpts),
+        rank_fin = rank(-sum_fpts)
+      ) %>% 
+      left_join(
+        df_adp_old %>% 
+          mutate(adp = as.integer(str_extract(pos_rank_adp, "\\d+"))) %>% 
+          select(season, player_display_name, adp),
+        by = c("player_display_name", "season")
+      ) %>% 
+      mutate(
+        market_proj = 
+          predict(
+            market_curve_rb_23,
+            newdata = .
+          ),
+        adp_value = 
+          predict(
+            mod_rank_val_rb_23,
+            newdata = tibble(rank_fin = adp)
+          ),
+        model_value = 
+          predict(
+            mod_rank_val_rb_23,
+            newdata = tibble(rank_fin = rank_mod)
+         )
+      )
+  ) %>% 
+  filter(adp <= 100) %>% 
+  mutate(
+    market_edge = pred_fpts - market_proj,
+    mod_market_edge = pred_fpts - market_proj,
+    actual_market_edge = sum_fpts - market_proj,
+    mod_over = ifelse(mod_market_edge > 0, 1, 0),
+    actual_over = ifelse(actual_market_edge > 0, 1, 0),
+    hit = 
+      case_when(
+        mod_over == actual_over ~ 1,
+        .default = 0
+      ),
+    # Strong conviction
+    strong_over = ifelse(mod_market_edge >= 0.5 * sd(mod_market_edge, na.rm = T), 1, 0), 
+    strong_under = ifelse(mod_market_edge <= -0.5 * sd(mod_market_edge, na.rm = T), 1, 0),
+    rank_diff_model = adp - rank_mod,
+    rank_diff_actual = adp - rank_fin,
+    actual_value = sum_fpts,
+    model_rank_change = adp - rank_mod,
+    actual_rank_change = adp - rank_fin,
+    model_value_change = model_value - adp_value,
+    actual_value_change = actual_value - adp_value,
+    market_edge_z = round(as.numeric(scale(mod_market_edge)), 2),
+    fin_market_edge = market_proj - sum_fpts,
+    fin_market_edge_z = round(as.numeric(scale(fin_market_edge)), 2),
+    fin_mod_edge = pred_fpts - sum_fpts,
+    fin_mod_edge_z = round(as.numeric(scale(fin_mod_edge)), 2)
+  ) %>% 
+  # filter() %>% 
+  # mutate(
+  #   ind_mod_val_high = 
+  #     case_when(
+  #       market_edge_z >= 0.5 ~ 1,
+  #       .default = 0 
+  #     ),
+  #   ind_hit_high = 
+  #     case_when(
+  #       ind_mod_val_high == 1 & (abs(fin_mod_edge_z) < abs(fin_market_edge_z) | abs(fin_mod_edge) < abs(fin_market_edge)) ~ 1,
+  #       ind_mod_val_high == 1 ~ 0
+  #     ),
+  #   ind_mod_val_low = 
+  #     case_when(
+  #       market_edge_z <= -0.5 ~ 1,
+  #       .default = 0 
+  #     ),
+  #   ind_hit_low = 
+  #     case_when(
+  #       ind_mod_val_low == 1 & (abs(fin_mod_edge_z) < abs(fin_market_edge_z) | abs(fin_mod_edge) < abs(fin_market_edge)) ~ 1,
+  #       ind_mod_val_low == 1 ~ 0
+  #     )
+  # ) %>% 
+  # select(season, player_display_name, sum_fpts, pred_fpts, market_proj, rank_fin, rank_mod, adp, market_edge_z, fin_mod_edge_z, fin_market_edge_z, starts_with("ind_")) %>% 
+  # tbl_summary(
+  #   include = starts_with("ind_hit_")
+  # ) %>% 
+  # bold_labels() %>% 
+  select(season, player_id, player_display_name, sum_fpts:last_col()) %>% 
+  drop_na()
+
+view(df_backtest_rb_23_25)
+
+saveRDS(df_backtest_rb_23_25, str_c("data/fantasy_data/", "df_backtest_rb_23_25.rds"))
+
+df_backtest_rb_results = 
+  tibble(
+    threshold = c(0, 5, 10, 15, 20, 25, 30)
+  ) %>% 
+  mutate(
+    results = map(
+      threshold,
+      ~ df_backtest_rb_23_25 %>% 
+        filter(mod_market_edge >= .x) %>% 
+        group_by(season) %>% 
+        summarise(
+          n = n(),
+          hit_rate = mean(actual_market_edge > 0),
+          avg_actual_edge = mean(actual_market_edge)
+        )
+    )
+  ) %>% 
+  unnest(results) %>% 
+  arrange(season)
+
+view(df_backtest_rb_results)
+
+# tibble(
+#     threshold = c(0, 5, 10, 15, 20, 25, 30)
+#   ) %>% 
+#   mutate(
+#     results = map(
+#       threshold,
+#       ~ df_backtest_rb_23_25 %>% 
+#         filter(mod_market_edge >= .x) %>% 
+#         # group_by(season) %>% 
+#         summarise(
+#           n = n(),
+#           hit_rate = mean(actual_market_edge > 0),
+#           avg_actual_edge = mean(actual_market_edge)
+#         )
+#     )
+#   ) %>% 
+#   unnest(results)
+# 
+tibble(
+  threshold = c(0, 5, 10, 15, 20, 25, 30)
+) %>%
+  mutate(
+    results = map(
+      threshold,
+      ~ df_backtest_rb_23_25 %>% 
+          filter(abs(mod_market_edge) >= .x) %>% 
+          summarise(
+            n = n(),
+            hit_rate = mean(
+              sign(mod_market_edge) == sign(actual_market_edge)
+            ),
+            avg_abs_actual_edge = mean(abs(actual_market_edge)),
+            model_mae = mean(abs(sum_fpts - pred_fpts)),
+            market_mae = mean(abs(sum_fpts - market_proj)),
+            mae_improvement = 1 - model_mae / market_mae
+          )
+    )
+  ) %>%
+  unnest(results)
+
+# df_backtest_wr_23_25 %>% 
+#   summarise(
+#     edge_cor = cor(
+#       mod_market_edge,
+#       actual_market_edge,
+#       use = "complete.obs"
+#     )
+#   )
+
+df_backtest_rb_23_25 %>% 
+  mutate(
+    abs_edge = abs(mod_market_edge),
+    edge_bucket = 
+      fct_relevel(as.factor(
+        case_when(
+          abs_edge < 5 ~ "< 5",
+          abs_edge < 15 ~ "5 – 15",
+          abs_edge < 25 ~ "15 – 25",
+          abs_edge < 35 ~ "25 – 35",
+          TRUE ~ "35+"
+        )),
+      "< 5", "5 – 15"
+      )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    avg_abs_actual_edge = mean(abs(actual_market_edge)),
+    hit_rate = mean(
+      sign(mod_market_edge) == sign(actual_market_edge)
+    ),
+    .groups = "drop"
+  ) %>% 
+  view
+
+df_backtest_rb_23_25 %>% 
+  filter(mod_market_edge >= 0) %>% 
+  mutate(
+    abs_edge = abs(mod_market_edge),
+    edge_bucket = 
+      fct_relevel(as.factor(
+        case_when(
+          abs_edge < 10 ~ "< 10",
+          abs_edge < 20 ~ "10 – 20",
+          abs_edge < 30 ~ "20 – 30",
+          abs_edge < 40 ~ "30 – 40",
+          TRUE ~ "40+"
+        )),
+      "< 10"
+      )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    avg_abs_actual_edge = mean(abs(actual_market_edge)),
+    hit_rate = mean(
+      sign(mod_market_edge) == sign(actual_market_edge)
+    ),
+    model_mae = mean(abs(sum_fpts - pred_fpts)),
+    market_mae = mean(abs(sum_fpts - market_proj)),
+    mae_improvement = 1 - model_mae / market_mae,
+    .groups = "drop"
+  ) %>% 
+  view
+
+df_backtest_rb_23_25 %>% 
+  filter(mod_market_edge < 0) %>% 
+  mutate(
+    abs_edge = abs(mod_market_edge),
+    edge_bucket = 
+      fct_relevel(as.factor(
+        case_when(
+          abs_edge < 10 ~ "< 10",
+          abs_edge < 20 ~ "10 – 20",
+          abs_edge < 30 ~ "20 – 30",
+          abs_edge < 40 ~ "30 – 40",
+          TRUE ~ "40+"
+        )),
+      "< 10"
+      )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    avg_abs_actual_edge = mean(abs(actual_market_edge)),
+    hit_rate = mean(
+      sign(mod_market_edge) == sign(actual_market_edge)
+    ),
+    model_mae = mean(abs(sum_fpts - pred_fpts)),
+    market_mae = mean(abs(sum_fpts - market_proj)),
+    mae_improvement = 1 - model_mae / market_mae,
+    .groups = "drop"
+  ) %>% 
+  view
+
+df_backtest_rb_23_25 %>% 
+  summarise(
+    market_cor = cor(market_proj, sum_fpts),
+    market_mae = mean(abs(market_proj - sum_fpts)),
+    market_bias = mean(market_proj - sum_fpts)
+  )
+
+df_backtest_rb_23_25 %>% 
+  summarise(
+    model_cor = cor(pred_fpts, sum_fpts),
+    model_mae = mean(abs(pred_fpts - sum_fpts)),
+    model_bias = mean(pred_fpts - sum_fpts)
+  )
+
+mod_market <- lm(
+  sum_fpts ~ market_proj,
+  data = df_backtest_rb_23_25
+)
+
+mod_market_plus <- lm(
+  sum_fpts ~ market_proj + pred_fpts,
+  data = df_backtest_rb_23_25
+)
+
+anova(mod_market, mod_market_plus)
+
+df_backtest_rb_23_25 %>% 
+  summarise(
+    market_r2 = summary(mod_market)$r.squared,
+    market_plus_model_r2 = summary(mod_market_plus)$r.squared
+  )
+
+df_backtest_rb_23_25 %>% 
+  mutate(
+    edge_bucket = case_when(
+      abs(mod_market_edge) < 20 ~ "<20",
+      abs(mod_market_edge) < 40 ~ "20–40",
+      TRUE ~ "40+"
+    )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    market_mae = mean(abs(sum_fpts - market_proj)),
+    model_mae = mean(abs(sum_fpts - pred_fpts)),
+    .groups = "drop"
+  )
+
+df_backtest_rb_23_25 %>% 
+  mutate(
+    edge_bucket = case_when(
+      abs(mod_market_edge) < 20 ~ "<20",
+      abs(mod_market_edge) < 40 ~ "20–40",
+      TRUE ~ "40+"
+    )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  nest() %>% 
+  mutate(
+    market_r2 = map_dbl(
+      data,
+      ~ summary(
+        lm(sum_fpts ~ market_proj, data = .x)
+      )$r.squared
+    ),
+    market_plus_model_r2 = map_dbl(
+      data,
+      ~ summary(
+        lm(sum_fpts ~ market_proj + pred_fpts, data = .x)
+      )$r.squared
+    )
+  ) %>% 
+  select(edge_bucket, market_r2, market_plus_model_r2)
+
+df_backtest_wr_23_25 %>% 
+  filter(abs(mod_market_edge) >= 20) %>% 
+  summarise(
+    n = n(),
+    hit_rate = mean(
+      sign(mod_market_edge) == sign(actual_market_edge)
+    ),
+    avg_actual_edge = mean(actual_market_edge),
+    median_actual_edge = median(actual_market_edge),
+    model_mae = mean(abs(sum_fpts - pred_fpts)),
+    market_mae = mean(abs(sum_fpts - market_proj))
+  ) %>% 
+  view
+
+df_backtest_wr_23_25 %>% 
+  filter(mod_market_edge >= 20) %>% 
+  summarise(
+    n = n(),
+    hit_rate = mean(actual_market_edge > 0),
+    avg_actual_edge = mean(actual_market_edge),
+    median_actual_edge = median(actual_market_edge),
+    model_mae = mean(abs(sum_fpts - pred_fpts)),
+    market_mae = mean(abs(sum_fpts - market_proj))
+  ) %>% 
+  view
+
+df_backtest_wr_23_25 %>% 
+  filter(mod_market_edge <= -20) %>% 
+  summarise(
+    n = n(),
+    hit_rate = mean(actual_market_edge < 0),
+    avg_actual_edge = mean(actual_market_edge),
+    median_actual_edge = median(actual_market_edge),
+    model_mae = mean(abs(sum_fpts - pred_fpts)),
+    market_mae = mean(abs(sum_fpts - market_proj))
+  ) %>% 
+  view
+
+df_backtest_wr_23_25 %>% 
+  filter(mod_market_edge > 0) %>% 
+  summarise(
+    edge_cor = cor(
+      mod_market_edge,
+      actual_market_edge
+    )
+  )
+
+df_backtest_wr_23_25 %>% 
+  filter(mod_market_edge < 0) %>% 
+  summarise(
+    edge_cor = cor(
+      mod_market_edge,
+      actual_market_edge
+    )
+  )
+
+ggplot(
+  df_backtest_rb_23_25,
+  aes(
+    x = mod_market_edge,
+    y = actual_market_edge
+  )
+) +
+  geom_hline(
+    yintercept = 0,
+    linetype = "dashed"
+  ) +
+  geom_vline(
+    xintercept = 0,
+    linetype = "dashed"
+  ) +
+  geom_point(
+    alpha = 0.4
+  ) +
+  geom_smooth(
+    method = "gam",
+    formula = y ~ s(x),
+    se = TRUE
+  ) +
+  labs(
+    x = "Model edge vs. ADP",
+    y = "Actual edge vs. ADP",
+    title = "Fantasy DNA Model vs. ADP",
+    subtitle = "2023–2025 out-of-sample WR predictions"
+  ) +
+  theme_minimal()
+
+# df_backtest_wr_23_25 %>% 
+#   filter(mod_market_edge >= 20) %>% 
+#   lm(
+#     actual_market_edge ~ mod_market_edge,
+#     data = .
+# ) %>% 
+#   broom::tidy()
+# 
+# df_backtest_wr_23_25 %>% 
+#   filter(mod_market_edge <= -20) %>% 
+#   lm(
+#     actual_market_edge ~ mod_market_edge,
+#     data = .
+# ) %>% 
+#   broom::tidy()
+
+# df_backtest_wr_23_25 %>% 
+#   mutate(
+#     pred_rank_fpts = predict(rank_value_model, newdata = .)
+#   ) %>% 
+#   view
+
+# rank_value = 
+#   df_backtest_wr_23_25 %>% 
+#   group_by(rank_fin) %>% 
+#   summarise(
+#     avg_fpts = mean(sum_fpts),
+#     .groups = "drop"
+#   )
+
+# df_backtest_wr_23_25 %>% 
+#   summarise(
+#     n = n(),
+#     hit_rate = mean(
+#       sign(model_value_change) == sign(actual_value_change)
+#     ),
+#     value_cor = cor(
+#       model_value_change,
+#       actual_value_change,
+#       use = "complete.obs"
+#     )
+#   )
+# 
+# df_backtest_wr_23_25 %>% 
+#   mutate(
+#     value_bucket = case_when(
+#       abs(model_value_change) < 10 ~ "<10 FPTS",
+#       abs(model_value_change) < 20 ~ "10–20 FPTS",
+#       abs(model_value_change) < 30 ~ "20–30 FPTS",
+#       TRUE ~ "30+ FPTS"
+#     )
+#   ) %>% 
+#   group_by(value_bucket) %>% 
+#   summarise(
+#     n = n(),
+#     avg_pred_value = mean(model_value_change),
+#     avg_actual_value = mean(actual_value_change),
+#     hit_rate = mean(
+#       sign(model_value_change) == sign(actual_value_change)
+#     ),
+#     .groups = "drop"
+#   )
+
+df_backtest_rb_23_25 %>% 
+  summarise(
+    n = n(),
+    hit_rate = mean(
+      sign(model_rank_change) == sign(actual_rank_change)
+    ),
+    rank_cor = cor(
+      model_rank_change,
+      actual_rank_change,
+      use = "complete.obs"
+    ),
+    rank_mae = mean(
+      abs(model_rank_change - actual_rank_change)
+    )
+  )
+
+df_backtest_rb_23_25 %>% 
+  summarise(
+    model_mae = mean(abs(model_rank_change - actual_rank_change)),
+    market_mae = mean(abs(actual_rank_change)),
+    improvement = 1 - model_mae / market_mae
+  )
+
+df_backtest_rb_23_25 %>% 
+  mutate(
+    abs_edge = abs(mod_market_edge),
+    edge_bucket = 
+      fct_relevel(as.factor(
+        case_when(
+          abs_edge < 10 ~ "< 10",
+          abs_edge < 20 ~ "10 – 20",
+          abs_edge < 30 ~ "20 – 30",
+          abs_edge < 40 ~ "30 – 40",
+          TRUE ~ "40+"
+        )),
+      "< 10"
+      )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    model_mae = mean(
+      abs(model_rank_change - actual_rank_change)
+    ),
+    market_mae = mean(
+      abs(actual_rank_change)
+    ),
+    improvement = 1 - model_mae / market_mae,
+    hit_rate = mean(
+      sign(model_rank_change) == sign(actual_rank_change)
+    ),
+    rank_cor = cor(
+      model_rank_change,
+      actual_rank_change,
+      use = "complete.obs"
+    ),
+    .groups = "drop"
+  )
+
+df_backtest_rb_23_25 %>% 
+  filter(mod_market_edge >= 0) %>% 
+  mutate(
+    abs_edge = abs(mod_market_edge),
+    edge_bucket = 
+      fct_relevel(as.factor(
+        case_when(
+          abs_edge < 10 ~ "< 10",
+          abs_edge < 20 ~ "10 – 20",
+          abs_edge < 30 ~ "20 – 30",
+          abs_edge < 40 ~ "30 – 40",
+          TRUE ~ "40+"
+        )),
+      "< 10"
+      )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    model_mae = mean(
+      abs(model_rank_change - actual_rank_change)
+    ),
+    market_mae = mean(
+      abs(actual_rank_change)
+    ),
+    improvement = 1 - model_mae / market_mae,
+    hit_rate = mean(
+      sign(model_rank_change) == sign(actual_rank_change)
+    ),
+    rank_cor = cor(
+      model_rank_change,
+      actual_rank_change,
+      use = "complete.obs"
+    ),
+    .groups = "drop"
+  )
+
+df_backtest_rb_23_25 %>% 
+  filter(mod_market_edge < 0) %>% 
+  mutate(
+    abs_edge = abs(mod_market_edge),
+    edge_bucket = 
+      fct_relevel(as.factor(
+        case_when(
+          abs_edge < 10 ~ "< 10",
+          abs_edge < 20 ~ "10 – 20",
+          abs_edge < 30 ~ "20 – 30",
+          abs_edge < 40 ~ "30 – 40",
+          TRUE ~ "40+"
+        )),
+      "< 10"
+      )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    model_mae = mean(
+      abs(model_rank_change - actual_rank_change)
+    ),
+    market_mae = mean(
+      abs(actual_rank_change)
+    ),
+    improvement = 1 - model_mae / market_mae,
+    hit_rate = mean(
+      sign(model_rank_change) == sign(actual_rank_change)
+    ),
+    rank_cor = cor(
+      model_rank_change,
+      actual_rank_change,
+      use = "complete.obs"
+    ),
+    .groups = "drop"
+  )
+
+df_backtest_rb_23_25 %>% 
+  filter(
+    mod_market_edge > 0
+  ) %>% 
+  group_by(season) %>% 
+  summarise(
+    n = n(),
+    model_mae = mean(abs(model_rank_change - actual_rank_change)),
+    market_mae = mean(abs(actual_rank_change)),
+    improvement = 1 - model_mae / market_mae,
+    hit_rate = mean(
+      sign(model_rank_change) == sign(actual_rank_change)
+    ),
+    .groups = "drop"
+  )
+
+# df_backtest_wr_23_25 %>% 
+#   ggplot(aes(x = mod_market_edge, y = actual_market_edge, color = factor(season))) +
+#   geom_hline(
+#     yintercept = 0,
+#     linetype = "dashed"
+#   ) +
+#   geom_vline(
+#     xintercept = 0,
+#     linetype = "dashed"
+#   ) +
+#   geom_point(
+#     alpha = 0.5
+#   ) +
+#   geom_smooth(
+#     method = "loess",
+#     se = TRUE
+#   ) +
+#   labs(
+#     x = "Predicted edge vs. ADP",
+#     y = "Actual edge vs. ADP",
+#     title = "WR Model Edge vs. Realized Edge",
+#     subtitle = "2023–2025 out-of-sample predictions"
+#   ) +
+#   theme_minimal()
+
+# view(
+#   df_rb_hit_miss_25 %>% 
+#     filter(ind_mod_val_low == 1) %>% 
+#     arrange(adp) %>% 
+#     select(ind_mod_val_low, player_display_name, adp, rank_mod, rank_fin, rank_edge, rank_fin_edge, sum_fpts, pred_fpts, market_proj, model_edge, model_edge_z, actual_edge, actual_edge_z) %>% 
+#     mutate(
+#       ind_hit_low =
+#         case_when(
+#           ind_mod_val_low == 1 & (model_edge_z > actual_edge_z | sign(rank_edge) == sign(rank_fin_edge)) ~ 1,
+#           .default = 0
+#         )
+#     )
+# )
+
+df_rb_hit_miss_25 =
+  df_backtest_rb_23_25 %>% 
+  filter(season == 2025) %>% 
+  mutate(
+    model_edge = pred_fpts - market_proj,
+    actual_edge = sum_fpts - market_proj,
+    hit = ifelse(sign(model_edge) == sign(actual_edge), 1, 0),
+    model_edge_z = as.numeric(scale(model_edge)),
+    actual_edge_z = as.numeric(scale(actual_edge)),
+    rank_edge = rank_mod - adp,
+    rank_fin_edge = rank_fin - adp,
+    pred_fpts = round(pred_fpts, 2),
+    market_proj = round(market_proj, 2),
+    ind_mod_val_high =
+      case_when(
+        market_edge_z > 0 & rank_edge < 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_high =
+      case_when(
+        ind_mod_val_high == 1 & (model_edge_z < actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z > 0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_high == 1 ~ 0
+      ),
+    ind_mod_val_low =
+      case_when(
+        market_edge_z < 0 & rank_edge > 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_low =
+      case_when(
+        ind_mod_val_low == 1 & (model_edge_z > actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z < -0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_low == 1 ~ 0
+      )
+  )
+
+df_rb_hit_miss_25 %>%
+  filter(ind_hit_high == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 8) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "RB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Hits on Undervalued PLayers**")
+
+df_rb_hit_miss_25 %>%
+  filter(ind_hit_low == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>% 
+  slice_head(n = 8) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "RB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Hits on Overvalued PLayers**")
+
+df_rb_hit_miss_25 %>%
+  filter(ind_hit_high == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 8) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "RB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Misses on Undervalued Players**")
+
+df_rb_hit_miss_25 %>%
+  filter(ind_hit_low == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 8) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "RB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Misses on Overvalued Players**")
+
+df_rb_hit_miss_24 =
+  df_backtest_rb_23_25 %>% 
+  filter(season == 2024) %>% 
+  mutate(
+    model_edge = pred_fpts - market_proj,
+    actual_edge = sum_fpts - market_proj,
+    hit = ifelse(sign(model_edge) == sign(actual_edge), 1, 0),
+    model_edge_z = as.numeric(scale(model_edge)),
+    actual_edge_z = as.numeric(scale(actual_edge)),
+    rank_edge = rank_mod - adp,
+    rank_fin_edge = rank_fin - adp,
+    pred_fpts = round(pred_fpts, 2),
+    market_proj = round(market_proj, 2),
+    ind_mod_val_high =
+      case_when(
+        market_edge_z > 0 & rank_edge < 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_high =
+      case_when(
+        ind_mod_val_high == 1 & (model_edge_z < actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z > 0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_high == 1 ~ 0
+      ),
+    ind_mod_val_low =
+      case_when(
+        market_edge_z < 0 & rank_edge > 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_low =
+      case_when(
+        ind_mod_val_low == 1 & (model_edge_z > actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z < -0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_low == 1 ~ 0
+      )
+  )
+
+df_rb_hit_miss_24 %>%
+  filter(ind_hit_high == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 8) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "RB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Hits on Undervalued PLayers**")
+
+df_rb_hit_miss_24 %>%
+  filter(ind_hit_low == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>% 
+  slice_head(n = 8) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "RB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Hits on Overvalued PLayers**")
+
+df_rb_hit_miss_24 %>%
+  filter(ind_hit_high == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 8) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "RB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Misses on Undervalued Players**")
+
+df_rb_hit_miss_24 %>%
+  filter(ind_hit_low == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 8) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "RB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Misses on Overvalued Players**")
+
 ```
 
 ## TE
@@ -24285,11 +27130,24 @@ df_fpts_te_test =
     # expect_rz_opp = prior_rz_tar_share * prior_rz_trips
   ) %>% 
   select(player_id, player_display_name, team, prior_ays, prior_fpts_game, prior_off_pass_epa, prior_yprr, draft_number, player_age, games_missed_rate, expect_tar, prior_rec) %>% 
-  drop_na()
+  drop_na() %>% 
+  left_join(
+    df_injuries %>% 
+      filter(pos == "TE") %>% 
+      select(player_display_name, proj_games_miss),
+    by = "player_display_name"
+  )
 
 saveRDS(df_fpts_te_test, str_c("data/fantasy_data/", "df_fpts_te_test.rds"))
 
 view(df_fpts_te_test)
+
+# df_injuries %>%
+#   left_join(
+#     df_fpts_te_test %>% select(player_id, player_display_name),
+#     by = "player_display_name"
+#   ) %>%
+#   view
 
 df_fpts_te_rookie_test =
   df_roster_te_all %>% 
@@ -24407,7 +27265,13 @@ df_fpts_te_rookie_test =
   left_join(df_rz_eff, by = c("team", "season")) %>% 
   left_join(df_te_usage, by = c("team", "season")) %>% 
   select(player_id, full_name, team, prior_n_pass, prior_rz_trips, player_age, draft_number, prior_te_use) %>% 
-  drop_na()
+  drop_na() %>% 
+  left_join(
+    df_injuries %>% 
+      filter(pos == "TE") %>% 
+      select(full_name, proj_games_miss),
+    by = "full_name"
+  )
 
 saveRDS(df_fpts_te_rookie_test, str_c("data/fantasy_data/", "df_fpts_te_rookie_test.rds"))
 
@@ -24418,6 +27282,11 @@ df_fpts_te_sim =
   df_fpts_te_test %>% 
   mutate(
     pred_fpts_boost = predict(mod_boost_te, newdata = df_fpts_te_test),
+    pred_fpts_boost = 
+      case_when(
+        !is.na(proj_games_miss) ~ pred_fpts_boost * (17 - proj_games_miss) / 17,
+        .default = pred_fpts_boost
+      ),
     pred_resid_knn = predict(mod_knn_te_resid, newdata = df_fpts_te_test),
     # pred_fpts_knn = predict(mod_knn_te, newdata = df_fpts_te_test),
     # pred_resid_enet = predict(mod_enet_te_resid, newdata = df_fpts_te_test),
@@ -24465,6 +27334,11 @@ df_fpts_te_rook_sim =
   rename(player_display_name = full_name) %>% 
   mutate(
     pred_fpts_boost = predict(mod_boost_te_rook, newdata = df_fpts_te_rookie_test),
+    pred_fpts_boost = 
+      case_when(
+        !is.na(proj_games_miss) ~ pred_fpts_boost * (17 - proj_games_miss) / 17,
+        .default = pred_fpts_boost
+      ),
     pred_resid_knn = predict(mod_knn_te_rook_resid, newdata = df_fpts_te_rookie_test),
     proj_rec = predict(mod_te_rec_rook, newdata = df_fpts_te_rookie_test),
     across(
@@ -25626,6 +28500,1297 @@ write.csv(fpts_te_2025_fin_rank_export, glue::glue("fpts_te_2025_fin_rank_{forma
 #   select(player_id, full_name, pred_mean, lower_band, upper_band)
 # 
 # view(wr_boot_pred_bands)
+```
+
+
+### Backtest
+
+```{r}
+market_curve_te_25 = 
+  df_fan_te_fin_all %>% 
+  filter(prior_rank <= 40 | prior_fpts_game >= 5) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_te_usage, by = c("team", "season")) %>% 
+  left_join(df_rz_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>%
+  filter(season < 2025) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  select(season, player_id, player_display_name, sum_fpts, prior_ays, prior_tar_share, prior_fpts_game, prior_qb_epa, prior_n_pass, prior_off_pass_epa, def_pass_epa_sos, prior_rz_eff, prior_rz_trips, prior_n_routes, prior_route_partic, prior_yprr, prior_rz_tar_share, player_age, draft_number, prior_te_use, prior_fpts_other, expect_tar_other, new_qb_new_team, prior_games_missed, games_missed_rate, prior_slot_rate, prior_ccr) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_ay = prior_ays * prior_n_pass,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_rz_opp = prior_rz_tar_share * prior_rz_trips
+  ) %>% 
+  select(-c(prior_games_missed, prior_rz_trips, prior_n_pass, prior_rz_eff, prior_fpts_other, prior_rz_tar_share, prior_n_routes, prior_route_partic, expect_ay, prior_tar_share, prior_qb_epa, prior_te_use, new_qb_new_team, expect_rz_opp, def_pass_epa_sos, expect_routes, prior_slot_rate, prior_ccr, expect_tar_other)) %>%
+  # select(-any_of(df_feature_svm %>% filter(delta_rmse < -0.06) %>% pull(var_svm))) %>%
+  drop_na() %>% 
+  arrange(player_id) %>% 
+  left_join(df_adp_old, by = c("player_display_name", "season")) %>%   mutate(
+    adp = as.integer(str_extract(pos_rank_adp, "\\d+"))
+  ) %>%  
+  drop_na(adp) %>% 
+  gam(
+    sum_fpts ~ s(adp),
+    data = .,
+    method = "REML"
+  )
+
+market_curve_te_24 = 
+  df_fan_te_fin_all %>% 
+  filter(prior_rank <= 40 | prior_fpts_game >= 5) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_te_usage, by = c("team", "season")) %>% 
+  left_join(df_rz_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>%
+  filter(season < 2024) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  select(season, player_id, player_display_name, sum_fpts, prior_ays, prior_tar_share, prior_fpts_game, prior_qb_epa, prior_n_pass, prior_off_pass_epa, def_pass_epa_sos, prior_rz_eff, prior_rz_trips, prior_n_routes, prior_route_partic, prior_yprr, prior_rz_tar_share, player_age, draft_number, prior_te_use, prior_fpts_other, expect_tar_other, new_qb_new_team, prior_games_missed, games_missed_rate, prior_slot_rate, prior_ccr) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_ay = prior_ays * prior_n_pass,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_rz_opp = prior_rz_tar_share * prior_rz_trips
+  ) %>% 
+  select(-c(prior_games_missed, prior_rz_trips, prior_n_pass, prior_rz_eff, prior_fpts_other, prior_rz_tar_share, prior_n_routes, prior_route_partic, expect_ay, prior_tar_share, prior_qb_epa, prior_te_use, new_qb_new_team, expect_rz_opp, def_pass_epa_sos, expect_routes, prior_slot_rate, prior_ccr, expect_tar_other)) %>%
+  # select(-any_of(df_feature_svm %>% filter(delta_rmse < -0.06) %>% pull(var_svm))) %>%
+  drop_na() %>% 
+  arrange(player_id) %>% 
+  left_join(df_adp_old, by = c("player_display_name", "season")) %>%   mutate(
+    adp = as.integer(str_extract(pos_rank_adp, "\\d+"))
+  ) %>%  
+  drop_na(adp) %>% 
+  gam(
+    sum_fpts ~ s(adp),
+    data = .,
+    method = "REML"
+  )
+
+market_curve_te_23 = 
+  df_fan_te_fin_all %>% 
+  filter(prior_rank <= 40 | prior_fpts_game >= 5) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_te_usage, by = c("team", "season")) %>% 
+  left_join(df_rz_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>%
+  filter(season < 2023) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  select(season, player_id, player_display_name, sum_fpts, prior_ays, prior_tar_share, prior_fpts_game, prior_qb_epa, prior_n_pass, prior_off_pass_epa, def_pass_epa_sos, prior_rz_eff, prior_rz_trips, prior_n_routes, prior_route_partic, prior_yprr, prior_rz_tar_share, player_age, draft_number, prior_te_use, prior_fpts_other, expect_tar_other, new_qb_new_team, prior_games_missed, games_missed_rate, prior_slot_rate, prior_ccr) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_ay = prior_ays * prior_n_pass,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_rz_opp = prior_rz_tar_share * prior_rz_trips
+  ) %>% 
+  select(-c(prior_games_missed, prior_rz_trips, prior_n_pass, prior_rz_eff, prior_fpts_other, prior_rz_tar_share, prior_n_routes, prior_route_partic, expect_ay, prior_tar_share, prior_qb_epa, prior_te_use, new_qb_new_team, expect_rz_opp, def_pass_epa_sos, expect_routes, prior_slot_rate, prior_ccr, expect_tar_other)) %>%
+  # select(-any_of(df_feature_svm %>% filter(delta_rmse < -0.06) %>% pull(var_svm))) %>%
+  drop_na() %>% 
+  arrange(player_id) %>% 
+  left_join(df_adp_old, by = c("player_display_name", "season")) %>%   mutate(
+    adp = as.integer(str_extract(pos_rank_adp, "\\d+"))
+  ) %>%  
+  drop_na(adp) %>% 
+  gam(
+    sum_fpts ~ s(adp),
+    data = .,
+    method = "REML"
+  )
+
+df_fpts_te_train_25 = 
+  df_fan_te_fin_all %>% 
+  filter(prior_rank <= 40 | prior_fpts_game >= 5) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_te_usage, by = c("team", "season")) %>% 
+  left_join(df_rz_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>%
+  filter(season < 2025) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  select(player_id, sum_fpts, prior_ays, prior_tar_share, prior_fpts_game, prior_qb_epa, prior_n_pass, prior_off_pass_epa, def_pass_epa_sos, prior_rz_eff, prior_rz_trips, prior_n_routes, prior_route_partic, prior_yprr, prior_rz_tar_share, player_age, draft_number, prior_te_use, prior_fpts_other, expect_tar_other, new_qb_new_team, prior_games_missed, games_missed_rate, prior_slot_rate, prior_ccr) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_ay = prior_ays * prior_n_pass,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_rz_opp = prior_rz_tar_share * prior_rz_trips
+  ) %>% 
+  select(-c(prior_games_missed, prior_rz_trips, prior_n_pass, prior_rz_eff, prior_fpts_other, prior_rz_tar_share, prior_n_routes, prior_route_partic, expect_ay, prior_tar_share, prior_qb_epa, prior_te_use, new_qb_new_team, expect_rz_opp, def_pass_epa_sos, expect_routes, prior_slot_rate, prior_ccr, expect_tar_other)) %>%
+  # select(-any_of(df_feature_svm %>% filter(delta_rmse < -0.06) %>% pull(var_svm))) %>%
+  drop_na() %>% 
+  arrange(player_id) %>% 
+  select(-player_id) %>% 
+  relocate(sum_fpts, .after = last_col())
+
+df_fpts_te_train_24 = 
+  df_fan_te_fin_all %>% 
+  filter(prior_rank <= 40 | prior_fpts_game >= 5) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_te_usage, by = c("team", "season")) %>% 
+  left_join(df_rz_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>%
+  filter(season < 2024) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  select(player_id, sum_fpts, prior_ays, prior_tar_share, prior_fpts_game, prior_qb_epa, prior_n_pass, prior_off_pass_epa, def_pass_epa_sos, prior_rz_eff, prior_rz_trips, prior_n_routes, prior_route_partic, prior_yprr, prior_rz_tar_share, player_age, draft_number, prior_te_use, prior_fpts_other, expect_tar_other, new_qb_new_team, prior_games_missed, games_missed_rate, prior_slot_rate, prior_ccr) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_ay = prior_ays * prior_n_pass,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_rz_opp = prior_rz_tar_share * prior_rz_trips
+  ) %>% 
+  select(-c(prior_games_missed, prior_rz_trips, prior_n_pass, prior_rz_eff, prior_fpts_other, prior_rz_tar_share, prior_n_routes, prior_route_partic, expect_ay, prior_tar_share, prior_qb_epa, prior_te_use, new_qb_new_team, expect_rz_opp, def_pass_epa_sos, expect_routes, prior_slot_rate, prior_ccr, expect_tar_other)) %>%
+  # select(-any_of(df_feature_svm %>% filter(delta_rmse < -0.06) %>% pull(var_svm))) %>%
+  drop_na() %>% 
+  arrange(player_id) %>% 
+  select(-player_id) %>% 
+  relocate(sum_fpts, .after = last_col())
+
+df_fpts_te_train_23 = 
+  df_fan_te_fin_all %>% 
+  filter(prior_rank <= 40 | prior_fpts_game >= 5) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_te_usage, by = c("team", "season")) %>% 
+  left_join(df_rz_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>%
+  filter(season < 2023) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  select(player_id, sum_fpts, prior_ays, prior_tar_share, prior_fpts_game, prior_qb_epa, prior_n_pass, prior_off_pass_epa, def_pass_epa_sos, prior_rz_eff, prior_rz_trips, prior_n_routes, prior_route_partic, prior_yprr, prior_rz_tar_share, player_age, draft_number, prior_te_use, prior_fpts_other, expect_tar_other, new_qb_new_team, prior_games_missed, games_missed_rate, prior_slot_rate, prior_ccr) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_ay = prior_ays * prior_n_pass,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_rz_opp = prior_rz_tar_share * prior_rz_trips
+  ) %>% 
+  select(-c(prior_games_missed, prior_rz_trips, prior_n_pass, prior_rz_eff, prior_fpts_other, prior_rz_tar_share, prior_n_routes, prior_route_partic, expect_ay, prior_tar_share, prior_qb_epa, prior_te_use, new_qb_new_team, expect_rz_opp, def_pass_epa_sos, expect_routes, prior_slot_rate, prior_ccr, expect_tar_other)) %>%
+  # select(-any_of(df_feature_svm %>% filter(delta_rmse < -0.06) %>% pull(var_svm))) %>%
+  drop_na() %>% 
+  arrange(player_id) %>% 
+  select(-player_id) %>% 
+  relocate(sum_fpts, .after = last_col())
+
+set.seed(37564)
+mod_boost_te_25 = train(sum_fpts ~ .,
+                  na.action = na.exclude, 
+                  data = df_fpts_te_train_25, 
+                  method = "gbm", 
+                  tuneGrid = mod_boost_te$bestTune, 
+                  trControl = ctrl,
+                  verbose = F)
+# ggplot(mod_boost_rb_25, highlight = T) + 
+#   ggtitle("Boost") +
+#   theme(plot.title = element_text(hjust = 0.5))
+mod_boost_te_25$bestTune
+min(mod_boost_te_25$results$RMSE)
+
+set.seed(37564)
+mod_boost_te_24 = train(sum_fpts ~ .,
+                  na.action = na.exclude, 
+                  data = df_fpts_te_train_24, 
+                  method = "gbm", 
+                  tuneGrid = mod_boost_te$bestTune, 
+                  trControl = ctrl,
+                  verbose = F)
+# ggplot(mod_boost_rb_25, highlight = T) + 
+#   ggtitle("Boost") +
+#   theme(plot.title = element_text(hjust = 0.5))
+mod_boost_te_24$bestTune
+min(mod_boost_te_24$results$RMSE)
+
+set.seed(37564)
+mod_boost_te_23 = train(sum_fpts ~ .,
+                  na.action = na.exclude, 
+                  data = df_fpts_te_train_23, 
+                  method = "gbm", 
+                  tuneGrid = mod_boost_te$bestTune, 
+                  trControl = ctrl,
+                  verbose = F)
+# ggplot(mod_boost_rb_25, highlight = T) + 
+#   ggtitle("Boost") +
+#   theme(plot.title = element_text(hjust = 0.5))
+mod_boost_te_23$bestTune
+min(mod_boost_te_23$results$RMSE)
+
+df_fpts_te_test_25 = 
+  df_fan_te_fin_all %>% 
+  filter(prior_rank <= 40 | prior_fpts_game >= 5) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_te_usage, by = c("team", "season")) %>% 
+  left_join(df_rz_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>%
+  filter(season == 2025) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  select(season, player_id, player_display_name, sum_fpts, prior_ays, prior_tar_share, prior_fpts_game, prior_qb_epa, prior_n_pass, prior_off_pass_epa, def_pass_epa_sos, prior_rz_eff, prior_rz_trips, prior_n_routes, prior_route_partic, prior_yprr, prior_rz_tar_share, player_age, draft_number, prior_te_use, prior_fpts_other, expect_tar_other, new_qb_new_team, prior_games_missed, games_missed_rate, prior_slot_rate, prior_ccr) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_ay = prior_ays * prior_n_pass,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_rz_opp = prior_rz_tar_share * prior_rz_trips
+  ) %>% 
+  select(-c(prior_games_missed, prior_rz_trips, prior_n_pass, prior_rz_eff, prior_fpts_other, prior_rz_tar_share, prior_n_routes, prior_route_partic, expect_ay, prior_tar_share, prior_qb_epa, prior_te_use, new_qb_new_team, expect_rz_opp, def_pass_epa_sos, expect_routes, prior_slot_rate, prior_ccr, expect_tar_other)) %>%
+  # select(-any_of(df_feature_svm %>% filter(delta_rmse < -0.06) %>% pull(var_svm))) %>%
+  drop_na() %>% 
+  arrange(player_id)
+
+df_fpts_te_test_24 = 
+  df_fan_te_fin_all %>% 
+  filter(prior_rank <= 40 | prior_fpts_game >= 5) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_te_usage, by = c("team", "season")) %>% 
+  left_join(df_rz_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>%
+  filter(season == 2024) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  select(season, player_id, player_display_name, sum_fpts, prior_ays, prior_tar_share, prior_fpts_game, prior_qb_epa, prior_n_pass, prior_off_pass_epa, def_pass_epa_sos, prior_rz_eff, prior_rz_trips, prior_n_routes, prior_route_partic, prior_yprr, prior_rz_tar_share, player_age, draft_number, prior_te_use, prior_fpts_other, expect_tar_other, new_qb_new_team, prior_games_missed, games_missed_rate, prior_slot_rate, prior_ccr) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_ay = prior_ays * prior_n_pass,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_rz_opp = prior_rz_tar_share * prior_rz_trips
+  ) %>% 
+  select(-c(prior_games_missed, prior_rz_trips, prior_n_pass, prior_rz_eff, prior_fpts_other, prior_rz_tar_share, prior_n_routes, prior_route_partic, expect_ay, prior_tar_share, prior_qb_epa, prior_te_use, new_qb_new_team, expect_rz_opp, def_pass_epa_sos, expect_routes, prior_slot_rate, prior_ccr, expect_tar_other)) %>%
+  # select(-any_of(df_feature_svm %>% filter(delta_rmse < -0.06) %>% pull(var_svm))) %>%
+  drop_na() %>% 
+  arrange(player_id)
+
+df_fpts_te_test_23 = 
+  df_fan_te_fin_all %>% 
+  filter(prior_rank <= 40 | prior_fpts_game >= 5) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_te_usage, by = c("team", "season")) %>% 
+  left_join(df_rz_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>%
+  filter(season == 2023) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  select(season, player_id, player_display_name, sum_fpts, prior_ays, prior_tar_share, prior_fpts_game, prior_qb_epa, prior_n_pass, prior_off_pass_epa, def_pass_epa_sos, prior_rz_eff, prior_rz_trips, prior_n_routes, prior_route_partic, prior_yprr, prior_rz_tar_share, player_age, draft_number, prior_te_use, prior_fpts_other, expect_tar_other, new_qb_new_team, prior_games_missed, games_missed_rate, prior_slot_rate, prior_ccr) %>% 
+  mutate(
+    expect_tar = prior_tar_share * prior_n_pass,
+    expect_ay = prior_ays * prior_n_pass,
+    expect_routes = prior_route_partic * prior_n_pass,
+    expect_rz_opp = prior_rz_tar_share * prior_rz_trips
+  ) %>% 
+  select(-c(prior_games_missed, prior_rz_trips, prior_n_pass, prior_rz_eff, prior_fpts_other, prior_rz_tar_share, prior_n_routes, prior_route_partic, expect_ay, prior_tar_share, prior_qb_epa, prior_te_use, new_qb_new_team, expect_rz_opp, def_pass_epa_sos, expect_routes, prior_slot_rate, prior_ccr, expect_tar_other)) %>%
+  # select(-any_of(df_feature_svm %>% filter(delta_rmse < -0.06) %>% pull(var_svm))) %>%
+  drop_na() %>% 
+  arrange(player_id)
+
+# view(df_fpts_te_test_25)
+
+mod_rank_val_te_25 = 
+  gam(
+    sum_fpts ~ s(rank_fin),
+    data = df_fpts_te_train_25 %>% mutate(rank_fin = rank(-sum_fpts)),
+    method = "REML"
+  )
+
+mod_rank_val_te_24 = 
+  gam(
+    sum_fpts ~ s(rank_fin),
+    data = df_fpts_te_train_24 %>% mutate(rank_fin = rank(-sum_fpts)),
+    method = "REML"
+  )
+
+mod_rank_val_te_23 = 
+  gam(
+    sum_fpts ~ s(rank_fin),
+    data = df_fpts_te_train_23 %>% mutate(rank_fin = rank(-sum_fpts)),
+    method = "REML"
+  )
+
+df_backtest_te_23_25 = 
+  df_fpts_te_test_25 %>% 
+  mutate(
+    pred_fpts = predict(mod_boost_te_25, newdata = .),
+    rank_mod = rank(-pred_fpts),
+    rank_fin = rank(-sum_fpts)
+  ) %>% 
+  left_join(
+    df_adp_old %>% 
+      mutate(adp = as.integer(str_extract(pos_rank_adp, "\\d+"))) %>% 
+      select(season, player_display_name, adp),
+    by = c("player_display_name", "season")
+  ) %>% 
+  mutate(
+    market_proj = 
+      predict(
+        market_curve_te_25,
+        newdata = .
+      ),
+    adp_value = 
+      predict(
+        mod_rank_val_te_25,
+        newdata = tibble(rank_fin = adp)
+      ),
+    model_value = 
+      predict(
+        mod_rank_val_te_25,
+        newdata = tibble(rank_fin = rank_mod)
+     )
+  ) %>% 
+  rbind(
+    df_fpts_te_test_24 %>% 
+      mutate(
+        pred_fpts = predict(mod_boost_te_24, newdata = .),
+        rank_mod = rank(-pred_fpts),
+        rank_fin = rank(-sum_fpts)
+      ) %>% 
+      left_join(
+        df_adp_old %>% 
+          mutate(adp = as.integer(str_extract(pos_rank_adp, "\\d+"))) %>% 
+          select(season, player_display_name, adp),
+        by = c("player_display_name", "season")
+      ) %>% 
+      mutate(
+        market_proj = 
+          predict(
+            market_curve_te_24,
+            newdata = .
+          ),
+        adp_value = 
+          predict(
+            mod_rank_val_te_24,
+            newdata = tibble(rank_fin = adp)
+          ),
+        model_value = 
+          predict(
+            mod_rank_val_te_24,
+            newdata = tibble(rank_fin = rank_mod)
+         )
+      )
+  ) %>% 
+  rbind(
+    df_fpts_te_test_23 %>% 
+      mutate(
+        pred_fpts = predict(mod_boost_te_23, newdata = .),
+        rank_mod = rank(-pred_fpts),
+        rank_fin = rank(-sum_fpts)
+      ) %>% 
+      left_join(
+        df_adp_old %>% 
+          mutate(adp = as.integer(str_extract(pos_rank_adp, "\\d+"))) %>% 
+          select(season, player_display_name, adp),
+        by = c("player_display_name", "season")
+      ) %>% 
+      mutate(
+        market_proj = 
+          predict(
+            market_curve_te_23,
+            newdata = .
+          ),
+        adp_value = 
+          predict(
+            mod_rank_val_te_23,
+            newdata = tibble(rank_fin = adp)
+          ),
+        model_value = 
+          predict(
+            mod_rank_val_te_23,
+            newdata = tibble(rank_fin = rank_mod)
+         )
+      )
+  ) %>% 
+  filter(adp <= 50) %>% 
+  mutate(
+    market_edge = pred_fpts - market_proj,
+    mod_market_edge = pred_fpts - market_proj,
+    actual_market_edge = sum_fpts - market_proj,
+    mod_over = ifelse(mod_market_edge > 0, 1, 0),
+    actual_over = ifelse(actual_market_edge > 0, 1, 0),
+    hit = 
+      case_when(
+        mod_over == actual_over ~ 1,
+        .default = 0
+      ),
+    # Strong conviction
+    strong_over = ifelse(mod_market_edge >= 0.5 * sd(mod_market_edge, na.rm = T), 1, 0), 
+    strong_under = ifelse(mod_market_edge <= -0.5 * sd(mod_market_edge, na.rm = T), 1, 0),
+    rank_diff_model = adp - rank_mod,
+    rank_diff_actual = adp - rank_fin,
+    actual_value = sum_fpts,
+    model_rank_change = adp - rank_mod,
+    actual_rank_change = adp - rank_fin,
+    model_value_change = model_value - adp_value,
+    actual_value_change = actual_value - adp_value,
+    market_edge_z = round(as.numeric(scale(market_edge)), 2)
+    # fin_market_edge = market_proj - sum_fpts,
+    # fin_market_edge_z = round(as.numeric(scale(fin_market_edge)), 2),
+    # fin_mod_edge = pred_fpts - sum_fpts,
+    # fin_mod_edge_z = round(as.numeric(scale(fin_mod_edge)), 2)
+  ) %>% 
+  # filter() %>% 
+  # mutate(
+  #   ind_mod_val_high = 
+  #     case_when(
+  #       market_edge_z >= 0.5 ~ 1,
+  #       .default = 0 
+  #     ),
+  #   ind_hit_high = 
+  #     case_when(
+  #       ind_mod_val_high == 1 & (abs(fin_mod_edge_z) < abs(fin_market_edge_z) | abs(fin_mod_edge) < abs(fin_market_edge)) ~ 1,
+  #       ind_mod_val_high == 1 ~ 0
+  #     ),
+  #   ind_mod_val_low = 
+  #     case_when(
+  #       market_edge_z <= -0.5 ~ 1,
+  #       .default = 0 
+  #     ),
+  #   ind_hit_low = 
+  #     case_when(
+  #       ind_mod_val_low == 1 & (abs(fin_mod_edge_z) < abs(fin_market_edge_z) | abs(fin_mod_edge) < abs(fin_market_edge)) ~ 1,
+  #       ind_mod_val_low == 1 ~ 0
+  #     )
+  # ) %>% 
+  # select(season, player_display_name, sum_fpts, pred_fpts, market_proj, rank_fin, rank_mod, adp, market_edge_z, fin_mod_edge_z, fin_market_edge_z, starts_with("ind_")) %>% 
+  # tbl_summary(
+  #   include = starts_with("ind_hit_")
+  # ) %>% 
+  # bold_labels() %>% 
+  select(season, player_id, player_display_name, sum_fpts:last_col()) %>% 
+  drop_na()
+
+view(df_backtest_te_23_25)
+
+saveRDS(df_backtest_te_23_25, str_c("data/fantasy_data/", "df_backtest_te_23_25.rds"))
+
+# df_backtest_te_results = 
+#   tibble(
+#     threshold = c(0, 5, 10, 15, 20, 25, 30)
+#   ) %>% 
+#   mutate(
+#     results = map(
+#       threshold,
+#       ~ df_backtest_te_23_25 %>% 
+#         filter(mod_market_edge >= .x) %>% 
+#         group_by(season) %>% 
+#         summarise(
+#           n = n(),
+#           hit_rate = mean(actual_market_edge > 0),
+#           avg_actual_edge = mean(actual_market_edge)
+#         )
+#     )
+#   ) %>% 
+#   unnest(results) %>% 
+#   arrange(season)
+# 
+# view(df_backtest_te_results)
+
+# tibble(
+#     threshold = c(0, 5, 10, 15, 20, 25, 30)
+#   ) %>% 
+#   mutate(
+#     results = map(
+#       threshold,
+#       ~ df_backtest_rb_23_25 %>% 
+#         filter(mod_market_edge >= .x) %>% 
+#         # group_by(season) %>% 
+#         summarise(
+#           n = n(),
+#           hit_rate = mean(actual_market_edge > 0),
+#           avg_actual_edge = mean(actual_market_edge)
+#         )
+#     )
+#   ) %>% 
+#   unnest(results)
+# 
+
+tibble(
+  threshold = c(0, 5, 10, 15, 20, 25, 30)
+) %>%
+  mutate(
+    results = map(
+      threshold,
+      ~ df_backtest_te_23_25 %>% 
+          filter(abs(mod_market_edge) >= .x) %>% 
+          summarise(
+            n = n(),
+            hit_rate = mean(
+              sign(mod_market_edge) == sign(actual_market_edge)
+            ),
+            avg_abs_actual_edge = mean(abs(actual_market_edge)),
+            model_mae = mean(abs(sum_fpts - pred_fpts)),
+            market_mae = mean(abs(sum_fpts - market_proj)),
+            mae_improvement = 1 - model_mae / market_mae
+          )
+    )
+  ) %>%
+  unnest(results)
+
+# df_backtest_wr_23_25 %>% 
+#   summarise(
+#     edge_cor = cor(
+#       mod_market_edge,
+#       actual_market_edge,
+#       use = "complete.obs"
+#     )
+#   )
+
+df_backtest_te_23_25 %>% 
+  mutate(
+    abs_edge = abs(mod_market_edge),
+    edge_bucket = 
+      fct_relevel(as.factor(
+        case_when(
+          abs_edge < 5 ~ "< 5",
+          abs_edge < 15 ~ "5 – 15",
+          abs_edge < 25 ~ "15 – 25",
+          abs_edge < 35 ~ "25 – 35",
+          TRUE ~ "35+"
+        )),
+      "< 5", "5 – 15"
+      )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    avg_abs_actual_edge = mean(abs(actual_market_edge)),
+    hit_rate = mean(
+      sign(mod_market_edge) == sign(actual_market_edge)
+    ),
+    .groups = "drop"
+  ) %>% 
+  view
+
+df_backtest_te_23_25 %>% 
+  filter(mod_market_edge >= 0) %>% 
+  mutate(
+    abs_edge = abs(mod_market_edge),
+    edge_bucket = 
+      fct_relevel(as.factor(
+        case_when(
+          abs_edge < 10 ~ "< 10",
+          abs_edge < 20 ~ "10 – 20",
+          abs_edge < 30 ~ "20 – 30",
+          abs_edge < 40 ~ "30 – 40",
+          TRUE ~ "40+"
+        )),
+      "< 10"
+      )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    avg_abs_actual_edge = mean(abs(actual_market_edge)),
+    hit_rate = mean(
+      sign(mod_market_edge) == sign(actual_market_edge)
+    ),
+    model_mae = mean(abs(sum_fpts - pred_fpts)),
+    market_mae = mean(abs(sum_fpts - market_proj)),
+    mae_improvement = 1 - model_mae / market_mae,
+    .groups = "drop"
+  ) %>% 
+  view
+
+df_backtest_te_23_25 %>% 
+  filter(mod_market_edge < 0) %>% 
+  mutate(
+    abs_edge = abs(mod_market_edge),
+    edge_bucket = 
+      fct_relevel(as.factor(
+        case_when(
+          abs_edge < 10 ~ "< 10",
+          abs_edge < 20 ~ "10 – 20",
+          abs_edge < 30 ~ "20 – 30",
+          abs_edge < 40 ~ "30 – 40",
+          TRUE ~ "40+"
+        )),
+      "< 10"
+      )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    avg_abs_actual_edge = mean(abs(actual_market_edge)),
+    hit_rate = mean(
+      sign(mod_market_edge) == sign(actual_market_edge)
+    ),
+    model_mae = mean(abs(sum_fpts - pred_fpts)),
+    market_mae = mean(abs(sum_fpts - market_proj)),
+    mae_improvement = 1 - model_mae / market_mae,
+    .groups = "drop"
+  ) %>% 
+  view
+
+df_backtest_te_23_25 %>% 
+  summarise(
+    market_cor = cor(market_proj, sum_fpts),
+    market_mae = mean(abs(market_proj - sum_fpts)),
+    market_bias = mean(market_proj - sum_fpts)
+  )
+
+df_backtest_te_23_25 %>% 
+  summarise(
+    model_cor = cor(pred_fpts, sum_fpts),
+    model_mae = mean(abs(pred_fpts - sum_fpts)),
+    model_bias = mean(pred_fpts - sum_fpts)
+  )
+
+mod_market <- lm(
+  sum_fpts ~ market_proj,
+  data = df_backtest_te_23_25
+)
+
+mod_market_plus <- lm(
+  sum_fpts ~ market_proj + pred_fpts,
+  data = df_backtest_te_23_25
+)
+
+anova(mod_market, mod_market_plus)
+
+summary(mod_market_plus)
+
+df_backtest_te_23_25 %>% 
+  summarise(
+    market_r2 = summary(mod_market)$r.squared,
+    market_plus_model_r2 = summary(mod_market_plus)$r.squared
+  )
+
+df_backtest_te_23_25 %>% 
+  mutate(
+    edge_bucket = case_when(
+      # abs(mod_market_edge) < 5 ~ "<5",
+      abs(mod_market_edge) < 10 ~ "<10",
+      abs(mod_market_edge) < 30 ~ "10–30",
+      TRUE ~ "30+"
+    )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    market_mae = mean(abs(sum_fpts - market_proj)),
+    model_mae = mean(abs(sum_fpts - pred_fpts)),
+    .groups = "drop"
+  )
+
+df_backtest_te_23_25 %>% 
+  mutate(
+    edge_bucket = case_when(
+      abs(mod_market_edge) < 10 ~ "<10",
+      abs(mod_market_edge) < 30 ~ "10–30",
+      TRUE ~ "30+"
+    )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  nest() %>% 
+  mutate(
+    market_r2 = map_dbl(
+      data,
+      ~ summary(
+        lm(sum_fpts ~ market_proj, data = .x)
+      )$r.squared
+    ),
+    market_plus_model_r2 = map_dbl(
+      data,
+      ~ summary(
+        lm(sum_fpts ~ market_proj + pred_fpts, data = .x)
+      )$r.squared
+    )
+  ) %>% 
+  select(edge_bucket, market_r2, market_plus_model_r2)
+
+# df_backtest_wr_23_25 %>% 
+#   filter(abs(mod_market_edge) >= 20) %>% 
+#   summarise(
+#     n = n(),
+#     hit_rate = mean(
+#       sign(mod_market_edge) == sign(actual_market_edge)
+#     ),
+#     avg_actual_edge = mean(actual_market_edge),
+#     median_actual_edge = median(actual_market_edge),
+#     model_mae = mean(abs(sum_fpts - pred_fpts)),
+#     market_mae = mean(abs(sum_fpts - market_proj))
+#   ) %>% 
+#   view
+# 
+# df_backtest_wr_23_25 %>% 
+#   filter(mod_market_edge >= 20) %>% 
+#   summarise(
+#     n = n(),
+#     hit_rate = mean(actual_market_edge > 0),
+#     avg_actual_edge = mean(actual_market_edge),
+#     median_actual_edge = median(actual_market_edge),
+#     model_mae = mean(abs(sum_fpts - pred_fpts)),
+#     market_mae = mean(abs(sum_fpts - market_proj))
+#   ) %>% 
+#   view
+# 
+# df_backtest_wr_23_25 %>% 
+#   filter(mod_market_edge <= -20) %>% 
+#   summarise(
+#     n = n(),
+#     hit_rate = mean(actual_market_edge < 0),
+#     avg_actual_edge = mean(actual_market_edge),
+#     median_actual_edge = median(actual_market_edge),
+#     model_mae = mean(abs(sum_fpts - pred_fpts)),
+#     market_mae = mean(abs(sum_fpts - market_proj))
+#   ) %>% 
+#   view
+# 
+# df_backtest_wr_23_25 %>% 
+#   filter(mod_market_edge > 0) %>% 
+#   summarise(
+#     edge_cor = cor(
+#       mod_market_edge,
+#       actual_market_edge
+#     )
+#   )
+# 
+# df_backtest_wr_23_25 %>% 
+#   filter(mod_market_edge < 0) %>% 
+#   summarise(
+#     edge_cor = cor(
+#       mod_market_edge,
+#       actual_market_edge
+#     )
+#   )
+
+ggplot(
+  df_backtest_te_23_25,
+  aes(
+    x = mod_market_edge,
+    y = actual_market_edge
+  )
+) +
+  geom_hline(
+    yintercept = 0,
+    linetype = "dashed"
+  ) +
+  geom_vline(
+    xintercept = 0,
+    linetype = "dashed"
+  ) +
+  geom_point(
+    alpha = 0.4
+  ) +
+  geom_smooth(
+    method = "gam",
+    formula = y ~ s(x),
+    se = TRUE
+  ) +
+  labs(
+    x = "Model edge vs. ADP",
+    y = "Actual edge vs. ADP",
+    title = "Fantasy DNA Model vs. ADP",
+    subtitle = "2023–2025 out-of-sample WR predictions"
+  ) +
+  theme_minimal()
+
+# df_backtest_wr_23_25 %>% 
+#   filter(mod_market_edge >= 20) %>% 
+#   lm(
+#     actual_market_edge ~ mod_market_edge,
+#     data = .
+# ) %>% 
+#   broom::tidy()
+# 
+# df_backtest_wr_23_25 %>% 
+#   filter(mod_market_edge <= -20) %>% 
+#   lm(
+#     actual_market_edge ~ mod_market_edge,
+#     data = .
+# ) %>% 
+#   broom::tidy()
+
+# df_backtest_wr_23_25 %>% 
+#   mutate(
+#     pred_rank_fpts = predict(rank_value_model, newdata = .)
+#   ) %>% 
+#   view
+
+# rank_value = 
+#   df_backtest_wr_23_25 %>% 
+#   group_by(rank_fin) %>% 
+#   summarise(
+#     avg_fpts = mean(sum_fpts),
+#     .groups = "drop"
+#   )
+
+# df_backtest_wr_23_25 %>% 
+#   summarise(
+#     n = n(),
+#     hit_rate = mean(
+#       sign(model_value_change) == sign(actual_value_change)
+#     ),
+#     value_cor = cor(
+#       model_value_change,
+#       actual_value_change,
+#       use = "complete.obs"
+#     )
+#   )
+# 
+# df_backtest_wr_23_25 %>% 
+#   mutate(
+#     value_bucket = case_when(
+#       abs(model_value_change) < 10 ~ "<10 FPTS",
+#       abs(model_value_change) < 20 ~ "10–20 FPTS",
+#       abs(model_value_change) < 30 ~ "20–30 FPTS",
+#       TRUE ~ "30+ FPTS"
+#     )
+#   ) %>% 
+#   group_by(value_bucket) %>% 
+#   summarise(
+#     n = n(),
+#     avg_pred_value = mean(model_value_change),
+#     avg_actual_value = mean(actual_value_change),
+#     hit_rate = mean(
+#       sign(model_value_change) == sign(actual_value_change)
+#     ),
+#     .groups = "drop"
+#   )
+
+df_backtest_te_23_25 %>% 
+  summarise(
+    n = n(),
+    hit_rate = mean(
+      sign(model_rank_change) == sign(actual_rank_change)
+    ),
+    rank_cor = cor(
+      model_rank_change,
+      actual_rank_change,
+      use = "complete.obs"
+    ),
+    rank_mae = mean(
+      abs(model_rank_change - actual_rank_change)
+    )
+  )
+
+df_backtest_te_23_25 %>% 
+  summarise(
+    model_mae = mean(abs(model_rank_change - actual_rank_change)),
+    market_mae = mean(abs(actual_rank_change)),
+    improvement = 1 - model_mae / market_mae
+  )
+
+df_backtest_te_23_25 %>% 
+  mutate(
+    abs_edge = abs(mod_market_edge),
+    edge_bucket = 
+      fct_relevel(as.factor(
+        case_when(
+          abs_edge < 10 ~ "< 10",
+          abs_edge < 30 ~ "10 – 30",
+          TRUE ~ "30+"
+        )),
+      "< 10"
+      )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    model_mae = mean(
+      abs(model_rank_change - actual_rank_change)
+    ),
+    market_mae = mean(
+      abs(actual_rank_change)
+    ),
+    improvement = 1 - model_mae / market_mae,
+    hit_rate = mean(
+      sign(model_rank_change) == sign(actual_rank_change)
+    ),
+    rank_cor = cor(
+      model_rank_change,
+      actual_rank_change,
+      use = "complete.obs"
+    ),
+    .groups = "drop"
+  )
+
+df_backtest_te_23_25 %>% 
+  filter(mod_market_edge >= 0) %>% 
+  mutate(
+    abs_edge = abs(mod_market_edge),
+    edge_bucket = 
+      fct_relevel(as.factor(
+        case_when(
+          abs_edge < 10 ~ "< 10",
+          abs_edge < 30 ~ "10 – 30",
+          TRUE ~ "30+"
+        )),
+      "< 10"
+      )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    model_mae = mean(
+      abs(model_rank_change - actual_rank_change)
+    ),
+    market_mae = mean(
+      abs(actual_rank_change)
+    ),
+    improvement = 1 - model_mae / market_mae,
+    hit_rate = mean(
+      sign(model_rank_change) == sign(actual_rank_change)
+    ),
+    rank_cor = cor(
+      model_rank_change,
+      actual_rank_change,
+      use = "complete.obs"
+    ),
+    .groups = "drop"
+  )
+
+df_backtest_te_23_25 %>% 
+  filter(mod_market_edge < 0) %>% 
+  mutate(
+    abs_edge = abs(mod_market_edge),
+    edge_bucket = 
+      fct_relevel(as.factor(
+        case_when(
+          abs_edge < 10 ~ "< 10",
+          abs_edge < 30 ~ "10 – 30",
+          TRUE ~ "30+"
+        )),
+      "< 10"
+      )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    model_mae = mean(
+      abs(model_rank_change - actual_rank_change)
+    ),
+    market_mae = mean(
+      abs(actual_rank_change)
+    ),
+    improvement = 1 - model_mae / market_mae,
+    hit_rate = mean(
+      sign(model_rank_change) == sign(actual_rank_change)
+    ),
+    rank_cor = cor(
+      model_rank_change,
+      actual_rank_change,
+      use = "complete.obs"
+    ),
+    .groups = "drop"
+  )
+
+# df_backtest_te_23_25 %>% 
+#   filter(
+#     mod_market_edge > 0
+#   ) %>% 
+#   group_by(season) %>% 
+#   summarise(
+#     n = n(),
+#     model_mae = mean(abs(model_rank_change - actual_rank_change)),
+#     market_mae = mean(abs(actual_rank_change)),
+#     improvement = 1 - model_mae / market_mae,
+#     hit_rate = mean(
+#       sign(model_rank_change) == sign(actual_rank_change)
+#     ),
+#     .groups = "drop"
+#   )
+
+# df_backtest_wr_23_25 %>% 
+#   ggplot(aes(x = mod_market_edge, y = actual_market_edge, color = factor(season))) +
+#   geom_hline(
+#     yintercept = 0,
+#     linetype = "dashed"
+#   ) +
+#   geom_vline(
+#     xintercept = 0,
+#     linetype = "dashed"
+#   ) +
+#   geom_point(
+#     alpha = 0.5
+#   ) +
+#   geom_smooth(
+#     method = "loess",
+#     se = TRUE
+#   ) +
+#   labs(
+#     x = "Predicted edge vs. ADP",
+#     y = "Actual edge vs. ADP",
+#     title = "WR Model Edge vs. Realized Edge",
+#     subtitle = "2023–2025 out-of-sample predictions"
+#   ) +
+#   theme_minimal()
+
+df_te_hit_miss_25 =
+  df_backtest_te_23_25 %>% 
+  filter(season == 2025) %>% 
+  mutate(
+    model_edge = pred_fpts - market_proj,
+    actual_edge = sum_fpts - market_proj,
+    hit = ifelse(sign(model_edge) == sign(actual_edge), 1, 0),
+    model_edge_z = as.numeric(scale(model_edge)),
+    actual_edge_z = as.numeric(scale(actual_edge)),
+    rank_edge = rank_mod - adp,
+    rank_fin_edge = rank_fin - adp,
+    pred_fpts = round(pred_fpts, 2),
+    market_proj = round(market_proj, 2),
+    ind_mod_val_high =
+      case_when(
+        market_edge_z > 0 & rank_edge < 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_high =
+      case_when(
+        ind_mod_val_high == 1 & (model_edge_z < actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z > 0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_high == 1 ~ 0
+      ),
+    ind_mod_val_low =
+      case_when(
+        market_edge_z < 0 & rank_edge > 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_low =
+      case_when(
+        ind_mod_val_low == 1 & (model_edge_z > actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z < -0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_low == 1 ~ 0
+      )
+  )
+
+df_te_hit_miss_25 %>%
+  filter(ind_hit_high == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "TE Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Hits on Undervalued PLayers**")
+
+df_te_hit_miss_25 %>%
+  filter(ind_hit_low == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>% 
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "TE Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Hits on Overvalued PLayers**")
+
+df_te_hit_miss_25 %>%
+  filter(ind_hit_high == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "TE Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Misses on Undervalued Players**")
+
+df_te_hit_miss_25 %>%
+  filter(ind_hit_low == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "TE Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Misses on Overvalued Players**")
+
+df_te_hit_miss_24 =
+  df_backtest_te_23_25 %>% 
+  filter(season == 2024) %>% 
+  mutate(
+    model_edge = pred_fpts - market_proj,
+    actual_edge = sum_fpts - market_proj,
+    hit = ifelse(sign(model_edge) == sign(actual_edge), 1, 0),
+    model_edge_z = as.numeric(scale(model_edge)),
+    actual_edge_z = as.numeric(scale(actual_edge)),
+    rank_edge = rank_mod - adp,
+    rank_fin_edge = rank_fin - adp,
+    pred_fpts = round(pred_fpts, 2),
+    market_proj = round(market_proj, 2),
+    ind_mod_val_high =
+      case_when(
+        market_edge_z > 0 & rank_edge < 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_high =
+      case_when(
+        ind_mod_val_high == 1 & (model_edge_z < actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z > 0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_high == 1 ~ 0
+      ),
+    ind_mod_val_low =
+      case_when(
+        market_edge_z < 0 & rank_edge > 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_low =
+      case_when(
+        ind_mod_val_low == 1 & (model_edge_z > actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z < -0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_low == 1 ~ 0
+      )
+  )
+
+df_te_hit_miss_24 %>%
+  filter(ind_hit_high == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "TE Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Hits on Undervalued PLayers**")
+
+df_te_hit_miss_24 %>%
+  filter(ind_hit_low == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>% 
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "TE Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Hits on Overvalued PLayers**")
+
+df_te_hit_miss_24 %>%
+  filter(ind_hit_high == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "TE Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Misses on Undervalued Players**")
+
+df_te_hit_miss_24 %>%
+  filter(ind_hit_low == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "TE Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Misses on Overvalued Players**")
 ```
 
 ## QB
@@ -27647,6 +31812,68 @@ df_resid_qb_train_rook %>%
 ### Run model on test data
 
 ```{r pred test}
+df_mod_qb_rush = 
+  df_fan_qb_all %>% 
+  select(season, week, player_id, player_display_name, rushing_yards, rushing_tds) %>% 
+  left_join(
+    df_roster_qb_all %>% 
+      mutate(
+        player_age = as.double(as.Date(str_c(as.character(season), "-09-01")) - as.Date(birth_date)) / 365.25,
+      team = 
+        case_when(
+          team == "SD" ~ "LAC",
+          team == "SL" ~ "LA",
+          team == "OAK" ~ "LV",
+          .default = team
+        )
+      ) %>% 
+      select(season, player_id, team, player_age),
+    by = c("season", "player_id")
+  ) %>% 
+  group_by(player_id, season) %>% 
+  mutate(
+    sum_rush_yds = sum(rushing_yards, na.rm = T),
+    sum_rush_td = sum(rushing_tds, na.rm = T),
+    games_played = n()
+  ) %>% 
+  distinct(player_display_name, player_id, season, player_age, games_played, sum_rush_yds, sum_rush_td) %>% 
+  ungroup() %>% 
+  filter(games_played >= 10) %>% 
+  arrange(player_id, season) %>% 
+  group_by(player_id) %>% 
+  mutate(
+    prior_rush_yds = 
+      case_when(
+        row_number() == 2 ~ lag(replace_na(sum_rush_yds, 0)),
+        row_number() == 3 ~ 0.65 * lag(replace_na(sum_rush_yds, 0)) + 0.35 * lag(lag(replace_na(sum_rush_yds, 0))),
+        row_number() > 3 ~ 0.6 * lag(replace_na(sum_rush_yds, 0)) + 0.3 * lag(lag(replace_na(sum_rush_yds, 0))) + 0.1 * lag(lag(lag(replace_na(sum_rush_yds, 0)))),
+        .default = NA
+      ),
+    prior_rush_td = 
+      case_when(
+        row_number() == 2 ~ lag(replace_na(sum_rush_td, 0)),
+        row_number() == 3 ~ 0.65 * lag(replace_na(sum_rush_td, 0)) + 0.35 * lag(lag(replace_na(sum_rush_td, 0))),
+        row_number() > 3 ~ 0.6 * lag(replace_na(sum_rush_td, 0)) + 0.3 * lag(lag(replace_na(sum_rush_td, 0))) + 0.1 * lag(lag(lag(replace_na(sum_rush_td, 0)))),
+        .default = NA
+      )
+  )
+
+mod_qb_rush_yds = 
+  df_mod_qb_rush %>% 
+  gam(
+    sum_rush_yds ~ s(prior_rush_yds) + s(player_age),
+    data = .,
+    method = "REML"
+  )
+
+mod_qb_rush_td = 
+  df_mod_qb_rush %>% 
+  gam(
+    sum_rush_td ~ s(prior_rush_td) + s(player_age),
+    data = .,
+    method = "REML"
+  )
+
 df_fpts_qb_test_pre =
   df_roster_qb_all %>% 
   filter(season %in% c(2025, 2026)) %>% 
@@ -27754,11 +31981,24 @@ df_fpts_qb_test =
   filter(prior_rank <= 35 | prior_fpts_game >= 10) %>%
   select(player_id, player_display_name, team, prior_fpts_game, prior_adot, prior_qb_epa, draft_number, prior_fpts_other, qb_new_team, games_missed_rate, expect_rush, ol_grade_pass_adj, player_age, prior_rush_yds, prior_rush_td) %>% 
   # select(-c(prior_qb_epa)) %>% 
-  drop_na()
+  drop_na() %>% 
+  left_join(
+    df_injuries %>% 
+      filter(pos == "QB") %>% 
+      select(player_display_name, proj_games_miss),
+    by = "player_display_name"
+  )
 
 saveRDS(df_fpts_qb_test, str_c("data/fantasy_data/", "df_fpts_qb_test.rds"))
 
 # view(df_fpts_qb_test)
+
+# df_injuries %>%
+#   left_join(
+#     df_fpts_qb_test %>% select(player_id, player_display_name),
+#     by = "player_display_name"
+#   ) %>%
+#   view
 
 df_fpts_qb_rookie_test =
   df_roster_qb_all %>% 
@@ -27810,7 +32050,13 @@ df_fpts_qb_rookie_test =
   left_join(df_off_epa, by = c("team", "season")) %>% 
   left_join(df_def_epa_sos, by = c("team", "season")) %>% 
   select(full_name, team, prior_fpts_other, draft_number, def_pass_epa_sos, ol_grade_pass_adj) %>% 
-  drop_na()
+  drop_na() %>% 
+  left_join(
+    df_injuries %>% 
+      filter(pos == "QB") %>% 
+      select(full_name, proj_games_miss),
+    by = "full_name"
+  )
 
 saveRDS(df_fpts_qb_rookie_test, str_c("data/fantasy_data/", "df_fpts_qb_rookie_test.rds"))
 
@@ -27821,6 +32067,11 @@ df_fpts_qb_sim =
   df_fpts_qb_test %>% 
   mutate(
     pred_fpts_svm = predict(mod_svm_qb, newdata = df_fpts_qb_test),
+    pred_fpts_svm = 
+      case_when(
+        !is.na(proj_games_miss) ~ pred_fpts_svm * (17 - proj_games_miss) / 17,
+        .default = pred_fpts_svm
+      ),
     pred_resid_knn = predict(mod_knn_qb_resid, newdata = df_fpts_qb_test),
     proj_rush_yds = predict(mod_qb_rush_yds, newdata = .),
     proj_rush_td = predict(mod_qb_rush_td, newdata = .),
@@ -27872,6 +32123,11 @@ df_fpts_qb_rook_sim =
   rename(player_display_name = full_name) %>% 
   mutate(
     pred_fpts_boost = predict(mod_boost_qb_rook, newdata = df_fpts_qb_rookie_test),
+    pred_fpts_boost = 
+      case_when(
+        !is.na(proj_games_miss) ~ pred_fpts_boost * (17 - proj_games_miss) / 17,
+        .default = pred_fpts_boost
+      ),
     pred_resid_knn = predict(mod_knn_qb_rook_resid, newdata = df_fpts_qb_rookie_test)
   ) %>% 
   group_by(player_display_name) %>% 
@@ -28111,6 +32367,83 @@ df_qb_project_market_fin =
   left_join(df_adp_beat_qb, by = "player_display_name")
 
 # view(df_qb_project_market_fin)
+
+qb_markets <- tribble(
+  ~ market_name, ~ market_id,
+  "Passing Yards", 300,
+  "Passing TD", 304,
+  "Rushing Yards", 301,
+  "Rushing TD", 305
+)
+
+qb_odds <- qb_markets %>%
+  mutate(
+    raw = map(
+      market_id,
+      ~ get_bp_market_raw(
+          market_id = .x,
+          season = 2026,
+          limit = 5
+        )
+    ),
+    
+    odds = map2(
+      raw,
+      market_name,
+      ~ extract_bp_odds(
+          bp_props = .x,
+          market_name = .y
+        )
+    )
+  ) %>%
+  select(
+    market_name,
+    odds
+  ) %>%
+  unnest(odds)
+
+df_qb_vegas =
+  qb_odds %>% 
+  # filter(best == TRUE) %>% 
+  filter(is.na(id.x)) %>% 
+  group_by(
+    player_id,
+    name,
+    market#,
+    # selection
+  ) %>%
+  summarise(
+    vegas_line = median(
+      line,
+      na.rm = TRUE
+    ),
+    # opening_line = median(
+    #   opening_line,
+    #   na.rm = TRUE
+    # ),
+    # n_books = n_distinct(
+    #   sportsbook_id
+    # ),
+    .groups = "drop"
+  ) %>% 
+  pivot_wider(
+    names_from = market,
+    values_from = vegas_line
+  ) %>% 
+  janitor::clean_names() %>% 
+  drop_na(passing_yards, passing_td) %>% 
+  rename(
+    player_display_name = name,
+    vegas_id = player_id
+  ) %>% 
+  mutate(
+    player_display_name = 
+      case_match(
+        player_display_name, 
+        "Patrick Mahomes II" ~ "Patrick Mahomes",
+        .default = player_display_name
+      )
+  )
 
 df_qb_fantasy_table =
   df_qb_project_market_fin %>% 
@@ -29152,6 +33485,1188 @@ fpts_qb_2025_fin_rank_export =
 write.csv(fpts_qb_2025_fin_rank_export, glue::glue("fpts_qb_2025_fin_rank_{format(Sys.Date(), '%Y_%m_%d')}.csv"), row.names = F)
 ```
 
+
+### Backtest
+
+```{r}
+market_curve_qb_25 = 
+  df_fan_qb_fin_all %>% 
+  filter(prior_rank <= 35 | prior_fpts_game >= 10) %>% 
+  # left_join(fin_df, by = c("team", "season")) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_gl_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>% 
+  mutate(
+    expect_rush = prior_rush_share * prior_n_rush_team,
+    expect_gl_opp = prior_gl_att_share * prior_gl_trips
+  ) %>% 
+  filter(season < 2025) %>% 
+  select(season, player_display_name, player_id, sum_fpts, prior_qb_epa, prior_n_pass, prior_n_rush, prior_fpts_game, prior_cpoe, prior_adot, prior_off_pass_epa, player_age, draft_number, prior_fpts_other, qb_new_team, games_missed_rate, expect_gl_opp, expect_rush, ol_grade_pass_adj) %>% 
+  select(-c(prior_n_pass, prior_n_rush, prior_cpoe, expect_gl_opp, player_age, prior_off_pass_epa)) %>%
+  drop_na() %>% 
+  left_join(df_adp_old, by = c("player_display_name", "season")) %>%   mutate(
+    adp = as.integer(str_extract(pos_rank_adp, "\\d+"))
+  ) %>%  
+  drop_na(adp) %>% 
+  gam(
+    sum_fpts ~ s(adp),
+    data = .,
+    method = "REML"
+  )
+
+market_curve_qb_24 = 
+  df_fan_qb_fin_all %>% 
+  filter(prior_rank <= 35 | prior_fpts_game >= 10) %>% 
+  # left_join(fin_df, by = c("team", "season")) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_gl_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>% 
+  mutate(
+    expect_rush = prior_rush_share * prior_n_rush_team,
+    expect_gl_opp = prior_gl_att_share * prior_gl_trips
+  ) %>% 
+  filter(season < 2024) %>% 
+  select(season, player_display_name, player_id, sum_fpts, prior_qb_epa, prior_n_pass, prior_n_rush, prior_fpts_game, prior_cpoe, prior_adot, prior_off_pass_epa, player_age, draft_number, prior_fpts_other, qb_new_team, games_missed_rate, expect_gl_opp, expect_rush, ol_grade_pass_adj) %>% 
+  select(-c(prior_n_pass, prior_n_rush, prior_cpoe, expect_gl_opp, player_age, prior_off_pass_epa)) %>%
+  drop_na() %>% 
+  left_join(df_adp_old, by = c("player_display_name", "season")) %>%   mutate(
+    adp = as.integer(str_extract(pos_rank_adp, "\\d+"))
+  ) %>%  
+  drop_na(adp) %>% 
+  gam(
+    sum_fpts ~ s(adp),
+    data = .,
+    method = "REML"
+  )
+
+market_curve_qb_23 = 
+  df_fan_qb_fin_all %>% 
+  filter(prior_rank <= 35 | prior_fpts_game >= 10) %>% 
+  # left_join(fin_df, by = c("team", "season")) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_gl_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>% 
+  mutate(
+    expect_rush = prior_rush_share * prior_n_rush_team,
+    expect_gl_opp = prior_gl_att_share * prior_gl_trips
+  ) %>% 
+  filter(season < 2023) %>% 
+  select(season, player_display_name, player_id, sum_fpts, prior_qb_epa, prior_n_pass, prior_n_rush, prior_fpts_game, prior_cpoe, prior_adot, prior_off_pass_epa, player_age, draft_number, prior_fpts_other, qb_new_team, games_missed_rate, expect_gl_opp, expect_rush, ol_grade_pass_adj) %>% 
+  select(-c(prior_n_pass, prior_n_rush, prior_cpoe, expect_gl_opp, player_age, prior_off_pass_epa)) %>%
+  drop_na() %>% 
+  left_join(df_adp_old, by = c("player_display_name", "season")) %>%   mutate(
+    adp = as.integer(str_extract(pos_rank_adp, "\\d+"))
+  ) %>%  
+  drop_na(adp) %>% 
+  gam(
+    sum_fpts ~ s(adp),
+    data = .,
+    method = "REML"
+  )
+
+df_fpts_qb_train_25 = 
+  df_fan_qb_fin_all %>% 
+  filter(prior_rank <= 35 | prior_fpts_game >= 10) %>% 
+  # left_join(fin_df, by = c("team", "season")) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_gl_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>% 
+  mutate(
+    expect_rush = prior_rush_share * prior_n_rush_team,
+    expect_gl_opp = prior_gl_att_share * prior_gl_trips
+  ) %>% 
+  filter(season < 2025) %>% 
+  select(player_id, sum_fpts, prior_qb_epa, prior_n_pass, prior_n_rush, prior_fpts_game, prior_cpoe, prior_adot, prior_off_pass_epa, player_age, draft_number, prior_fpts_other, qb_new_team, games_missed_rate, expect_gl_opp, expect_rush, ol_grade_pass_adj) %>% 
+  select(-c(prior_n_pass, prior_n_rush, prior_cpoe, expect_gl_opp, player_age, prior_off_pass_epa)) %>%
+  drop_na() %>% 
+  arrange(player_id) %>% 
+  select(-player_id) %>% 
+  relocate(sum_fpts, .after = last_col())
+
+df_fpts_qb_train_24 = 
+  df_fan_qb_fin_all %>% 
+  filter(prior_rank <= 35 | prior_fpts_game >= 10) %>% 
+  # left_join(fin_df, by = c("team", "season")) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_gl_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>% 
+  mutate(
+    expect_rush = prior_rush_share * prior_n_rush_team,
+    expect_gl_opp = prior_gl_att_share * prior_gl_trips
+  ) %>% 
+  filter(season < 2024) %>% 
+  select(player_id, sum_fpts, prior_qb_epa, prior_n_pass, prior_n_rush, prior_fpts_game, prior_cpoe, prior_adot, prior_off_pass_epa, player_age, draft_number, prior_fpts_other, qb_new_team, games_missed_rate, expect_gl_opp, expect_rush, ol_grade_pass_adj) %>% 
+  select(-c(prior_n_pass, prior_n_rush, prior_cpoe, expect_gl_opp, player_age, prior_off_pass_epa)) %>%
+  drop_na() %>% 
+  arrange(player_id) %>% 
+  select(-player_id) %>% 
+  relocate(sum_fpts, .after = last_col())
+
+df_fpts_qb_train_23 = 
+  df_fan_qb_fin_all %>% 
+  filter(prior_rank <= 35 | prior_fpts_game >= 10) %>% 
+  # left_join(fin_df, by = c("team", "season")) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_gl_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>% 
+  mutate(
+    expect_rush = prior_rush_share * prior_n_rush_team,
+    expect_gl_opp = prior_gl_att_share * prior_gl_trips
+  ) %>% 
+  filter(season < 2023) %>% 
+  select(player_id, sum_fpts, prior_qb_epa, prior_n_pass, prior_n_rush, prior_fpts_game, prior_cpoe, prior_adot, prior_off_pass_epa, player_age, draft_number, prior_fpts_other, qb_new_team, games_missed_rate, expect_gl_opp, expect_rush, ol_grade_pass_adj) %>% 
+  select(-c(prior_n_pass, prior_n_rush, prior_cpoe, expect_gl_opp, player_age, prior_off_pass_epa)) %>%
+  drop_na() %>% 
+  arrange(player_id) %>% 
+  select(-player_id) %>% 
+  relocate(sum_fpts, .after = last_col())
+
+set.seed(37564)
+mod_svm_qb_25 = train(sum_fpts ~ .,
+                na.action = na.exclude, 
+                data = df_fpts_qb_train_25,
+                preProcess = c("scale", "center"),
+                method = "svmRadialSigma",
+                tuneGrid = mod_svm_qb$bestTune,
+                trControl = ctrl)
+# ggplot(mod_svm_wr_25, highlight = T) + 
+#   ggtitle("SVM Radial") +
+#   theme(plot.title = element_text(hjust = 0.5))
+mod_svm_qb_25$bestTune
+min(mod_svm_qb_25$results$RMSE)
+
+set.seed(37564)
+mod_svm_qb_24 = train(sum_fpts ~ .,
+                na.action = na.exclude, 
+                data = df_fpts_qb_train_24,
+                preProcess = c("scale", "center"),
+                method = "svmRadialSigma",
+                tuneGrid = mod_svm_qb$bestTune,
+                trControl = ctrl)
+# ggplot(mod_svm_wr_25, highlight = T) + 
+#   ggtitle("SVM Radial") +
+#   theme(plot.title = element_text(hjust = 0.5))
+mod_svm_qb_24$bestTune
+min(mod_svm_qb_24$results$RMSE)
+
+set.seed(37564)
+mod_svm_qb_23 = train(sum_fpts ~ .,
+                na.action = na.exclude, 
+                data = df_fpts_qb_train_23,
+                preProcess = c("scale", "center"),
+                method = "svmRadialSigma",
+                tuneGrid = mod_svm_qb$bestTune,
+                trControl = ctrl)
+# ggplot(mod_svm_wr_25, highlight = T) + 
+#   ggtitle("SVM Radial") +
+#   theme(plot.title = element_text(hjust = 0.5))
+mod_svm_qb_23$bestTune
+min(mod_svm_qb_23$results$RMSE)
+
+df_fpts_qb_test_25 = 
+  df_fan_qb_fin_all %>% 
+  filter(prior_rank <= 35 | prior_fpts_game >= 10) %>% 
+  # left_join(fin_df, by = c("team", "season")) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_gl_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>% 
+  mutate(
+    expect_rush = prior_rush_share * prior_n_rush_team,
+    expect_gl_opp = prior_gl_att_share * prior_gl_trips
+  ) %>% 
+  filter(season == 2025) %>% 
+  select(season, player_display_name, player_id, sum_fpts, prior_qb_epa, prior_n_pass, prior_n_rush, prior_fpts_game, prior_cpoe, prior_adot, prior_off_pass_epa, player_age, draft_number, prior_fpts_other, qb_new_team, games_missed_rate, expect_gl_opp, expect_rush, ol_grade_pass_adj) %>% 
+  select(-c(prior_n_pass, prior_n_rush, prior_cpoe, expect_gl_opp, player_age, prior_off_pass_epa)) %>%
+  drop_na()
+
+df_fpts_qb_test_24 = 
+  df_fan_qb_fin_all %>% 
+  filter(prior_rank <= 35 | prior_fpts_game >= 10) %>% 
+  # left_join(fin_df, by = c("team", "season")) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_gl_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>% 
+  mutate(
+    expect_rush = prior_rush_share * prior_n_rush_team,
+    expect_gl_opp = prior_gl_att_share * prior_gl_trips
+  ) %>% 
+  filter(season == 2024) %>% 
+  select(season, player_display_name, player_id, sum_fpts, prior_qb_epa, prior_n_pass, prior_n_rush, prior_fpts_game, prior_cpoe, prior_adot, prior_off_pass_epa, player_age, draft_number, prior_fpts_other, qb_new_team, games_missed_rate, expect_gl_opp, expect_rush, ol_grade_pass_adj) %>% 
+  select(-c(prior_n_pass, prior_n_rush, prior_cpoe, expect_gl_opp, player_age, prior_off_pass_epa)) %>%
+  drop_na()
+
+df_fpts_qb_test_23 = 
+  df_fan_qb_fin_all %>% 
+  filter(prior_rank <= 35 | prior_fpts_game >= 10) %>% 
+  # left_join(fin_df, by = c("team", "season")) %>% 
+  # left_join(coach_df, by = c("team", "season")) %>% 
+  # left_join(mod_df, by = c("team", "season")) %>% 
+  left_join(df_off_epa, by = c("team", "season")) %>% 
+  left_join(df_gl_eff, by = c("team", "season")) %>% 
+  left_join(df_def_epa_sos, by = c("team", "season")) %>% 
+  left_join(df_ol_cont_team, by = c("team", "season")) %>% 
+  mutate(
+    expect_rush = prior_rush_share * prior_n_rush_team,
+    expect_gl_opp = prior_gl_att_share * prior_gl_trips
+  ) %>% 
+  filter(season == 2023) %>% 
+  select(season, player_display_name, player_id, sum_fpts, prior_qb_epa, prior_n_pass, prior_n_rush, prior_fpts_game, prior_cpoe, prior_adot, prior_off_pass_epa, player_age, draft_number, prior_fpts_other, qb_new_team, games_missed_rate, expect_gl_opp, expect_rush, ol_grade_pass_adj) %>% 
+  select(-c(prior_n_pass, prior_n_rush, prior_cpoe, expect_gl_opp, player_age, prior_off_pass_epa)) %>%
+  drop_na()
+
+mod_rank_val_qb_25 = 
+  gam(
+    sum_fpts ~ s(rank_fin),
+    data = df_fpts_qb_train_25 %>% mutate(rank_fin = rank(-sum_fpts)),
+    method = "REML"
+  )
+
+mod_rank_val_qb_24 = 
+  gam(
+    sum_fpts ~ s(rank_fin),
+    data = df_fpts_qb_train_24 %>% mutate(rank_fin = rank(-sum_fpts)),
+    method = "REML"
+  )
+
+mod_rank_val_qb_23 = 
+  gam(
+    sum_fpts ~ s(rank_fin),
+    data = df_fpts_qb_train_23 %>% mutate(rank_fin = rank(-sum_fpts)),
+    method = "REML"
+  )
+
+df_backtest_qb_23_25 = 
+  df_fpts_qb_test_25 %>% 
+  mutate(
+    pred_fpts = predict(mod_svm_qb_25, newdata = .),
+    rank_mod = rank(-pred_fpts),
+    rank_fin = rank(-sum_fpts)
+  ) %>% 
+  left_join(
+    df_adp_old %>% 
+      mutate(adp = as.integer(str_extract(pos_rank_adp, "\\d+"))) %>% 
+      select(season, player_display_name, adp),
+    by = c("player_display_name", "season")
+  ) %>% 
+  mutate(
+    market_proj = 
+      predict(
+        market_curve_qb_25,
+        newdata = .
+      ),
+    adp_value = 
+      predict(
+        mod_rank_val_qb_25,
+        newdata = tibble(rank_fin = adp)
+      ),
+    model_value = 
+      predict(
+        mod_rank_val_qb_25,
+        newdata = tibble(rank_fin = rank_mod)
+     )
+  ) %>% 
+  rbind(
+    df_fpts_qb_test_24 %>% 
+      mutate(
+        pred_fpts = predict(mod_svm_qb_24, newdata = .),
+        rank_mod = rank(-pred_fpts),
+        rank_fin = rank(-sum_fpts)
+      ) %>% 
+      left_join(
+        df_adp_old %>% 
+          mutate(adp = as.integer(str_extract(pos_rank_adp, "\\d+"))) %>% 
+          select(season, player_display_name, adp),
+        by = c("player_display_name", "season")
+      ) %>% 
+      mutate(
+        market_proj = 
+          predict(
+            market_curve_qb_24,
+            newdata = .
+          ),
+        adp_value = 
+          predict(
+            mod_rank_val_qb_24,
+            newdata = tibble(rank_fin = adp)
+          ),
+        model_value = 
+          predict(
+            mod_rank_val_qb_24,
+            newdata = tibble(rank_fin = rank_mod)
+         )
+      )
+  ) %>% 
+  rbind(
+    df_fpts_qb_test_23 %>% 
+      mutate(
+        pred_fpts = predict(mod_svm_qb_23, newdata = .),
+        rank_mod = rank(-pred_fpts),
+        rank_fin = rank(-sum_fpts)
+      ) %>% 
+      left_join(
+        df_adp_old %>% 
+          mutate(adp = as.integer(str_extract(pos_rank_adp, "\\d+"))) %>% 
+          select(season, player_display_name, adp),
+        by = c("player_display_name", "season")
+      ) %>% 
+      mutate(
+        market_proj = 
+          predict(
+            market_curve_qb_23,
+            newdata = .
+          ),
+        adp_value = 
+          predict(
+            mod_rank_val_qb_23,
+            newdata = tibble(rank_fin = adp)
+          ),
+        model_value = 
+          predict(
+            mod_rank_val_qb_23,
+            newdata = tibble(rank_fin = rank_mod)
+         )
+      )
+  ) %>% 
+  filter(adp <= 40) %>% 
+  mutate(
+    market_edge = pred_fpts - market_proj,
+    mod_market_edge = pred_fpts - market_proj,
+    actual_market_edge = sum_fpts - market_proj,
+    mod_over = ifelse(mod_market_edge > 0, 1, 0),
+    actual_over = ifelse(actual_market_edge > 0, 1, 0),
+    hit = 
+      case_when(
+        mod_over == actual_over ~ 1,
+        .default = 0
+      ),
+    # Strong conviction
+    strong_over = ifelse(mod_market_edge >= 0.5 * sd(mod_market_edge, na.rm = T), 1, 0), 
+    strong_under = ifelse(mod_market_edge <= -0.5 * sd(mod_market_edge, na.rm = T), 1, 0),
+    rank_diff_model = adp - rank_mod,
+    rank_diff_actual = adp - rank_fin,
+    actual_value = sum_fpts,
+    model_rank_change = adp - rank_mod,
+    actual_rank_change = adp - rank_fin,
+    model_value_change = model_value - adp_value,
+    actual_value_change = actual_value - adp_value,
+    market_edge_z = round(as.numeric(scale(market_edge)), 2)
+    # fin_market_edge = market_proj - sum_fpts,
+    # fin_market_edge_z = round(as.numeric(scale(fin_market_edge)), 2),
+    # fin_mod_edge = pred_fpts - sum_fpts,
+    # fin_mod_edge_z = round(as.numeric(scale(fin_mod_edge)), 2)
+  ) %>% 
+  # filter() %>% 
+  # mutate(
+  #   ind_mod_val_high = 
+  #     case_when(
+  #       market_edge_z >= 0.5 ~ 1,
+  #       .default = 0 
+  #     ),
+  #   ind_hit_high = 
+  #     case_when(
+  #       ind_mod_val_high == 1 & (abs(fin_mod_edge_z) < abs(fin_market_edge_z) | abs(fin_mod_edge) < abs(fin_market_edge)) ~ 1,
+  #       ind_mod_val_high == 1 ~ 0
+  #     ),
+  #   ind_mod_val_low = 
+  #     case_when(
+  #       market_edge_z <= -0.5 ~ 1,
+  #       .default = 0 
+  #     ),
+  #   ind_hit_low = 
+  #     case_when(
+  #       ind_mod_val_low == 1 & (abs(fin_mod_edge_z) < abs(fin_market_edge_z) | abs(fin_mod_edge) < abs(fin_market_edge)) ~ 1,
+  #       ind_mod_val_low == 1 ~ 0
+  #     )
+  # ) %>% 
+  # select(season, player_display_name, sum_fpts, pred_fpts, market_proj, rank_fin, rank_mod, adp, market_edge_z, fin_mod_edge_z, fin_market_edge_z, starts_with("ind_")) %>% 
+  # tbl_summary(
+  #   include = starts_with("ind_hit_")
+  # ) %>% 
+  # bold_labels() %>% 
+  select(season, player_id, player_display_name, sum_fpts:last_col()) %>% 
+  drop_na()
+
+view(df_backtest_qb_23_25)
+
+saveRDS(df_backtest_qb_23_25, str_c("data/fantasy_data/", "df_backtest_qb_23_25.rds"))
+
+# df_backtest_qb_results = 
+#   tibble(
+#     threshold = c(0, 5, 10, 15, 20, 25, 30)
+#   ) %>% 
+#   mutate(
+#     results = map(
+#       threshold,
+#       ~ df_backtest_wr_23_25 %>% 
+#         filter(mod_market_edge >= .x) %>% 
+#         group_by(season) %>% 
+#         summarise(
+#           n = n(),
+#           hit_rate = mean(actual_market_edge > 0),
+#           avg_actual_edge = mean(actual_market_edge)
+#         )
+#     )
+#   ) %>% 
+#   unnest(results) %>% 
+#   arrange(season)
+
+tibble(
+    threshold = c(0, 5, 10, 15, 20, 25, 30, 40)
+  ) %>% 
+  mutate(
+    results = map(
+      threshold,
+      ~ df_backtest_qb_23_25 %>% 
+        filter(abs(mod_market_edge) >= .x) %>% 
+        # group_by(season) %>% 
+        summarise(
+          n = n(),
+          hit_rate = mean(actual_market_edge > 0),
+          avg_actual_edge = mean(actual_market_edge)
+        )
+    )
+  ) %>% 
+  unnest(results)
+
+# df_backtest_wr_23_25 %>% 
+#   summarise(
+#     edge_cor = cor(
+#       mod_market_edge,
+#       actual_market_edge,
+#       use = "complete.obs"
+#     )
+#   )
+
+df_backtest_qb_23_25 %>% 
+  mutate(
+    abs_edge = abs(mod_market_edge),
+    edge_bucket = 
+      fct_relevel(as.factor(
+        case_when(
+          abs_edge < 20 ~ "< 20",
+          abs_edge < 40 ~ "20 – 40",
+          # abs_edge < 30 ~ "20 – 30",
+          # abs_edge < 40 ~ "30 – 40",
+          # abs_edge < 50 ~ "40 – 50",
+          TRUE ~ "40+"
+        )),
+      "< 20"
+      )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    avg_abs_actual_edge = mean(abs(actual_market_edge)),
+    hit_rate = mean(
+      sign(mod_market_edge) == sign(actual_market_edge)
+    ),
+    .groups = "drop"
+  )
+
+df_backtest_qb_23_25 %>% 
+  filter(mod_market_edge >= 0) %>% 
+  mutate(
+    abs_edge = abs(mod_market_edge),
+    edge_bucket = 
+      fct_relevel(as.factor(
+        case_when(
+          abs_edge < 20 ~ "< 20",
+          abs_edge < 40 ~ "20 – 40",
+          # abs_edge < 30 ~ "20 – 30",
+          # abs_edge < 40 ~ "30 – 40",
+          # abs_edge < 50 ~ "40 – 50",
+          TRUE ~ "40+"
+        )),
+      "< 20"
+      )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    avg_abs_actual_edge = mean(abs(actual_market_edge)),
+    hit_rate = mean(
+      sign(mod_market_edge) == sign(actual_market_edge)
+    ),
+    .groups = "drop"
+  )
+
+df_backtest_qb_23_25 %>% 
+  filter(mod_market_edge < 0) %>% 
+  mutate(
+    abs_edge = abs(mod_market_edge),
+    edge_bucket = 
+      fct_relevel(as.factor(
+        case_when(
+          abs_edge < 20 ~ "< 20",
+          abs_edge < 40 ~ "20 – 40",
+          # abs_edge < 30 ~ "20 – 30",
+          # abs_edge < 40 ~ "30 – 40",
+          # abs_edge < 50 ~ "40 – 50",
+          TRUE ~ "40+"
+        )),
+      "< 20"
+      )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    avg_abs_actual_edge = mean(abs(actual_market_edge)),
+    hit_rate = mean(
+      sign(mod_market_edge) == sign(actual_market_edge)
+    ),
+    .groups = "drop"
+  )
+
+df_backtest_qb_23_25 %>% 
+  summarise(
+    market_cor = cor(market_proj, sum_fpts),
+    market_mae = mean(abs(market_proj - sum_fpts)),
+    market_bias = mean(market_proj - sum_fpts)
+  )
+
+df_backtest_qb_23_25 %>% 
+  summarise(
+    model_cor = cor(pred_fpts, sum_fpts),
+    model_mae = mean(abs(pred_fpts - sum_fpts)),
+    model_bias = mean(pred_fpts - sum_fpts)
+  )
+
+mod_market <- lm(
+  sum_fpts ~ market_proj,
+  data = df_backtest_qb_23_25
+)
+
+mod_market_plus <- lm(
+  sum_fpts ~ market_proj + pred_fpts,
+  data = df_backtest_qb_23_25
+)
+
+anova(mod_market, mod_market_plus)
+
+summary(mod_market_plus)
+
+df_backtest_qb_23_25 %>% 
+  summarise(
+    market_r2 = summary(mod_market)$r.squared,
+    market_plus_model_r2 = summary(mod_market_plus)$r.squared
+  )
+
+df_backtest_qb_23_25 %>% 
+  mutate(
+    edge_bucket = case_when(
+      abs(mod_market_edge) < 20 ~ "<20",
+      abs(mod_market_edge) < 40 ~ "20–40",
+      TRUE ~ "40+"
+    )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    market_mae = mean(abs(sum_fpts - market_proj)),
+    model_mae = mean(abs(sum_fpts - pred_fpts)),
+    .groups = "drop"
+  )
+
+df_backtest_qb_23_25 %>% 
+  mutate(
+    edge_bucket = case_when(
+      abs(mod_market_edge) < 20 ~ "<20",
+      abs(mod_market_edge) < 40 ~ "20–40",
+      TRUE ~ "40+"
+    )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  nest() %>% 
+  mutate(
+    market_r2 = map_dbl(
+      data,
+      ~ summary(
+        lm(sum_fpts ~ market_proj, data = .x)
+      )$r.squared
+    ),
+    market_plus_model_r2 = map_dbl(
+      data,
+      ~ summary(
+        lm(sum_fpts ~ market_proj + pred_fpts, data = .x)
+      )$r.squared
+    )
+  ) %>% 
+  select(edge_bucket, market_r2, market_plus_model_r2)
+
+# df_backtest_qb_23_25 %>% 
+#   filter(abs(mod_market_edge) >= 20) %>% 
+#   summarise(
+#     n = n(),
+#     hit_rate = mean(
+#       sign(mod_market_edge) == sign(actual_market_edge)
+#     ),
+#     avg_actual_edge = mean(actual_market_edge),
+#     median_actual_edge = median(actual_market_edge),
+#     model_mae = mean(abs(sum_fpts - pred_fpts)),
+#     market_mae = mean(abs(sum_fpts - market_proj))
+#   ) %>% 
+#   view
+# 
+# df_backtest_wr_23_25 %>% 
+#   filter(mod_market_edge >= 20) %>% 
+#   summarise(
+#     n = n(),
+#     hit_rate = mean(actual_market_edge > 0),
+#     avg_actual_edge = mean(actual_market_edge),
+#     median_actual_edge = median(actual_market_edge),
+#     model_mae = mean(abs(sum_fpts - pred_fpts)),
+#     market_mae = mean(abs(sum_fpts - market_proj))
+#   ) %>% 
+#   view
+# 
+# df_backtest_wr_23_25 %>% 
+#   filter(mod_market_edge <= -20) %>% 
+#   summarise(
+#     n = n(),
+#     hit_rate = mean(actual_market_edge < 0),
+#     avg_actual_edge = mean(actual_market_edge),
+#     median_actual_edge = median(actual_market_edge),
+#     model_mae = mean(abs(sum_fpts - pred_fpts)),
+#     market_mae = mean(abs(sum_fpts - market_proj))
+#   ) %>% 
+#   view
+# 
+# df_backtest_wr_23_25 %>% 
+#   filter(mod_market_edge > 0) %>% 
+#   summarise(
+#     edge_cor = cor(
+#       mod_market_edge,
+#       actual_market_edge
+#     )
+#   )
+# 
+# df_backtest_wr_23_25 %>% 
+#   filter(mod_market_edge < 0) %>% 
+#   summarise(
+#     edge_cor = cor(
+#       mod_market_edge,
+#       actual_market_edge
+#     )
+#   )
+
+ggplot(
+  df_backtest_qb_23_25,
+  aes(
+    x = mod_market_edge,
+    y = actual_market_edge
+  )
+) +
+  geom_hline(
+    yintercept = 0,
+    linetype = "dashed"
+  ) +
+  geom_vline(
+    xintercept = 0,
+    linetype = "dashed"
+  ) +
+  geom_point(
+    alpha = 0.4
+  ) +
+  geom_smooth(
+    method = "gam",
+    formula = y ~ s(x),
+    se = TRUE
+  ) +
+  labs(
+    x = "Model edge vs. ADP",
+    y = "Actual edge vs. ADP",
+    title = "Fantasy DNA Model vs. ADP",
+    subtitle = "2023–2025 out-of-sample WR predictions"
+  ) +
+  theme_minimal()
+
+# df_backtest_wr_23_25 %>% 
+#   filter(mod_market_edge >= 20) %>% 
+#   lm(
+#     actual_market_edge ~ mod_market_edge,
+#     data = .
+# ) %>% 
+#   broom::tidy()
+# 
+# df_backtest_wr_23_25 %>% 
+#   filter(mod_market_edge <= -20) %>% 
+#   lm(
+#     actual_market_edge ~ mod_market_edge,
+#     data = .
+# ) %>% 
+#   broom::tidy()
+
+# df_backtest_wr_23_25 %>% 
+#   mutate(
+#     pred_rank_fpts = predict(rank_value_model, newdata = .)
+#   ) %>% 
+#   view
+
+# rank_value = 
+#   df_backtest_wr_23_25 %>% 
+#   group_by(rank_fin) %>% 
+#   summarise(
+#     avg_fpts = mean(sum_fpts),
+#     .groups = "drop"
+#   )
+
+# df_backtest_wr_23_25 %>% 
+#   summarise(
+#     n = n(),
+#     hit_rate = mean(
+#       sign(model_value_change) == sign(actual_value_change)
+#     ),
+#     value_cor = cor(
+#       model_value_change,
+#       actual_value_change,
+#       use = "complete.obs"
+#     )
+#   )
+# 
+# df_backtest_wr_23_25 %>% 
+#   mutate(
+#     value_bucket = case_when(
+#       abs(model_value_change) < 10 ~ "<10 FPTS",
+#       abs(model_value_change) < 20 ~ "10–20 FPTS",
+#       abs(model_value_change) < 30 ~ "20–30 FPTS",
+#       TRUE ~ "30+ FPTS"
+#     )
+#   ) %>% 
+#   group_by(value_bucket) %>% 
+#   summarise(
+#     n = n(),
+#     avg_pred_value = mean(model_value_change),
+#     avg_actual_value = mean(actual_value_change),
+#     hit_rate = mean(
+#       sign(model_value_change) == sign(actual_value_change)
+#     ),
+#     .groups = "drop"
+#   )
+
+df_backtest_qb_23_25 %>% 
+  summarise(
+    n = n(),
+    hit_rate = mean(
+      sign(model_rank_change) == sign(actual_rank_change)
+    ),
+    rank_cor = cor(
+      model_rank_change,
+      actual_rank_change,
+      use = "complete.obs"
+    ),
+    rank_mae = mean(
+      abs(model_rank_change - actual_rank_change)
+    )
+  )
+
+df_backtest_qb_23_25 %>% 
+  summarise(
+    model_mae = mean(abs(model_rank_change - actual_rank_change)),
+    market_mae = mean(abs(actual_rank_change)),
+    improvement = 1 - model_mae / market_mae
+  )
+
+df_backtest_qb_23_25 %>% 
+  mutate(
+    edge_bucket = case_when(
+      abs(mod_market_edge) < 20 ~ "<20",
+      abs(mod_market_edge) < 40 ~ "20–40",
+      TRUE ~ "40+"
+    )
+  ) %>% 
+  group_by(edge_bucket) %>% 
+  summarise(
+    n = n(),
+    model_mae = mean(
+      abs(model_rank_change - actual_rank_change)
+    ),
+    market_mae = mean(
+      abs(actual_rank_change)
+    ),
+    improvement = 1 - model_mae / market_mae,
+    hit_rate = mean(
+      sign(model_rank_change) == sign(actual_rank_change)
+    ),
+    rank_cor = cor(
+      model_rank_change,
+      actual_rank_change,
+      use = "complete.obs"
+    ),
+    .groups = "drop"
+  )
+
+# df_backtest_qb_23_25 %>% 
+#   filter(
+#     mod_market_edge >= 20,
+#     mod_market_edge < 40
+#   ) %>% 
+#   summarise(
+#     n = n(),
+#     model_mae = mean(
+#       abs(model_rank_change - actual_rank_change)
+#     ),
+#     market_mae = mean(
+#       abs(actual_rank_change)
+#     ),
+#     improvement = 1 - model_mae / market_mae,
+#     hit_rate = mean(
+#       sign(model_rank_change) == sign(actual_rank_change)
+#     )
+#   )
+# 
+# df_backtest_qb_23_25 %>% 
+#   filter(
+#     mod_market_edge <= -20,
+#     mod_market_edge > -40
+#   ) %>% 
+#   summarise(
+#     n = n(),
+#     model_mae = mean(
+#       abs(model_rank_change - actual_rank_change)
+#     ),
+#     market_mae = mean(
+#       abs(actual_rank_change)
+#     ),
+#     improvement = 1 - model_mae / market_mae,
+#     hit_rate = mean(
+#       sign(model_rank_change) == sign(actual_rank_change)
+#     )
+#   ) %>% 
+#   view
+
+# df_backtest_wr_23_25 %>% 
+#   ggplot(aes(x = mod_market_edge, y = actual_market_edge, color = factor(season))) +
+#   geom_hline(
+#     yintercept = 0,
+#     linetype = "dashed"
+#   ) +
+#   geom_vline(
+#     xintercept = 0,
+#     linetype = "dashed"
+#   ) +
+#   geom_point(
+#     alpha = 0.5
+#   ) +
+#   geom_smooth(
+#     method = "loess",
+#     se = TRUE
+#   ) +
+#   labs(
+#     x = "Predicted edge vs. ADP",
+#     y = "Actual edge vs. ADP",
+#     title = "WR Model Edge vs. Realized Edge",
+#     subtitle = "2023–2025 out-of-sample predictions"
+#   ) +
+#   theme_minimal()
+
+df_qb_hit_miss_25 =
+  df_backtest_qb_23_25 %>% 
+  filter(season == 2025) %>% 
+  mutate(
+    model_edge = pred_fpts - market_proj,
+    actual_edge = sum_fpts - market_proj,
+    hit = ifelse(sign(model_edge) == sign(actual_edge), 1, 0),
+    model_edge_z = as.numeric(scale(model_edge)),
+    actual_edge_z = as.numeric(scale(actual_edge)),
+    rank_edge = rank_mod - adp,
+    rank_fin_edge = rank_fin - adp,
+    pred_fpts = round(pred_fpts, 2),
+    market_proj = round(market_proj, 2),
+    ind_mod_val_high =
+      case_when(
+        market_edge_z > 0 & rank_edge < 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_high =
+      case_when(
+        ind_mod_val_high == 1 & (model_edge_z < actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z > 0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_high == 1 ~ 0
+      ),
+    ind_mod_val_low =
+      case_when(
+        market_edge_z < 0 & rank_edge > 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_low =
+      case_when(
+        ind_mod_val_low == 1 & (model_edge_z > actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z < -0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_low == 1 ~ 0
+      )
+  )
+
+df_qb_hit_miss_25 %>%
+  filter(ind_hit_high == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "QB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Hits on Undervalued PLayers**")
+
+df_qb_hit_miss_25 %>%
+  filter(ind_hit_low == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>% 
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "QB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Hits on Overvalued PLayers**")
+
+df_qb_hit_miss_25 %>%
+  filter(ind_hit_high == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "QB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Misses on Undervalued Players**")
+
+df_qb_hit_miss_25 %>%
+  filter(ind_hit_low == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "QB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2025 - Top Misses on Overvalued Players**")
+
+df_qb_hit_miss_24 =
+  df_backtest_qb_23_25 %>% 
+  filter(season == 2024) %>% 
+  mutate(
+    model_edge = pred_fpts - market_proj,
+    actual_edge = sum_fpts - market_proj,
+    hit = ifelse(sign(model_edge) == sign(actual_edge), 1, 0),
+    model_edge_z = as.numeric(scale(model_edge)),
+    actual_edge_z = as.numeric(scale(actual_edge)),
+    rank_edge = rank_mod - adp,
+    rank_fin_edge = rank_fin - adp,
+    pred_fpts = round(pred_fpts, 2),
+    market_proj = round(market_proj, 2),
+    ind_mod_val_high =
+      case_when(
+        market_edge_z > 0 & rank_edge < 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_high =
+      case_when(
+        ind_mod_val_high == 1 & (model_edge_z < actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z > 0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_high == 1 ~ 0
+      ),
+    ind_mod_val_low =
+      case_when(
+        market_edge_z < 0 & rank_edge > 0 ~ 1,
+        .default = 0
+      ),
+    ind_hit_low =
+      case_when(
+        ind_mod_val_low == 1 & (model_edge_z > actual_edge_z | (sign(rank_edge) == sign(rank_fin_edge) & actual_edge_z < -0.5)) ~ 1,
+        abs(pred_fpts - sum_fpts) < 10 ~ NA,
+        ind_mod_val_low == 1 ~ 0
+      )
+  )
+
+df_qb_hit_miss_24 %>%
+  filter(ind_hit_high == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "QB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Hits on Undervalued PLayers**")
+
+df_qb_hit_miss_24 %>%
+  filter(ind_hit_low == 1 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1) %>% 
+  arrange(desc(abs(model_edge_z))) %>% 
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "QB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Hits on Overvalued PLayers**")
+
+df_qb_hit_miss_24 %>%
+  filter(ind_hit_high == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "QB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Misses on Undervalued Players**")
+
+df_qb_hit_miss_24 %>%
+  filter(ind_hit_low == 0 & abs(rank_edge) > 1 & abs(rank_fin_edge) > 1 & abs(rank_edge - rank_fin_edge) > 2) %>% 
+  arrange(desc(abs(model_edge_z))) %>%
+  slice_head(n = 5) %>% 
+  arrange(adp) %>% 
+  select(
+    player_display_name,
+    adp,
+    rank_mod,
+    rank_fin,
+    market_proj,
+    pred_fpts,
+    sum_fpts
+  ) %>% 
+  labelled::set_variable_labels(
+    player_display_name = "Player",
+    adp = "ADP",
+    rank_mod = "Model Rank",
+    rank_fin = "QB Finish",
+    market_proj = "ADP Projection",
+    pred_fpts = "Model Projection",
+    sum_fpts = "Final Points"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  modify_caption("**2024 - Top Misses on Overvalued Players**")
+
+```
+
 ## Combine All Rankings
 
 ```{r all pos ranks}
@@ -29250,145 +34765,6 @@ df_all_fantasy_table =
   )
 
 saveRDS(df_all_fantasy_table, str_c("data/fantasy_data/", "df_all_fantasy_table.rds"))
-
-qb_markets <- tribble(
-  ~ market_name, ~ market_id,
-  "Passing Yards", 300,
-  "Passing TD", 304,
-  "Rushing Yards", 301,
-  "Rushing TD", 305
-)
-
-qb_odds <- qb_markets %>%
-  mutate(
-    raw = map(
-      market_id,
-      ~ get_bp_market_raw(
-          market_id = .x,
-          season = 2026,
-          limit = 5
-        )
-    ),
-    
-    odds = map2(
-      raw,
-      market_name,
-      ~ extract_bp_odds(
-          bp_props = .x,
-          market_name = .y
-        )
-    )
-  ) %>%
-  select(
-    market_name,
-    odds
-  ) %>%
-  unnest(odds)
-
-df_qb_vegas =
-  qb_odds %>% 
-  # filter(best == TRUE) %>% 
-  filter(is.na(id.x)) %>% 
-  group_by(
-    player_id,
-    name,
-    market#,
-    # selection
-  ) %>%
-  summarise(
-    vegas_line = median(
-      line,
-      na.rm = TRUE
-    ),
-    # opening_line = median(
-    #   opening_line,
-    #   na.rm = TRUE
-    # ),
-    # n_books = n_distinct(
-    #   sportsbook_id
-    # ),
-    .groups = "drop"
-  ) %>% 
-  pivot_wider(
-    names_from = market,
-    values_from = vegas_line
-  ) %>% 
-  janitor::clean_names() %>% 
-  drop_na(passing_yards, passing_td) %>% 
-  rename(
-    player_display_name = name,
-    vegas_id = player_id
-  ) %>% 
-  mutate(
-    player_display_name = 
-      case_match(
-        player_display_name, 
-        "Patrick Mahomes II" ~ "Patrick Mahomes",
-        .default = player_display_name
-      )
-  )
-
-df_mod_qb_rush = 
-  df_fan_qb_all %>% 
-  select(season, week, player_id, player_display_name, rushing_yards, rushing_tds) %>% 
-  left_join(
-    df_roster_qb_all %>% 
-      mutate(
-        player_age = as.double(as.Date(str_c(as.character(season), "-09-01")) - as.Date(birth_date)) / 365.25,
-      team = 
-        case_when(
-          team == "SD" ~ "LAC",
-          team == "SL" ~ "LA",
-          team == "OAK" ~ "LV",
-          .default = team
-        )
-      ) %>% 
-      select(season, player_id, team, player_age),
-    by = c("season", "player_id")
-  ) %>% 
-  group_by(player_id, season) %>% 
-  mutate(
-    sum_rush_yds = sum(rushing_yards, na.rm = T),
-    sum_rush_td = sum(rushing_tds, na.rm = T),
-    games_played = n()
-  ) %>% 
-  distinct(player_display_name, player_id, season, player_age, games_played, sum_rush_yds, sum_rush_td) %>% 
-  ungroup() %>% 
-  filter(games_played >= 10) %>% 
-  arrange(player_id, season) %>% 
-  group_by(player_id) %>% 
-  mutate(
-    prior_rush_yds = 
-      case_when(
-        row_number() == 2 ~ lag(replace_na(sum_rush_yds, 0)),
-        row_number() == 3 ~ 0.65 * lag(replace_na(sum_rush_yds, 0)) + 0.35 * lag(lag(replace_na(sum_rush_yds, 0))),
-        row_number() > 3 ~ 0.6 * lag(replace_na(sum_rush_yds, 0)) + 0.3 * lag(lag(replace_na(sum_rush_yds, 0))) + 0.1 * lag(lag(lag(replace_na(sum_rush_yds, 0)))),
-        .default = NA
-      ),
-    prior_rush_td = 
-      case_when(
-        row_number() == 2 ~ lag(replace_na(sum_rush_td, 0)),
-        row_number() == 3 ~ 0.65 * lag(replace_na(sum_rush_td, 0)) + 0.35 * lag(lag(replace_na(sum_rush_td, 0))),
-        row_number() > 3 ~ 0.6 * lag(replace_na(sum_rush_td, 0)) + 0.3 * lag(lag(replace_na(sum_rush_td, 0))) + 0.1 * lag(lag(lag(replace_na(sum_rush_td, 0)))),
-        .default = NA
-      )
-  )
-
-mod_qb_rush_yds = 
-  df_mod_qb_rush %>% 
-  gam(
-    sum_rush_yds ~ s(prior_rush_yds) + s(player_age),
-    data = .,
-    method = "REML"
-  )
-
-mod_qb_rush_td = 
-  df_mod_qb_rush %>% 
-  gam(
-    sum_rush_td ~ s(prior_rush_td) + s(player_age),
-    data = .,
-    method = "REML"
-  )
 
 df_fpts_qb_test %>% 
   mutate(
