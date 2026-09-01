@@ -166,7 +166,7 @@ make_wins_table <- function(
         )
         
         is_wins <- grepl(
-          "_wins_",
+          "_wins",
           column,
           ignore.case = TRUE
         )
@@ -179,7 +179,7 @@ make_wins_table <- function(
           "team",
           "division",
           "pred_wins_calib",
-          "dk_wins_imp",
+          "dk_wins",
           "bet_side",
           "bet_odds"
         )
@@ -220,7 +220,7 @@ make_wins_table <- function(
           
         } else if (is_bet_side) {
           
-          column_width <- 120
+          column_width <- 130
           
         }else if (is_wins) {
 
@@ -362,6 +362,61 @@ make_wins_table <- function(
             )
           )
         }
+        
+        # ----------------------------------------------------
+        # Bet side columns
+        # ----------------------------------------------------
+        
+        if (is_bet_side) {
+          
+          column_definition <- colDef(
+            
+            name = label,
+            
+            minWidth = column_width,
+            width = column_width,
+            
+            align = "center",
+            
+            style = function(value) {
+              
+              style <- base_style
+              
+              if (value == "Bet Over") {
+                style <- c(
+                  style,
+                  list(
+                    color = "white",
+                    backgroundColor = "#1a9850",
+                    fontWeight = "bold"
+                  )
+                )
+              }
+              
+              if (value == "Bet Under") {
+                style <- c(
+                  style,
+                  list(
+                    color = "black",
+                    backgroundColor = "#d73027",
+                    fontWeight = "bold"
+                  )
+                )
+              }
+              
+              style
+            },
+            
+            headerStyle = list(
+              whiteSpace = "normal",
+              textAlign = "center",
+              lineHeight = "1.2",
+              padding = "8px 6px"
+            )
+          )
+        }
+        
+
         
         # ------------------------------------------------------
         # Division column
@@ -580,6 +635,7 @@ make_wins_table(
   default_sorted = "division",
   
   height = 700
+
 )
 ```
 

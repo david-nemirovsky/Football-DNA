@@ -33522,28 +33522,28 @@ df_wins_bet =
     ),
     bet_side = 
       case_when(
-        delta_wins_mod_dk >= 1.5 ~ "Over",
-        delta_wins_mod_dk <= -1.5 ~ "Under",
+        delta_wins_mod_dk >= 1.5 ~ "Bet Over",
+        delta_wins_mod_dk <= -1.5 ~ "Bet Under",
         .default = "No Bet"
       ),
     bet_odds = 
       case_when(
-        bet_side == "Over" & odds_over > 0 ~ str_c("+", odds_over),
-        bet_side == "Over" & odds_over < 0 ~ as.character(odds_over),
-        bet_side == "Under" & odds_under > 0 ~ str_c("+", odds_under),
-        bet_side == "Under" & odds_under < 0 ~ as.character(odds_under),
+        bet_side == "Bet Over" & odds_over > 0 ~ str_c("+", odds_over),
+        bet_side == "Bet Over" & odds_over < 0 ~ as.character(odds_over),
+        bet_side == "Bet Under" & odds_under > 0 ~ str_c("+", odds_under),
+        bet_side == "Bet Under" & odds_under < 0 ~ as.character(odds_under),
         .default = NA
       )
   ) %>% 
-  select(division, team, pred_wins_calib, dk_wins_imp, bet_side, bet_odds) %>% 
+  select(division, team, pred_wins_calib, dk_wins, bet_side, bet_odds) %>% 
   arrange(division, -pred_wins_calib) %>% 
   labelled::set_variable_labels(
     # conference = "Conference", 
     division = "Division", 
     team = "Team", 
     pred_wins_calib = "Projected Wins", 
-    dk_wins_imp = "DK Wins", 
-    bet_side = "Bet Side", 
+    dk_wins = "DK Wins", 
+    bet_side = "Side to Bet", 
     bet_odds = "Odds"
   )
 
@@ -33559,11 +33559,11 @@ df_wins_features =
     by = "team"
   ) %>% 
   left_join(df_division, by = "team") %>% 
-  select(division, team, pred_wins_calib, dk_wins_imp, all_of(mod_svm_wins$trainingData %>% select(-.outcome) %>% names())) %>% 
-  relocate(prior_wins, prior_opp_wins, prior_off_rush_epa, prior_exp_off, prior_rz_trips, prior_to_off, ol_grade_pass_adj, ol_grade_run_adj, coach_cont_score, active_log, .after = dk_wins_imp) %>% 
+  select(division, team, pred_wins_calib, dk_wins, all_of(mod_svm_wins$trainingData %>% select(-.outcome) %>% names())) %>% 
+  relocate(prior_wins, prior_opp_wins, prior_off_rush_epa, prior_exp_off, prior_rz_trips, prior_to_off, ol_grade_pass_adj, ol_grade_run_adj, coach_cont_score, active_log, .after = dk_wins) %>% 
   mutate(
     across(
-      c(pred_wins_calib, dk_wins_imp, prior_opp_wins, ol_grade_pass_adj, ol_grade_run_adj),
+      c(pred_wins_calib, dk_wins, prior_opp_wins, ol_grade_pass_adj, ol_grade_run_adj),
       ~ round(., 1)
     ),
     across(
@@ -33579,7 +33579,7 @@ df_wins_features =
     division = "Division",
     team = "Team", 
     pred_wins_calib = "Projected Wins", 
-    dk_wins_imp = "DK Wins", 
+    dk_wins = "DK Wins", 
     prior_wins = "Prior Wins",
     prior_opp_wins = "SOS",
     prior_off_rush_epa = "Prior Rush EPA",
