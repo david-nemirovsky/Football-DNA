@@ -577,7 +577,7 @@ make_wins_table(
   
   data = df_wins_bet,
   
-  default_sorted = c("division", "pred_wins_calib"),
+  default_sorted = "division",
   
   height = 700
 )
@@ -604,7 +604,7 @@ make_wins_table(
   
   data = df_wins_features,
   
-  default_sorted = c("division", "pred_wins_calib"),
+  default_sorted = "division",
   
   direction = wins_feature_direction,
   
