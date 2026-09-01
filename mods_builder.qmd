@@ -36152,6 +36152,7 @@ df_wins_hist =
   ) %>% 
   group_by(season) %>% 
   drop_na() %>%  
+  filter(abs(pred_wins_calib - dk_wins) >= 1.5) %>% 
   summarise(
     n_bets = n(),
     wins = sum(bet_win_ind),
