@@ -5,7 +5,7 @@ project:
     - index.qmd
     - mods.qmd
     - fantasy.qmd
-#    - wins.qmd
+    - wins.qmd
 
 website:
   title: "Football DNA"
@@ -17,8 +17,8 @@ website:
         text: "Game Totals & Spreads"
       - href: fantasy.qmd
         text: "Fantasy Football"
-#      - href: wins.qmd
-#        text: "Win Totals"
+      - href: wins.qmd
+        text: "Win Totals"
 
 format:
   html:

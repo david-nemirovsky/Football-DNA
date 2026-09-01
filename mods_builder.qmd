@@ -33505,19 +33505,96 @@ df_dk_wins =
   ) %>% 
   ungroup()
 
-df_wins_pred %>% 
-  left_join(df_dk_wins, by = "team") %>% 
+df_wins_bet = 
+  df_wins_pred %>% 
+  left_join(
+    df_dk_wins %>% 
+      select(team, dk_wins_imp), 
+    by = "team"
+  ) %>% 
+  left_join(df_division, by = "team") %>% 
   mutate(
+    conference = str_extract(division, "^[AN]FC"),
     delta_wins_mod_dk = round(pred_wins_calib - dk_wins_imp, 2),
     across(
       c(pred_wins_calib, dk_wins_imp),
       ~ round(., 1)
-    )
+    ),
+    bet_side = 
+      case_when(
+        delta_wins_mod_dk >= 1.5 ~ "Over",
+        delta_wins_mod_dk <= -1.5 ~ "Under",
+        .default = "No Bet"
+      ),
+    bet_odds = 
+      case_when(
+        bet_side == "Over" & odds_over > 0 ~ str_c("+", odds_over),
+        bet_side == "Over" & odds_over < 0 ~ as.character(odds_over),
+        bet_side == "Under" & odds_under > 0 ~ str_c("+", odds_under),
+        bet_side == "Under" & odds_under < 0 ~ as.character(odds_under),
+        .default = NA
+      )
+  ) %>% 
+  select(division, team, pred_wins_calib, dk_wins_imp, bet_side, bet_odds) %>% 
+  arrange(division, -pred_wins_calib) %>% 
+  labelled::set_variable_labels(
+    # conference = "Conference", 
+    division = "Division", 
+    team = "Team", 
+    pred_wins_calib = "Projected Wins", 
+    dk_wins_imp = "DK Wins", 
+    bet_side = "Bet Side", 
+    bet_odds = "Odds"
+  )
+
+saveRDS(df_wins_bet, str_c("data/wins_data/", "df_wins_bet.rds"))
+
+view(df_wins_bet)
+
+df_wins_features =
+  df_wins_pred %>% 
+  left_join(
+    df_dk_wins %>% 
+      select(team, dk_wins_imp), 
+    by = "team"
   ) %>% 
   left_join(df_division, by = "team") %>% 
-  select(division, team, pred_wins_calib, dk_wins_imp, delta_wins_mod_dk) %>% 
-  arrange(division, -pred_wins_calib) %>% 
-  view
+  select(division, team, pred_wins_calib, dk_wins_imp, all_of(mod_svm_wins$trainingData %>% select(-.outcome) %>% names())) %>% 
+  relocate(prior_wins, prior_opp_wins, prior_off_rush_epa, prior_exp_off, prior_rz_trips, prior_to_off, ol_grade_pass_adj, ol_grade_run_adj, coach_cont_score, active_log, .after = dk_wins_imp) %>% 
+  mutate(
+    across(
+      c(pred_wins_calib, dk_wins_imp, prior_opp_wins, ol_grade_pass_adj, ol_grade_run_adj),
+      ~ round(., 1)
+    ),
+    across(
+      c(coach_cont_score, active_log),
+      ~ round(., 2)
+    ),
+    across(
+      c(prior_off_rush_epa, prior_exp_off, prior_to_off),
+      ~ round(., 3)
+    )
+  ) %>% 
+  labelled::set_variable_labels(
+    division = "Division",
+    team = "Team", 
+    pred_wins_calib = "Projected Wins", 
+    dk_wins_imp = "DK Wins", 
+    prior_wins = "Prior Wins",
+    prior_opp_wins = "SOS",
+    prior_off_rush_epa = "Prior Rush EPA",
+    prior_exp_off = "Prior Explosive Plays",
+    prior_rz_trips = "Prior RZ Trips",
+    prior_to_off = "Prior Offensive TOs",
+    ol_grade_pass_adj = "OL Pass Grade",
+    ol_grade_run_adj = "OL Rush Grade",
+    coach_cont_score = "Coach Continuity",
+    active_log = "Salary Usage"
+  )
+
+saveRDS(df_wins_features, str_c("data/wins_data/", "df_wins_features.rds"))
+
+view(df_wins_features)
 
 # simulate:
 
@@ -34010,7 +34087,8 @@ df_dk_wins_2025 =
         .default = NA
       ),
     prob_dk_wins_over_imp = prob_dk_wins_over / (prob_dk_wins_over + prob_dk_wins_under),
-    prob_dk_wins_under_imp = prob_dk_wins_under / (prob_dk_wins_over + prob_dk_wins_under)
+    prob_dk_wins_under_imp = prob_dk_wins_under / (prob_dk_wins_over + prob_dk_wins_under),
+    dk_wins_imp = dk_wins
   ) #%>% 
   # rowwise() %>% 
   # mutate(
@@ -34029,143 +34107,234 @@ df_dk_wins_2025 =
   # ) %>% 
   # ungroup()
 
-df_wins_test_sim_2025 = 
-  df_wins_test_2025 %>% 
-  select(-prior_opp_wins)
-
-df_pred_team_score_2025 = 
-  df_wins_test_sim_2025 %>% 
-  mutate(
-    pred_team_score = predict(mod_svm_wins_sim_2025, newdata = .)
-  )
-
-# create logit paramters:
-mod_logit_team_score_2025 = 
-  df_szn_all %>% 
-  filter(season > 2016 & season < 2025) %>% 
-  left_join(
-    df_wins_fin %>% 
-      select(season, team, wins, starts_with("prior_"), active_log, coach_cont_score, qb_new_team, ol_grade_run_adj, ol_grade_pass_adj) %>% 
-      select(-c(qb_new_team, prior_def_rush_epa, prior_close_wins_reg, prior_rz_eff, prior_to_def, prior_pen_def, prior_exp_def, prior_success_def, prior_success_off, prior_pen_off, prior_def_pass_epa, prior_off_pass_epa)) %>% 
-      drop_na() %>% 
-      relocate(wins, .after = last_col()) %>% 
-      mutate(
-        pred_team_score = predict(mod_svm_wins_sim_2025, newdata = .)
-      ) %>% 
-      rename(
-        home_team = team,
-        pred_team_score_home = pred_team_score
-      ) %>% 
-      select(season, home_team, pred_team_score_home),
-    by = c("season", "home_team")
-  ) %>% 
-  left_join(
-    df_wins_fin %>% 
-      select(season, team, wins, starts_with("prior_"), active_log, coach_cont_score, qb_new_team, ol_grade_run_adj, ol_grade_pass_adj) %>% 
-      select(-c(qb_new_team, prior_def_rush_epa, prior_close_wins_reg, prior_rz_eff, prior_to_def, prior_pen_def, prior_exp_def, prior_success_def, prior_success_off, prior_pen_off, prior_def_pass_epa, prior_off_pass_epa)) %>% 
-      drop_na() %>% 
-      relocate(wins, .after = last_col()) %>% 
-      mutate(
-        pred_team_score = predict(mod_svm_wins_sim_2025, newdata = .)
-      ) %>% 
-      rename(
-        away_team = team,
-        pred_team_score_away = pred_team_score
-      ) %>% 
-      select(season, away_team, pred_team_score_away),
-    by = c("season", "away_team")
-  ) %>% 
-  select(game_id, home_team, pred_team_score_home, away_team, pred_team_score_away, home_score, away_score) %>% 
-  mutate(
-    win_home = 
-      case_when(
-        home_score > away_score ~ 1,
-        .default = 0
-      ),
-    delta_pred_home_away = pred_team_score_home - pred_team_score_away
-  ) %>% 
-  glm(
-    win_home ~ delta_pred_home_away,
-    data = .,
-    family = binomial(link = "logit")
-  )
-
-mod_logit_team_score_2025
-
-df_team_score_games_sim_2025 = 
-  df_schedules_szn_all %>% 
-  filter(season == 2025) %>% 
-  left_join(
-    df_pred_team_score_2025 %>% 
-      rename(
-        home_team = team,
-        pred_team_score_home = pred_team_score
-      ) %>% 
-      select(home_team, pred_team_score_home), 
-    by = "home_team"
-  ) %>% 
-  left_join(
-    df_pred_team_score_2025 %>% 
-      rename(
-        away_team = team,
-        pred_team_score_away = pred_team_score
-      ) %>% 
-      select(away_team, pred_team_score_away), 
-    by = "away_team"
-  ) %>% 
-  select(game_id, home_team, pred_team_score_home, away_team, pred_team_score_away) %>%
-  mutate(
-    win_diff = pred_team_score_home - pred_team_score_away,
-    logit_home = mod_logit_team_score_2025$coefficients[[1]] + mod_logit_team_score_2025$coefficients[[2]] * win_diff,
-    prob_home = plogis(logit_home)
-  )
-
-set.seed(37564)
-df_team_wins_sim_2025 = 
-  map_dfr(
-    1:10000,
-    ~ simulate_season(df_team_score_games_sim_2025) %>%
-        mutate(sim = .x)
-  )
-
-df_team_wins_sim_fin_2025 = 
-  df_team_wins_sim_2025 %>% 
-  left_join(df_dk_wins_raw_2025) %>% 
-  group_by(team) %>%
-  summarise(
-    mean_wins = mean(wins),
-    median_wins = median(wins),
-    sd_wins = sd(wins),
-    p10 = quantile(wins, 0.10),
-    p25 = quantile(wins, 0.25),
-    p75 = quantile(wins, 0.75),
-    p75 = quantile(wins, 0.75),
-    p90 = quantile(wins, 0.90),
-    .groups = "drop"
-  )
-
+# df_wins_test_sim_2025 = 
+#   df_wins_test_2025 %>% 
+#   select(-prior_opp_wins)
+# 
+# df_pred_team_score_2025 = 
+#   df_wins_test_sim_2025 %>% 
+#   mutate(
+#     pred_team_score = predict(mod_svm_wins_sim_2025, newdata = .)
+#   )
+# 
+# # create logit paramters:
+# mod_logit_team_score_2025 = 
+#   df_szn_all %>% 
+#   filter(season > 2016 & season < 2025) %>% 
+#   left_join(
+#     df_wins_fin %>% 
+#       select(season, team, wins, starts_with("prior_"), active_log, coach_cont_score, qb_new_team, ol_grade_run_adj, ol_grade_pass_adj) %>% 
+#       select(-c(qb_new_team, prior_def_rush_epa, prior_close_wins_reg, prior_rz_eff, prior_to_def, prior_pen_def, prior_exp_def, prior_success_def, prior_success_off, prior_pen_off, prior_def_pass_epa, prior_off_pass_epa)) %>% 
+#       drop_na() %>% 
+#       relocate(wins, .after = last_col()) %>% 
+#       mutate(
+#         pred_team_score = predict(mod_svm_wins_sim_2025, newdata = .)
+#       ) %>% 
+#       rename(
+#         home_team = team,
+#         pred_team_score_home = pred_team_score
+#       ) %>% 
+#       select(season, home_team, pred_team_score_home),
+#     by = c("season", "home_team")
+#   ) %>% 
+#   left_join(
+#     df_wins_fin %>% 
+#       select(season, team, wins, starts_with("prior_"), active_log, coach_cont_score, qb_new_team, ol_grade_run_adj, ol_grade_pass_adj) %>% 
+#       select(-c(qb_new_team, prior_def_rush_epa, prior_close_wins_reg, prior_rz_eff, prior_to_def, prior_pen_def, prior_exp_def, prior_success_def, prior_success_off, prior_pen_off, prior_def_pass_epa, prior_off_pass_epa)) %>% 
+#       drop_na() %>% 
+#       relocate(wins, .after = last_col()) %>% 
+#       mutate(
+#         pred_team_score = predict(mod_svm_wins_sim_2025, newdata = .)
+#       ) %>% 
+#       rename(
+#         away_team = team,
+#         pred_team_score_away = pred_team_score
+#       ) %>% 
+#       select(season, away_team, pred_team_score_away),
+#     by = c("season", "away_team")
+#   ) %>% 
+#   select(game_id, home_team, pred_team_score_home, away_team, pred_team_score_away, home_score, away_score) %>% 
+#   mutate(
+#     win_home = 
+#       case_when(
+#         home_score > away_score ~ 1,
+#         .default = 0
+#       ),
+#     delta_pred_home_away = pred_team_score_home - pred_team_score_away
+#   ) %>% 
+#   glm(
+#     win_home ~ delta_pred_home_away,
+#     data = .,
+#     family = binomial(link = "logit")
+#   )
+# 
+# mod_logit_team_score_2025
+# 
+# df_team_score_games_sim_2025 = 
+#   df_schedules_szn_all %>% 
+#   filter(season == 2025) %>% 
+#   left_join(
+#     df_pred_team_score_2025 %>% 
+#       rename(
+#         home_team = team,
+#         pred_team_score_home = pred_team_score
+#       ) %>% 
+#       select(home_team, pred_team_score_home), 
+#     by = "home_team"
+#   ) %>% 
+#   left_join(
+#     df_pred_team_score_2025 %>% 
+#       rename(
+#         away_team = team,
+#         pred_team_score_away = pred_team_score
+#       ) %>% 
+#       select(away_team, pred_team_score_away), 
+#     by = "away_team"
+#   ) %>% 
+#   select(game_id, home_team, pred_team_score_home, away_team, pred_team_score_away) %>%
+#   mutate(
+#     win_diff = pred_team_score_home - pred_team_score_away,
+#     logit_home = mod_logit_team_score_2025$coefficients[[1]] + mod_logit_team_score_2025$coefficients[[2]] * win_diff,
+#     prob_home = plogis(logit_home)
+#   )
+# 
+# set.seed(37564)
+# df_team_wins_sim_2025 = 
+#   map_dfr(
+#     1:10000,
+#     ~ simulate_season(df_team_score_games_sim_2025) %>%
+#         mutate(sim = .x)
+#   )
+# 
+# df_team_wins_sim_fin_2025 = 
+#   df_team_wins_sim_2025 %>% 
+#   left_join(df_dk_wins_raw_2025) %>% 
+#   group_by(team) %>%
+#   summarise(
+#     mean_wins = mean(wins),
+#     median_wins = median(wins),
+#     sd_wins = sd(wins),
+#     p10 = quantile(wins, 0.10),
+#     p25 = quantile(wins, 0.25),
+#     p75 = quantile(wins, 0.75),
+#     p75 = quantile(wins, 0.75),
+#     p90 = quantile(wins, 0.90),
+#     .groups = "drop"
+#   )
+# 
 # view(df_team_wins_sim_fin_2025)
 
-df_dk_probs_2025 = 
-  df_team_wins_sim_2025 %>%
-  left_join(
-    df_dk_wins %>%
-      select(team, dk_wins_imp, dk_wins, odds_over, odds_under),
-    by = "team"
-  ) %>% 
-  left_join(df_wins_pred_2025 %>% select(team, pred_wins_calib), by = "team") %>% 
-  group_by(team, pred_wins_calib, dk_wins_imp, dk_wins, odds_over, odds_under) %>%
-  summarise(
-    mean_wins = mean(wins),
-    median_wins = median(wins),
-    sd_wins = sd(wins),
-    prob_over = mean(wins > dk_wins_imp),
-    prob_under = mean(wins < dk_wins_imp),
-    .groups = "drop"
-  )
+# df_dk_probs_2025 = 
+#   df_team_wins_sim_fin_2025 %>% 
+#   left_join(
+#     df_dk_wins_2025 %>%
+#       select(team, dk_wins_imp, dk_wins, odds_over, odds_under),
+#     by = "team"
+#   ) %>% 
+#   left_join(df_wins_pred_2025 %>% select(team, pred_wins_calib), by = "team") %>% 
+#   group_by(team, pred_wins_calib, dk_wins_imp, dk_wins, odds_over, odds_under) %>%
+#   summarise(
+#     mean_wins = mean(wins),
+#     median_wins = median(wins),
+#     sd_wins = sd(wins),
+#     prob_over = mean(wins > dk_wins_imp),
+#     prob_under = mean(wins < dk_wins_imp),
+#     .groups = "drop"
+#   )
+# 
+# df_win_bets_2025 = 
+#   df_dk_probs_2025 %>% 
+#   mutate(
+#     # Convert American odds to decimal
+#     decimal_over = if_else(
+#       odds_over < 0,
+#       1 + 100 / abs(odds_over),
+#       1 + odds_over / 100
+#     ),
+#     
+#     decimal_under = if_else(
+#       odds_under < 0,
+#       1 + 100 / abs(odds_under),
+#       1 + odds_under / 100
+#     ),
+#     ev_over =
+#       prob_over * (decimal_over - 1) -
+#       (1 - prob_over),
+#     
+#     ev_under =
+#       prob_under * (decimal_under - 1) -
+#       (1 - prob_under),
+#     # Net odds
+#     b_over = decimal_over - 1,
+#     b_under = decimal_under - 1,
+#     
+#     # Full Kelly
+#     kelly_over =
+#       (prob_over * b_over - (1 - prob_over)) / b_over,
+#     
+#     kelly_under =
+#       (prob_under * b_under - (1 - prob_under)) / b_under,
+#     kelly_over = pmax(kelly_over, 0),
+#     kelly_under = pmax(kelly_under, 0),
+#     stake_frac_over = pmin(0.03, 0.05 * pmax(kelly_over, 0)),
+#     stake_over = stake_frac_over * 100,
+#     stake_frac_under = pmin(0.03, 0.05 * pmax(kelly_under, 0)),
+#     stake_under = stake_frac_under * 100,
+#     best_side = 
+#       case_when(
+#         abs(pred_wins_calib - dk_wins_imp) <= 0.5 ~ "No Bet",
+#         stake_over > stake_under & stake_over >= 0.5 ~ "Over",
+#         stake_under > stake_over & stake_under >= 0.5 ~ "Under",
+#         TRUE ~ "No Bet"
+#       ),
+#     stake_tot = 
+#       case_when(
+#         best_side == "Over" ~ round(stake_over, 1),
+#         best_side == "Under" ~ round(stake_under, 1),
+#         .default = NA
+#       ),
+#     bet = case_when(
+#       best_side == "Over" ~ "Over",
+#       best_side == "Under" ~ "Under",
+#       TRUE ~ NA_character_
+#     ),
+#     model_prob = case_when(
+#       best_side == "Over" ~ prob_over,
+#       best_side == "Under" ~ prob_under,
+#       TRUE ~ NA_real_
+#     ),
+#     odds = case_when(
+#       best_side == "Over" ~ odds_over,
+#       best_side == "Under" ~ odds_under,
+#       TRUE ~ NA_real_
+#     ),
+#     ev = case_when(
+#       best_side == "Over" ~ ev_over,
+#       best_side == "Under" ~ ev_under,
+#       TRUE ~ 0
+#     ),
+#     pred_wins_calib = round(pred_wins_calib, 1)
+#   ) %>%
+#   arrange(desc(stake_tot), best_side) %>%
+#   select(
+#     team,
+#     pred_wins_calib,
+#     dk_wins,
+#     dk_wins_imp,
+#     best_side,
+#     odds,
+#     model_prob,
+#     # ev,
+#     stake_tot
+#   )
 
 df_win_bets_2025 = 
-  df_dk_probs_2025 %>% 
+  df_wins_pred_2025 %>% 
+  left_join(
+    df_dk_wins_2025 %>% 
+      select(team, dk_wins_imp, prob_dk_wins_over, prob_dk_wins_under), 
+    by = "team"
+  ) %>% 
   mutate(
     # Convert American odds to decimal
     decimal_over = if_else(
@@ -34180,33 +34349,33 @@ df_win_bets_2025 =
       1 + odds_under / 100
     ),
     ev_over =
-      prob_over * (decimal_over - 1) -
-      (1 - prob_over),
+      prob_dk_wins_over * (decimal_over - 1) -
+      (1 - prob_dk_wins_over),
     
     ev_under =
-      prob_under * (decimal_under - 1) -
-      (1 - prob_under),
+      prob_dk_wins_under * (decimal_under - 1) -
+      (1 - prob_dk_wins_under),
     # Net odds
     b_over = decimal_over - 1,
     b_under = decimal_under - 1,
     
     # Full Kelly
     kelly_over =
-      (prob_over * b_over - (1 - prob_over)) / b_over,
+      (prob_dk_wins_over * b_over - (1 - prob_dk_wins_over)) / b_over,
     
     kelly_under =
-      (prob_under * b_under - (1 - prob_under)) / b_under,
+      (prob_dk_wins_under * b_under - (1 - prob_dk_wins_under)) / b_under,
     kelly_over = pmax(kelly_over, 0),
     kelly_under = pmax(kelly_under, 0),
     stake_frac_over = pmin(0.03, 0.05 * pmax(kelly_over, 0)),
-    stake_over = stake_frac_over * 100,
+    stake_over = 1,
     stake_frac_under = pmin(0.03, 0.05 * pmax(kelly_under, 0)),
-    stake_under = stake_frac_under * 100,
+    stake_under = 1,
     best_side = 
       case_when(
         abs(pred_wins_calib - dk_wins_imp) <= 0.5 ~ "No Bet",
-        stake_over > stake_under & stake_over >= 0.5 ~ "Over",
-        stake_under > stake_over & stake_under >= 0.5 ~ "Under",
+        pred_wins_calib > dk_wins_imp ~ "Over",
+        pred_wins_calib < dk_wins_imp ~ "Under",
         TRUE ~ "No Bet"
       ),
     stake_tot = 
@@ -34221,8 +34390,8 @@ df_win_bets_2025 =
       TRUE ~ NA_character_
     ),
     model_prob = case_when(
-      best_side == "Over" ~ prob_over,
-      best_side == "Under" ~ prob_under,
+      best_side == "Over" ~ prob_dk_wins_over,
+      best_side == "Under" ~ prob_dk_wins_under,
       TRUE ~ NA_real_
     ),
     odds = case_when(
@@ -34259,7 +34428,7 @@ df_win_bets_results_2025 =
     by = "team"
   ) %>% 
   mutate(
-    stake_tot = 1.5,
+    # stake_tot = 1.5,
     result_bet = 
       case_when(
         best_side == "Over" & wins > dk_wins ~ "Win",
@@ -34272,7 +34441,7 @@ df_win_bets_results_2025 =
       ),
     result_stake = 
       case_when(
-        result_bet == "Win" ~ stake_tot,
+        result_bet == "Win" ~ stake_tot * 210/110 - stake_tot,
         result_bet == "Lose" ~ -stake_tot,
         .default = NA
       )
@@ -34314,7 +34483,7 @@ df_wins_train_2024 =
   df_wins_fin %>% 
   filter(season != 2024) %>% 
   select(wins, starts_with("prior_"), active_log, coach_cont_score, qb_new_team, ol_grade_run_adj, ol_grade_pass_adj) %>% 
-  select(-c(qb_new_team, prior_def_rush_epa, prior_close_wins_reg, prior_rz_eff, prior_to_def, prior_pen_def, prior_exp_def, prior_success_def, prior_success_off, prior_pen_off, prior_def_pass_epa, prior_off_pass_epa)) %>% 
+  select(-c(qb_new_team, prior_def_rush_epa, prior_close_wins_reg, prior_rz_eff, prior_to_def, prior_pen_def, prior_exp_def, prior_success_def, prior_success_off, prior_pen_off, prior_def_pass_epa, prior_off_pass_epa, prior_qb_hits, prior_sack_rate, prior_pressure_rate)) %>% 
   drop_na() %>% 
   relocate(wins, .after = last_col())
 
@@ -34460,7 +34629,8 @@ df_dk_wins_2024 =
         .default = NA
       ),
     prob_dk_wins_over_imp = prob_dk_wins_over / (prob_dk_wins_over + prob_dk_wins_under),
-    prob_dk_wins_under_imp = prob_dk_wins_under / (prob_dk_wins_over + prob_dk_wins_under)
+    prob_dk_wins_under_imp = prob_dk_wins_under / (prob_dk_wins_over + prob_dk_wins_under),
+    dk_wins_imp = dk_wins
   ) #%>% 
   # rowwise() %>% 
   # mutate(
@@ -34479,143 +34649,234 @@ df_dk_wins_2024 =
   # ) %>% 
   # ungroup()
 
-df_wins_test_sim_2024 = 
-  df_wins_test_2024 %>% 
-  select(-prior_opp_wins)
-
-df_pred_team_score_2024 = 
-  df_wins_test_sim_2024 %>% 
-  mutate(
-    pred_team_score = predict(mod_svm_wins_sim_2024, newdata = .)
-  )
-
-# create logit paramters:
-mod_logit_team_score_2024 = 
-  df_szn_all %>% 
-  filter(season > 2016 & season != 2024) %>% 
-  left_join(
-    df_wins_fin %>% 
-      select(season, team, wins, starts_with("prior_"), active_log, coach_cont_score, qb_new_team, ol_grade_run_adj, ol_grade_pass_adj) %>% 
-      select(-c(qb_new_team, prior_def_rush_epa, prior_close_wins_reg, prior_rz_eff, prior_to_def, prior_pen_def, prior_exp_def, prior_success_def, prior_success_off, prior_pen_off, prior_def_pass_epa, prior_off_pass_epa)) %>% 
-      drop_na() %>% 
-      relocate(wins, .after = last_col()) %>% 
-      mutate(
-        pred_team_score = predict(mod_svm_wins_sim_2024, newdata = .)
-      ) %>% 
-      rename(
-        home_team = team,
-        pred_team_score_home = pred_team_score
-      ) %>% 
-      select(season, home_team, pred_team_score_home),
-    by = c("season", "home_team")
-  ) %>% 
-  left_join(
-    df_wins_fin %>% 
-      select(season, team, wins, starts_with("prior_"), active_log, coach_cont_score, qb_new_team, ol_grade_run_adj, ol_grade_pass_adj) %>% 
-      select(-c(qb_new_team, prior_def_rush_epa, prior_close_wins_reg, prior_rz_eff, prior_to_def, prior_pen_def, prior_exp_def, prior_success_def, prior_success_off, prior_pen_off, prior_def_pass_epa, prior_off_pass_epa)) %>% 
-      drop_na() %>% 
-      relocate(wins, .after = last_col()) %>% 
-      mutate(
-        pred_team_score = predict(mod_svm_wins_sim_2024, newdata = .)
-      ) %>% 
-      rename(
-        away_team = team,
-        pred_team_score_away = pred_team_score
-      ) %>% 
-      select(season, away_team, pred_team_score_away),
-    by = c("season", "away_team")
-  ) %>% 
-  select(game_id, home_team, pred_team_score_home, away_team, pred_team_score_away, home_score, away_score) %>% 
-  mutate(
-    win_home = 
-      case_when(
-        home_score > away_score ~ 1,
-        .default = 0
-      ),
-    delta_pred_home_away = pred_team_score_home - pred_team_score_away
-  ) %>% 
-  glm(
-    win_home ~ delta_pred_home_away,
-    data = .,
-    family = binomial(link = "logit")
-  )
-
-mod_logit_team_score_2024
-
-df_team_score_games_sim_2024 = 
-  df_schedules_szn_all %>% 
-  filter(season == 2024) %>% 
-  left_join(
-    df_pred_team_score_2024 %>% 
-      rename(
-        home_team = team,
-        pred_team_score_home = pred_team_score
-      ) %>% 
-      select(home_team, pred_team_score_home), 
-    by = "home_team"
-  ) %>% 
-  left_join(
-    df_pred_team_score_2024 %>% 
-      rename(
-        away_team = team,
-        pred_team_score_away = pred_team_score
-      ) %>% 
-      select(away_team, pred_team_score_away), 
-    by = "away_team"
-  ) %>% 
-  select(game_id, home_team, pred_team_score_home, away_team, pred_team_score_away) %>%
-  mutate(
-    win_diff = pred_team_score_home - pred_team_score_away,
-    logit_home = mod_logit_team_score_2024$coefficients[[1]] + mod_logit_team_score_2024$coefficients[[2]] * win_diff,
-    prob_home = plogis(logit_home)
-  )
-
-set.seed(37564)
-df_team_wins_sim_2024 = 
-  map_dfr(
-    1:10000,
-    ~ simulate_season(df_team_score_games_sim_2024) %>%
-        mutate(sim = .x)
-  )
-
-df_team_wins_sim_fin_2024 = 
-  df_team_wins_sim_2024 %>% 
-  left_join(df_dk_wins_raw_2024) %>% 
-  group_by(team) %>%
-  summarise(
-    mean_wins = mean(wins),
-    median_wins = median(wins),
-    sd_wins = sd(wins),
-    p10 = quantile(wins, 0.10),
-    p25 = quantile(wins, 0.25),
-    p75 = quantile(wins, 0.75),
-    p75 = quantile(wins, 0.75),
-    p90 = quantile(wins, 0.90),
-    .groups = "drop"
-  )
-
-# view(df_team_wins_sim_fin_2024)
-
-df_dk_probs_2024 = 
-  df_team_wins_sim_2024 %>%
-  left_join(
-    df_dk_wins %>%
-      select(team, dk_wins_imp, dk_wins, odds_over, odds_under),
-    by = "team"
-  ) %>% 
-  left_join(df_wins_pred_2024 %>% select(team, pred_wins_calib), by = "team") %>% 
-  group_by(team, pred_wins_calib, dk_wins_imp, dk_wins, odds_over, odds_under) %>%
-  summarise(
-    mean_wins = mean(wins),
-    median_wins = median(wins),
-    sd_wins = sd(wins),
-    prob_over = mean(wins > dk_wins_imp),
-    prob_under = mean(wins < dk_wins_imp),
-    .groups = "drop"
-  )
+# df_wins_test_sim_2024 = 
+#   df_wins_test_2024 %>% 
+#   select(-prior_opp_wins)
+# 
+# df_pred_team_score_2024 = 
+#   df_wins_test_sim_2024 %>% 
+#   mutate(
+#     pred_team_score = predict(mod_svm_wins_sim_2024, newdata = .)
+#   )
+# 
+# # create logit paramters:
+# mod_logit_team_score_2024 = 
+#   df_szn_all %>% 
+#   filter(season > 2016 & season != 2024) %>% 
+#   left_join(
+#     df_wins_fin %>% 
+#       select(season, team, wins, starts_with("prior_"), active_log, coach_cont_score, qb_new_team, ol_grade_run_adj, ol_grade_pass_adj) %>% 
+#       select(-c(qb_new_team, prior_def_rush_epa, prior_close_wins_reg, prior_rz_eff, prior_to_def, prior_pen_def, prior_exp_def, prior_success_def, prior_success_off, prior_pen_off, prior_def_pass_epa, prior_off_pass_epa)) %>% 
+#       drop_na() %>% 
+#       relocate(wins, .after = last_col()) %>% 
+#       mutate(
+#         pred_team_score = predict(mod_svm_wins_sim_2024, newdata = .)
+#       ) %>% 
+#       rename(
+#         home_team = team,
+#         pred_team_score_home = pred_team_score
+#       ) %>% 
+#       select(season, home_team, pred_team_score_home),
+#     by = c("season", "home_team")
+#   ) %>% 
+#   left_join(
+#     df_wins_fin %>% 
+#       select(season, team, wins, starts_with("prior_"), active_log, coach_cont_score, qb_new_team, ol_grade_run_adj, ol_grade_pass_adj) %>% 
+#       select(-c(qb_new_team, prior_def_rush_epa, prior_close_wins_reg, prior_rz_eff, prior_to_def, prior_pen_def, prior_exp_def, prior_success_def, prior_success_off, prior_pen_off, prior_def_pass_epa, prior_off_pass_epa)) %>% 
+#       drop_na() %>% 
+#       relocate(wins, .after = last_col()) %>% 
+#       mutate(
+#         pred_team_score = predict(mod_svm_wins_sim_2024, newdata = .)
+#       ) %>% 
+#       rename(
+#         away_team = team,
+#         pred_team_score_away = pred_team_score
+#       ) %>% 
+#       select(season, away_team, pred_team_score_away),
+#     by = c("season", "away_team")
+#   ) %>% 
+#   select(game_id, home_team, pred_team_score_home, away_team, pred_team_score_away, home_score, away_score) %>% 
+#   mutate(
+#     win_home = 
+#       case_when(
+#         home_score > away_score ~ 1,
+#         .default = 0
+#       ),
+#     delta_pred_home_away = pred_team_score_home - pred_team_score_away
+#   ) %>% 
+#   glm(
+#     win_home ~ delta_pred_home_away,
+#     data = .,
+#     family = binomial(link = "logit")
+#   )
+# 
+# mod_logit_team_score_2024
+# 
+# df_team_score_games_sim_2024 = 
+#   df_schedules_szn_all %>% 
+#   filter(season == 2024) %>% 
+#   left_join(
+#     df_pred_team_score_2024 %>% 
+#       rename(
+#         home_team = team,
+#         pred_team_score_home = pred_team_score
+#       ) %>% 
+#       select(home_team, pred_team_score_home), 
+#     by = "home_team"
+#   ) %>% 
+#   left_join(
+#     df_pred_team_score_2024 %>% 
+#       rename(
+#         away_team = team,
+#         pred_team_score_away = pred_team_score
+#       ) %>% 
+#       select(away_team, pred_team_score_away), 
+#     by = "away_team"
+#   ) %>% 
+#   select(game_id, home_team, pred_team_score_home, away_team, pred_team_score_away) %>%
+#   mutate(
+#     win_diff = pred_team_score_home - pred_team_score_away,
+#     logit_home = mod_logit_team_score_2024$coefficients[[1]] + mod_logit_team_score_2024$coefficients[[2]] * win_diff,
+#     prob_home = plogis(logit_home)
+#   )
+# 
+# set.seed(37564)
+# df_team_wins_sim_2024 = 
+#   map_dfr(
+#     1:10000,
+#     ~ simulate_season(df_team_score_games_sim_2024) %>%
+#         mutate(sim = .x)
+#   )
+# 
+# df_team_wins_sim_fin_2024 = 
+#   df_team_wins_sim_2024 %>% 
+#   left_join(df_dk_wins_raw_2024) %>% 
+#   group_by(team) %>%
+#   summarise(
+#     mean_wins = mean(wins),
+#     median_wins = median(wins),
+#     sd_wins = sd(wins),
+#     p10 = quantile(wins, 0.10),
+#     p25 = quantile(wins, 0.25),
+#     p75 = quantile(wins, 0.75),
+#     p75 = quantile(wins, 0.75),
+#     p90 = quantile(wins, 0.90),
+#     .groups = "drop"
+#   )
+# 
+# # view(df_team_wins_sim_fin_2024)
+# 
+# df_dk_probs_2024 = 
+#   df_team_wins_sim_2024 %>%
+#   left_join(
+#     df_dk_wins %>%
+#       select(team, dk_wins_imp, dk_wins, odds_over, odds_under),
+#     by = "team"
+#   ) %>% 
+#   left_join(df_wins_pred_2024 %>% select(team, pred_wins_calib), by = "team") %>% 
+#   group_by(team, pred_wins_calib, dk_wins_imp, dk_wins, odds_over, odds_under) %>%
+#   summarise(
+#     mean_wins = mean(wins),
+#     median_wins = median(wins),
+#     sd_wins = sd(wins),
+#     prob_over = mean(wins > dk_wins_imp),
+#     prob_under = mean(wins < dk_wins_imp),
+#     .groups = "drop"
+#   )
+# 
+# df_win_bets_2024 = 
+#   df_dk_probs_2024 %>% 
+#   mutate(
+#     # Convert American odds to decimal
+#     decimal_over = if_else(
+#       odds_over < 0,
+#       1 + 100 / abs(odds_over),
+#       1 + odds_over / 100
+#     ),
+#     
+#     decimal_under = if_else(
+#       odds_under < 0,
+#       1 + 100 / abs(odds_under),
+#       1 + odds_under / 100
+#     ),
+#     ev_over =
+#       prob_over * (decimal_over - 1) -
+#       (1 - prob_over),
+#     
+#     ev_under =
+#       prob_under * (decimal_under - 1) -
+#       (1 - prob_under),
+#     # Net odds
+#     b_over = decimal_over - 1,
+#     b_under = decimal_under - 1,
+#     
+#     # Full Kelly
+#     kelly_over =
+#       (prob_over * b_over - (1 - prob_over)) / b_over,
+#     
+#     kelly_under =
+#       (prob_under * b_under - (1 - prob_under)) / b_under,
+#     kelly_over = pmax(kelly_over, 0),
+#     kelly_under = pmax(kelly_under, 0),
+#     stake_frac_over = pmin(0.03, 0.05 * pmax(kelly_over, 0)),
+#     stake_over = stake_frac_over * 100,
+#     stake_frac_under = pmin(0.03, 0.05 * pmax(kelly_under, 0)),
+#     stake_under = stake_frac_under * 100,
+#     best_side = 
+#       case_when(
+#         abs(pred_wins_calib - dk_wins_imp) <= 0.5 ~ "No Bet",
+#         stake_over > stake_under & stake_over >= 0.5 ~ "Over",
+#         stake_under > stake_over & stake_under >= 0.5 ~ "Under",
+#         TRUE ~ "No Bet"
+#       ),
+#     stake_tot = 
+#       case_when(
+#         best_side == "Over" ~ round(stake_over, 1),
+#         best_side == "Under" ~ round(stake_under, 1),
+#         .default = NA
+#       ),
+#     bet = case_when(
+#       best_side == "Over" ~ "Over",
+#       best_side == "Under" ~ "Under",
+#       TRUE ~ NA_character_
+#     ),
+#     model_prob = case_when(
+#       best_side == "Over" ~ prob_over,
+#       best_side == "Under" ~ prob_under,
+#       TRUE ~ NA_real_
+#     ),
+#     odds = case_when(
+#       best_side == "Over" ~ odds_over,
+#       best_side == "Under" ~ odds_under,
+#       TRUE ~ NA_real_
+#     ),
+#     ev = case_when(
+#       best_side == "Over" ~ ev_over,
+#       best_side == "Under" ~ ev_under,
+#       TRUE ~ 0
+#     ),
+#     pred_wins_calib = round(pred_wins_calib, 1)
+#   ) %>%
+#   arrange(desc(stake_tot), best_side) %>%
+#   select(
+#     team,
+#     pred_wins_calib,
+#     dk_wins,
+#     dk_wins_imp,
+#     best_side,
+#     odds,
+#     model_prob,
+#     # ev,
+#     stake_tot
+#   )
 
 df_win_bets_2024 = 
-  df_dk_probs_2024 %>% 
+  df_wins_pred_2024 %>% 
+  left_join(
+    df_dk_wins_2024 %>% 
+      select(team, dk_wins_imp, prob_dk_wins_over, prob_dk_wins_under), 
+    by = "team"
+  ) %>% 
   mutate(
     # Convert American odds to decimal
     decimal_over = if_else(
@@ -34630,33 +34891,33 @@ df_win_bets_2024 =
       1 + odds_under / 100
     ),
     ev_over =
-      prob_over * (decimal_over - 1) -
-      (1 - prob_over),
+      prob_dk_wins_over * (decimal_over - 1) -
+      (1 - prob_dk_wins_over),
     
     ev_under =
-      prob_under * (decimal_under - 1) -
-      (1 - prob_under),
+      prob_dk_wins_under * (decimal_under - 1) -
+      (1 - prob_dk_wins_under),
     # Net odds
     b_over = decimal_over - 1,
     b_under = decimal_under - 1,
     
     # Full Kelly
     kelly_over =
-      (prob_over * b_over - (1 - prob_over)) / b_over,
+      (prob_dk_wins_over * b_over - (1 - prob_dk_wins_over)) / b_over,
     
     kelly_under =
-      (prob_under * b_under - (1 - prob_under)) / b_under,
+      (prob_dk_wins_under * b_under - (1 - prob_dk_wins_under)) / b_under,
     kelly_over = pmax(kelly_over, 0),
     kelly_under = pmax(kelly_under, 0),
     stake_frac_over = pmin(0.03, 0.05 * pmax(kelly_over, 0)),
-    stake_over = stake_frac_over * 100,
+    stake_over = 1,
     stake_frac_under = pmin(0.03, 0.05 * pmax(kelly_under, 0)),
-    stake_under = stake_frac_under * 100,
+    stake_under = 1,
     best_side = 
       case_when(
         abs(pred_wins_calib - dk_wins_imp) <= 0.5 ~ "No Bet",
-        stake_over > stake_under & stake_over >= 0.5 ~ "Over",
-        stake_under > stake_over & stake_under >= 0.5 ~ "Under",
+        pred_wins_calib > dk_wins_imp ~ "Over",
+        pred_wins_calib < dk_wins_imp ~ "Under",
         TRUE ~ "No Bet"
       ),
     stake_tot = 
@@ -34671,8 +34932,8 @@ df_win_bets_2024 =
       TRUE ~ NA_character_
     ),
     model_prob = case_when(
-      best_side == "Over" ~ prob_over,
-      best_side == "Under" ~ prob_under,
+      best_side == "Over" ~ prob_dk_wins_over,
+      best_side == "Under" ~ prob_dk_wins_under,
       TRUE ~ NA_real_
     ),
     odds = case_when(
@@ -34709,7 +34970,7 @@ df_win_bets_results_2024 =
     by = "team"
   ) %>% 
   mutate(
-    stake_tot = 1.5,
+    # stake_tot = 1.5,
     result_bet = 
       case_when(
         best_side == "Over" & wins > dk_wins ~ "Win",
@@ -34722,7 +34983,7 @@ df_win_bets_results_2024 =
       ),
     result_stake = 
       case_when(
-        result_bet == "Win" ~ stake_tot,
+        result_bet == "Win" ~ stake_tot * 210/110 - stake_tot,
         result_bet == "Lose" ~ -stake_tot,
         .default = NA
       )
@@ -34910,7 +35171,8 @@ df_dk_wins_2023 =
         .default = NA
       ),
     prob_dk_wins_over_imp = prob_dk_wins_over / (prob_dk_wins_over + prob_dk_wins_under),
-    prob_dk_wins_under_imp = prob_dk_wins_under / (prob_dk_wins_over + prob_dk_wins_under)
+    prob_dk_wins_under_imp = prob_dk_wins_under / (prob_dk_wins_over + prob_dk_wins_under),
+    dk_wins_imp = dk_wins
   ) #%>% 
   # rowwise() %>% 
   # mutate(
@@ -34929,143 +35191,234 @@ df_dk_wins_2023 =
   # ) %>% 
   # ungroup()
 
-df_wins_test_sim_2023 = 
-  df_wins_test_2023 %>% 
-  select(-prior_opp_wins)
-
-df_pred_team_score_2023 = 
-  df_wins_test_sim_2023 %>% 
-  mutate(
-    pred_team_score = predict(mod_svm_wins_sim_2023, newdata = .)
-  )
-
-# create logit paramters:
-mod_logit_team_score_2023 = 
-  df_szn_all %>% 
-  filter(season > 2016 & season != 2023) %>% 
-  left_join(
-    df_wins_fin %>% 
-      select(season, team, wins, starts_with("prior_"), active_log, coach_cont_score, qb_new_team, ol_grade_run_adj, ol_grade_pass_adj) %>% 
-      select(-c(qb_new_team, prior_def_rush_epa, prior_close_wins_reg, prior_rz_eff, prior_to_def, prior_pen_def, prior_exp_def, prior_success_def, prior_success_off, prior_pen_off, prior_def_pass_epa, prior_off_pass_epa)) %>% 
-      drop_na() %>% 
-      relocate(wins, .after = last_col()) %>% 
-      mutate(
-        pred_team_score = predict(mod_svm_wins_sim_2023, newdata = .)
-      ) %>% 
-      rename(
-        home_team = team,
-        pred_team_score_home = pred_team_score
-      ) %>% 
-      select(season, home_team, pred_team_score_home),
-    by = c("season", "home_team")
-  ) %>% 
-  left_join(
-    df_wins_fin %>% 
-      select(season, team, wins, starts_with("prior_"), active_log, coach_cont_score, qb_new_team, ol_grade_run_adj, ol_grade_pass_adj) %>% 
-      select(-c(qb_new_team, prior_def_rush_epa, prior_close_wins_reg, prior_rz_eff, prior_to_def, prior_pen_def, prior_exp_def, prior_success_def, prior_success_off, prior_pen_off, prior_def_pass_epa, prior_off_pass_epa)) %>% 
-      drop_na() %>% 
-      relocate(wins, .after = last_col()) %>% 
-      mutate(
-        pred_team_score = predict(mod_svm_wins_sim_2023, newdata = .)
-      ) %>% 
-      rename(
-        away_team = team,
-        pred_team_score_away = pred_team_score
-      ) %>% 
-      select(season, away_team, pred_team_score_away),
-    by = c("season", "away_team")
-  ) %>% 
-  select(game_id, home_team, pred_team_score_home, away_team, pred_team_score_away, home_score, away_score) %>% 
-  mutate(
-    win_home = 
-      case_when(
-        home_score > away_score ~ 1,
-        .default = 0
-      ),
-    delta_pred_home_away = pred_team_score_home - pred_team_score_away
-  ) %>% 
-  glm(
-    win_home ~ delta_pred_home_away,
-    data = .,
-    family = binomial(link = "logit")
-  )
-
-mod_logit_team_score_2023
-
-df_team_score_games_sim_2023 = 
-  df_schedules_szn_all %>% 
-  filter(season == 2023) %>% 
-  left_join(
-    df_pred_team_score_2023 %>% 
-      rename(
-        home_team = team,
-        pred_team_score_home = pred_team_score
-      ) %>% 
-      select(home_team, pred_team_score_home), 
-    by = "home_team"
-  ) %>% 
-  left_join(
-    df_pred_team_score_2023 %>% 
-      rename(
-        away_team = team,
-        pred_team_score_away = pred_team_score
-      ) %>% 
-      select(away_team, pred_team_score_away), 
-    by = "away_team"
-  ) %>% 
-  select(game_id, home_team, pred_team_score_home, away_team, pred_team_score_away) %>%
-  mutate(
-    win_diff = pred_team_score_home - pred_team_score_away,
-    logit_home = mod_logit_team_score_2023$coefficients[[1]] + mod_logit_team_score_2023$coefficients[[2]] * win_diff,
-    prob_home = plogis(logit_home)
-  )
-
-set.seed(37564)
-df_team_wins_sim_2023 = 
-  map_dfr(
-    1:10000,
-    ~ simulate_season(df_team_score_games_sim_2023) %>%
-        mutate(sim = .x)
-  )
-
-df_team_wins_sim_fin_2023 = 
-  df_team_wins_sim_2023 %>% 
-  left_join(df_dk_wins_raw_2023) %>% 
-  group_by(team) %>%
-  summarise(
-    mean_wins = mean(wins),
-    median_wins = median(wins),
-    sd_wins = sd(wins),
-    p10 = quantile(wins, 0.10),
-    p25 = quantile(wins, 0.25),
-    p75 = quantile(wins, 0.75),
-    p75 = quantile(wins, 0.75),
-    p90 = quantile(wins, 0.90),
-    .groups = "drop"
-  )
-
-# view(df_team_wins_sim_fin_2023)
-
-df_dk_probs_2023 = 
-  df_team_wins_sim_2023 %>%
-  left_join(
-    df_dk_wins %>%
-      select(team, dk_wins_imp, dk_wins, odds_over, odds_under),
-    by = "team"
-  ) %>% 
-  left_join(df_wins_pred_2023 %>% select(team, pred_wins_calib), by = "team") %>% 
-  group_by(team, pred_wins_calib, dk_wins_imp, dk_wins, odds_over, odds_under) %>%
-  summarise(
-    mean_wins = mean(wins),
-    median_wins = median(wins),
-    sd_wins = sd(wins),
-    prob_over = mean(wins > dk_wins_imp),
-    prob_under = mean(wins < dk_wins_imp),
-    .groups = "drop"
-  )
+# df_wins_test_sim_2023 = 
+#   df_wins_test_2023 %>% 
+#   select(-prior_opp_wins)
+# 
+# df_pred_team_score_2023 = 
+#   df_wins_test_sim_2023 %>% 
+#   mutate(
+#     pred_team_score = predict(mod_svm_wins_sim_2023, newdata = .)
+#   )
+# 
+# # create logit paramters:
+# mod_logit_team_score_2023 = 
+#   df_szn_all %>% 
+#   filter(season > 2016 & season != 2023) %>% 
+#   left_join(
+#     df_wins_fin %>% 
+#       select(season, team, wins, starts_with("prior_"), active_log, coach_cont_score, qb_new_team, ol_grade_run_adj, ol_grade_pass_adj) %>% 
+#       select(-c(qb_new_team, prior_def_rush_epa, prior_close_wins_reg, prior_rz_eff, prior_to_def, prior_pen_def, prior_exp_def, prior_success_def, prior_success_off, prior_pen_off, prior_def_pass_epa, prior_off_pass_epa)) %>% 
+#       drop_na() %>% 
+#       relocate(wins, .after = last_col()) %>% 
+#       mutate(
+#         pred_team_score = predict(mod_svm_wins_sim_2023, newdata = .)
+#       ) %>% 
+#       rename(
+#         home_team = team,
+#         pred_team_score_home = pred_team_score
+#       ) %>% 
+#       select(season, home_team, pred_team_score_home),
+#     by = c("season", "home_team")
+#   ) %>% 
+#   left_join(
+#     df_wins_fin %>% 
+#       select(season, team, wins, starts_with("prior_"), active_log, coach_cont_score, qb_new_team, ol_grade_run_adj, ol_grade_pass_adj) %>% 
+#       select(-c(qb_new_team, prior_def_rush_epa, prior_close_wins_reg, prior_rz_eff, prior_to_def, prior_pen_def, prior_exp_def, prior_success_def, prior_success_off, prior_pen_off, prior_def_pass_epa, prior_off_pass_epa)) %>% 
+#       drop_na() %>% 
+#       relocate(wins, .after = last_col()) %>% 
+#       mutate(
+#         pred_team_score = predict(mod_svm_wins_sim_2023, newdata = .)
+#       ) %>% 
+#       rename(
+#         away_team = team,
+#         pred_team_score_away = pred_team_score
+#       ) %>% 
+#       select(season, away_team, pred_team_score_away),
+#     by = c("season", "away_team")
+#   ) %>% 
+#   select(game_id, home_team, pred_team_score_home, away_team, pred_team_score_away, home_score, away_score) %>% 
+#   mutate(
+#     win_home = 
+#       case_when(
+#         home_score > away_score ~ 1,
+#         .default = 0
+#       ),
+#     delta_pred_home_away = pred_team_score_home - pred_team_score_away
+#   ) %>% 
+#   glm(
+#     win_home ~ delta_pred_home_away,
+#     data = .,
+#     family = binomial(link = "logit")
+#   )
+# 
+# mod_logit_team_score_2023
+# 
+# df_team_score_games_sim_2023 = 
+#   df_schedules_szn_all %>% 
+#   filter(season == 2023) %>% 
+#   left_join(
+#     df_pred_team_score_2023 %>% 
+#       rename(
+#         home_team = team,
+#         pred_team_score_home = pred_team_score
+#       ) %>% 
+#       select(home_team, pred_team_score_home), 
+#     by = "home_team"
+#   ) %>% 
+#   left_join(
+#     df_pred_team_score_2023 %>% 
+#       rename(
+#         away_team = team,
+#         pred_team_score_away = pred_team_score
+#       ) %>% 
+#       select(away_team, pred_team_score_away), 
+#     by = "away_team"
+#   ) %>% 
+#   select(game_id, home_team, pred_team_score_home, away_team, pred_team_score_away) %>%
+#   mutate(
+#     win_diff = pred_team_score_home - pred_team_score_away,
+#     logit_home = mod_logit_team_score_2023$coefficients[[1]] + mod_logit_team_score_2023$coefficients[[2]] * win_diff,
+#     prob_home = plogis(logit_home)
+#   )
+# 
+# set.seed(37564)
+# df_team_wins_sim_2023 = 
+#   map_dfr(
+#     1:10000,
+#     ~ simulate_season(df_team_score_games_sim_2023) %>%
+#         mutate(sim = .x)
+#   )
+# 
+# df_team_wins_sim_fin_2023 = 
+#   df_team_wins_sim_2023 %>% 
+#   left_join(df_dk_wins_raw_2023) %>% 
+#   group_by(team) %>%
+#   summarise(
+#     mean_wins = mean(wins),
+#     median_wins = median(wins),
+#     sd_wins = sd(wins),
+#     p10 = quantile(wins, 0.10),
+#     p25 = quantile(wins, 0.25),
+#     p75 = quantile(wins, 0.75),
+#     p75 = quantile(wins, 0.75),
+#     p90 = quantile(wins, 0.90),
+#     .groups = "drop"
+#   )
+# 
+# # view(df_team_wins_sim_fin_2023)
+# 
+# df_dk_probs_2023 = 
+#   df_team_wins_sim_2023 %>%
+#   left_join(
+#     df_dk_wins %>%
+#       select(team, dk_wins_imp, dk_wins, odds_over, odds_under),
+#     by = "team"
+#   ) %>% 
+#   left_join(df_wins_pred_2023 %>% select(team, pred_wins_calib), by = "team") %>% 
+#   group_by(team, pred_wins_calib, dk_wins_imp, dk_wins, odds_over, odds_under) %>%
+#   summarise(
+#     mean_wins = mean(wins),
+#     median_wins = median(wins),
+#     sd_wins = sd(wins),
+#     prob_over = mean(wins > dk_wins_imp),
+#     prob_under = mean(wins < dk_wins_imp),
+#     .groups = "drop"
+#   )
+# 
+# df_win_bets_2023 = 
+#   df_dk_probs_2023 %>% 
+#   mutate(
+#     # Convert American odds to decimal
+#     decimal_over = if_else(
+#       odds_over < 0,
+#       1 + 100 / abs(odds_over),
+#       1 + odds_over / 100
+#     ),
+#     
+#     decimal_under = if_else(
+#       odds_under < 0,
+#       1 + 100 / abs(odds_under),
+#       1 + odds_under / 100
+#     ),
+#     ev_over =
+#       prob_over * (decimal_over - 1) -
+#       (1 - prob_over),
+#     
+#     ev_under =
+#       prob_under * (decimal_under - 1) -
+#       (1 - prob_under),
+#     # Net odds
+#     b_over = decimal_over - 1,
+#     b_under = decimal_under - 1,
+#     
+#     # Full Kelly
+#     kelly_over =
+#       (prob_over * b_over - (1 - prob_over)) / b_over,
+#     
+#     kelly_under =
+#       (prob_under * b_under - (1 - prob_under)) / b_under,
+#     kelly_over = pmax(kelly_over, 0),
+#     kelly_under = pmax(kelly_under, 0),
+#     stake_frac_over = pmin(0.03, 0.05 * pmax(kelly_over, 0)),
+#     stake_over = stake_frac_over * 100,
+#     stake_frac_under = pmin(0.03, 0.05 * pmax(kelly_under, 0)),
+#     stake_under = stake_frac_under * 100,
+#     best_side = 
+#       case_when(
+#         abs(pred_wins_calib - dk_wins_imp) <= 0.5 ~ "No Bet",
+#         stake_over > stake_under & stake_over >= 0.5 ~ "Over",
+#         stake_under > stake_over & stake_under >= 0.5 ~ "Under",
+#         TRUE ~ "No Bet"
+#       ),
+#     stake_tot = 
+#       case_when(
+#         best_side == "Over" ~ round(stake_over, 1),
+#         best_side == "Under" ~ round(stake_under, 1),
+#         .default = NA
+#       ),
+#     bet = case_when(
+#       best_side == "Over" ~ "Over",
+#       best_side == "Under" ~ "Under",
+#       TRUE ~ NA_character_
+#     ),
+#     model_prob = case_when(
+#       best_side == "Over" ~ prob_over,
+#       best_side == "Under" ~ prob_under,
+#       TRUE ~ NA_real_
+#     ),
+#     odds = case_when(
+#       best_side == "Over" ~ odds_over,
+#       best_side == "Under" ~ odds_under,
+#       TRUE ~ NA_real_
+#     ),
+#     ev = case_when(
+#       best_side == "Over" ~ ev_over,
+#       best_side == "Under" ~ ev_under,
+#       TRUE ~ 0
+#     ),
+#     pred_wins_calib = round(pred_wins_calib, 1)
+#   ) %>%
+#   arrange(desc(stake_tot), best_side) %>%
+#   select(
+#     team,
+#     pred_wins_calib,
+#     dk_wins,
+#     dk_wins_imp,
+#     best_side,
+#     odds,
+#     model_prob,
+#     # ev,
+#     stake_tot
+#   )
 
 df_win_bets_2023 = 
-  df_dk_probs_2023 %>% 
+  df_wins_pred_2023 %>% 
+  left_join(
+    df_dk_wins_2023 %>% 
+      select(team, dk_wins_imp, prob_dk_wins_over, prob_dk_wins_under), 
+    by = "team"
+  ) %>% 
   mutate(
     # Convert American odds to decimal
     decimal_over = if_else(
@@ -35080,33 +35433,33 @@ df_win_bets_2023 =
       1 + odds_under / 100
     ),
     ev_over =
-      prob_over * (decimal_over - 1) -
-      (1 - prob_over),
+      prob_dk_wins_over * (decimal_over - 1) -
+      (1 - prob_dk_wins_over),
     
     ev_under =
-      prob_under * (decimal_under - 1) -
-      (1 - prob_under),
+      prob_dk_wins_under * (decimal_under - 1) -
+      (1 - prob_dk_wins_under),
     # Net odds
     b_over = decimal_over - 1,
     b_under = decimal_under - 1,
     
     # Full Kelly
     kelly_over =
-      (prob_over * b_over - (1 - prob_over)) / b_over,
+      (prob_dk_wins_over * b_over - (1 - prob_dk_wins_over)) / b_over,
     
     kelly_under =
-      (prob_under * b_under - (1 - prob_under)) / b_under,
+      (prob_dk_wins_under * b_under - (1 - prob_dk_wins_under)) / b_under,
     kelly_over = pmax(kelly_over, 0),
     kelly_under = pmax(kelly_under, 0),
     stake_frac_over = pmin(0.03, 0.05 * pmax(kelly_over, 0)),
-    stake_over = stake_frac_over * 100,
+    stake_over = 1,
     stake_frac_under = pmin(0.03, 0.05 * pmax(kelly_under, 0)),
-    stake_under = stake_frac_under * 100,
+    stake_under = 1,
     best_side = 
       case_when(
         abs(pred_wins_calib - dk_wins_imp) <= 0.5 ~ "No Bet",
-        stake_over > stake_under & stake_over >= 0.5 ~ "Over",
-        stake_under > stake_over & stake_under >= 0.5 ~ "Under",
+        pred_wins_calib > dk_wins_imp ~ "Over",
+        pred_wins_calib < dk_wins_imp ~ "Under",
         TRUE ~ "No Bet"
       ),
     stake_tot = 
@@ -35121,8 +35474,8 @@ df_win_bets_2023 =
       TRUE ~ NA_character_
     ),
     model_prob = case_when(
-      best_side == "Over" ~ prob_over,
-      best_side == "Under" ~ prob_under,
+      best_side == "Over" ~ prob_dk_wins_over,
+      best_side == "Under" ~ prob_dk_wins_under,
       TRUE ~ NA_real_
     ),
     odds = case_when(
@@ -35159,7 +35512,7 @@ df_win_bets_results_2023 =
     by = "team"
   ) %>% 
   mutate(
-    stake_tot = 1.5,
+    # stake_tot = 1.5,
     result_bet = 
       case_when(
         best_side == "Over" & wins > dk_wins ~ "Win",
@@ -35172,7 +35525,7 @@ df_win_bets_results_2023 =
       ),
     result_stake = 
       case_when(
-        result_bet == "Win" ~ stake_tot,
+        result_bet == "Win" ~ stake_tot * 210/110 - stake_tot,
         result_bet == "Lose" ~ -stake_tot,
         .default = NA
       )
@@ -35207,7 +35560,6 @@ df_win_bets_results_2023 %>%
     profit = sum(result_stake),
     roi = sum(result_stake) / sum(stake_tot)
   )
-
 
 # 2022
   
@@ -35361,7 +35713,8 @@ df_dk_wins_2022 =
         .default = NA
       ),
     prob_dk_wins_over_imp = prob_dk_wins_over / (prob_dk_wins_over + prob_dk_wins_under),
-    prob_dk_wins_under_imp = prob_dk_wins_under / (prob_dk_wins_over + prob_dk_wins_under)
+    prob_dk_wins_under_imp = prob_dk_wins_under / (prob_dk_wins_over + prob_dk_wins_under),
+    dk_wins_imp = dk_wins
   ) #%>% 
   # rowwise() %>% 
   # mutate(
@@ -35380,143 +35733,234 @@ df_dk_wins_2022 =
   # ) %>% 
   # ungroup()
 
-df_wins_test_sim_2022 = 
-  df_wins_test_2022 %>% 
-  select(-prior_opp_wins)
-
-df_pred_team_score_2022 = 
-  df_wins_test_sim_2022 %>% 
-  mutate(
-    pred_team_score = predict(mod_svm_wins_sim_2022, newdata = .)
-  )
-
-# create logit paramters:
-mod_logit_team_score_2022 = 
-  df_szn_all %>% 
-  filter(season > 2016 & season != 2022) %>% 
-  left_join(
-    df_wins_fin %>% 
-      select(season, team, wins, starts_with("prior_"), active_log, coach_cont_score, qb_new_team, ol_grade_run_adj, ol_grade_pass_adj) %>% 
-      select(-c(qb_new_team, prior_def_rush_epa, prior_close_wins_reg, prior_rz_eff, prior_to_def, prior_pen_def, prior_exp_def, prior_success_def, prior_success_off, prior_pen_off, prior_def_pass_epa, prior_off_pass_epa)) %>% 
-      drop_na() %>% 
-      relocate(wins, .after = last_col()) %>% 
-      mutate(
-        pred_team_score = predict(mod_svm_wins_sim_2022, newdata = .)
-      ) %>% 
-      rename(
-        home_team = team,
-        pred_team_score_home = pred_team_score
-      ) %>% 
-      select(season, home_team, pred_team_score_home),
-    by = c("season", "home_team")
-  ) %>% 
-  left_join(
-    df_wins_fin %>% 
-      select(season, team, wins, starts_with("prior_"), active_log, coach_cont_score, qb_new_team, ol_grade_run_adj, ol_grade_pass_adj) %>% 
-      select(-c(qb_new_team, prior_def_rush_epa, prior_close_wins_reg, prior_rz_eff, prior_to_def, prior_pen_def, prior_exp_def, prior_success_def, prior_success_off, prior_pen_off, prior_def_pass_epa, prior_off_pass_epa)) %>% 
-      drop_na() %>% 
-      relocate(wins, .after = last_col()) %>% 
-      mutate(
-        pred_team_score = predict(mod_svm_wins_sim_2022, newdata = .)
-      ) %>% 
-      rename(
-        away_team = team,
-        pred_team_score_away = pred_team_score
-      ) %>% 
-      select(season, away_team, pred_team_score_away),
-    by = c("season", "away_team")
-  ) %>% 
-  select(game_id, home_team, pred_team_score_home, away_team, pred_team_score_away, home_score, away_score) %>% 
-  mutate(
-    win_home = 
-      case_when(
-        home_score > away_score ~ 1,
-        .default = 0
-      ),
-    delta_pred_home_away = pred_team_score_home - pred_team_score_away
-  ) %>% 
-  glm(
-    win_home ~ delta_pred_home_away,
-    data = .,
-    family = binomial(link = "logit")
-  )
-
-mod_logit_team_score_2022
-
-df_team_score_games_sim_2022 = 
-  df_schedules_szn_all %>% 
-  filter(season == 2022) %>% 
-  left_join(
-    df_pred_team_score_2024 %>% 
-      rename(
-        home_team = team,
-        pred_team_score_home = pred_team_score
-      ) %>% 
-      select(home_team, pred_team_score_home), 
-    by = "home_team"
-  ) %>% 
-  left_join(
-    df_pred_team_score_2024 %>% 
-      rename(
-        away_team = team,
-        pred_team_score_away = pred_team_score
-      ) %>% 
-      select(away_team, pred_team_score_away), 
-    by = "away_team"
-  ) %>% 
-  select(game_id, home_team, pred_team_score_home, away_team, pred_team_score_away) %>%
-  mutate(
-    win_diff = pred_team_score_home - pred_team_score_away,
-    logit_home = mod_logit_team_score_2022$coefficients[[1]] + mod_logit_team_score_2022$coefficients[[2]] * win_diff,
-    prob_home = plogis(logit_home)
-  )
-
-set.seed(37564)
-df_team_wins_sim_2022 = 
-  map_dfr(
-    1:10000,
-    ~ simulate_season(df_team_score_games_sim_2022) %>%
-        mutate(sim = .x)
-  )
-
-df_team_wins_sim_fin_2022 = 
-  df_team_wins_sim_2022 %>% 
-  left_join(df_dk_wins_raw_2022) %>% 
-  group_by(team) %>%
-  summarise(
-    mean_wins = mean(wins),
-    median_wins = median(wins),
-    sd_wins = sd(wins),
-    p10 = quantile(wins, 0.10),
-    p25 = quantile(wins, 0.25),
-    p75 = quantile(wins, 0.75),
-    p75 = quantile(wins, 0.75),
-    p90 = quantile(wins, 0.90),
-    .groups = "drop"
-  )
-
-# view(df_team_wins_sim_fin_2022)
-
-df_dk_probs_2022 = 
-  df_team_wins_sim_2022 %>%
-  left_join(
-    df_dk_wins %>%
-      select(team, dk_wins_imp, dk_wins, odds_over, odds_under),
-    by = "team"
-  ) %>% 
-  left_join(df_wins_pred_2022 %>% select(team, pred_wins_calib), by = "team") %>% 
-  group_by(team, pred_wins_calib, dk_wins_imp, dk_wins, odds_over, odds_under) %>%
-  summarise(
-    mean_wins = mean(wins),
-    median_wins = median(wins),
-    sd_wins = sd(wins),
-    prob_over = mean(wins > dk_wins_imp),
-    prob_under = mean(wins < dk_wins_imp),
-    .groups = "drop"
-  )
+# df_wins_test_sim_2022 = 
+#   df_wins_test_2022 %>% 
+#   select(-prior_opp_wins)
+# 
+# df_pred_team_score_2022 = 
+#   df_wins_test_sim_2022 %>% 
+#   mutate(
+#     pred_team_score = predict(mod_svm_wins_sim_2022, newdata = .)
+#   )
+# 
+# # create logit paramters:
+# mod_logit_team_score_2022 = 
+#   df_szn_all %>% 
+#   filter(season > 2016 & season != 2022) %>% 
+#   left_join(
+#     df_wins_fin %>% 
+#       select(season, team, wins, starts_with("prior_"), active_log, coach_cont_score, qb_new_team, ol_grade_run_adj, ol_grade_pass_adj) %>% 
+#       select(-c(qb_new_team, prior_def_rush_epa, prior_close_wins_reg, prior_rz_eff, prior_to_def, prior_pen_def, prior_exp_def, prior_success_def, prior_success_off, prior_pen_off, prior_def_pass_epa, prior_off_pass_epa)) %>% 
+#       drop_na() %>% 
+#       relocate(wins, .after = last_col()) %>% 
+#       mutate(
+#         pred_team_score = predict(mod_svm_wins_sim_2022, newdata = .)
+#       ) %>% 
+#       rename(
+#         home_team = team,
+#         pred_team_score_home = pred_team_score
+#       ) %>% 
+#       select(season, home_team, pred_team_score_home),
+#     by = c("season", "home_team")
+#   ) %>% 
+#   left_join(
+#     df_wins_fin %>% 
+#       select(season, team, wins, starts_with("prior_"), active_log, coach_cont_score, qb_new_team, ol_grade_run_adj, ol_grade_pass_adj) %>% 
+#       select(-c(qb_new_team, prior_def_rush_epa, prior_close_wins_reg, prior_rz_eff, prior_to_def, prior_pen_def, prior_exp_def, prior_success_def, prior_success_off, prior_pen_off, prior_def_pass_epa, prior_off_pass_epa)) %>% 
+#       drop_na() %>% 
+#       relocate(wins, .after = last_col()) %>% 
+#       mutate(
+#         pred_team_score = predict(mod_svm_wins_sim_2022, newdata = .)
+#       ) %>% 
+#       rename(
+#         away_team = team,
+#         pred_team_score_away = pred_team_score
+#       ) %>% 
+#       select(season, away_team, pred_team_score_away),
+#     by = c("season", "away_team")
+#   ) %>% 
+#   select(game_id, home_team, pred_team_score_home, away_team, pred_team_score_away, home_score, away_score) %>% 
+#   mutate(
+#     win_home = 
+#       case_when(
+#         home_score > away_score ~ 1,
+#         .default = 0
+#       ),
+#     delta_pred_home_away = pred_team_score_home - pred_team_score_away
+#   ) %>% 
+#   glm(
+#     win_home ~ delta_pred_home_away,
+#     data = .,
+#     family = binomial(link = "logit")
+#   )
+# 
+# mod_logit_team_score_2022
+# 
+# df_team_score_games_sim_2022 = 
+#   df_schedules_szn_all %>% 
+#   filter(season == 2022) %>% 
+#   left_join(
+#     df_pred_team_score_2024 %>% 
+#       rename(
+#         home_team = team,
+#         pred_team_score_home = pred_team_score
+#       ) %>% 
+#       select(home_team, pred_team_score_home), 
+#     by = "home_team"
+#   ) %>% 
+#   left_join(
+#     df_pred_team_score_2024 %>% 
+#       rename(
+#         away_team = team,
+#         pred_team_score_away = pred_team_score
+#       ) %>% 
+#       select(away_team, pred_team_score_away), 
+#     by = "away_team"
+#   ) %>% 
+#   select(game_id, home_team, pred_team_score_home, away_team, pred_team_score_away) %>%
+#   mutate(
+#     win_diff = pred_team_score_home - pred_team_score_away,
+#     logit_home = mod_logit_team_score_2022$coefficients[[1]] + mod_logit_team_score_2022$coefficients[[2]] * win_diff,
+#     prob_home = plogis(logit_home)
+#   )
+# 
+# set.seed(37564)
+# df_team_wins_sim_2022 = 
+#   map_dfr(
+#     1:10000,
+#     ~ simulate_season(df_team_score_games_sim_2022) %>%
+#         mutate(sim = .x)
+#   )
+# 
+# df_team_wins_sim_fin_2022 = 
+#   df_team_wins_sim_2022 %>% 
+#   left_join(df_dk_wins_raw_2022) %>% 
+#   group_by(team) %>%
+#   summarise(
+#     mean_wins = mean(wins),
+#     median_wins = median(wins),
+#     sd_wins = sd(wins),
+#     p10 = quantile(wins, 0.10),
+#     p25 = quantile(wins, 0.25),
+#     p75 = quantile(wins, 0.75),
+#     p75 = quantile(wins, 0.75),
+#     p90 = quantile(wins, 0.90),
+#     .groups = "drop"
+#   )
+# 
+# # view(df_team_wins_sim_fin_2022)
+# 
+# df_dk_probs_2022 = 
+#   df_team_wins_sim_2022 %>%
+#   left_join(
+#     df_dk_wins %>%
+#       select(team, dk_wins_imp, dk_wins, odds_over, odds_under),
+#     by = "team"
+#   ) %>% 
+#   left_join(df_wins_pred_2022 %>% select(team, pred_wins_calib), by = "team") %>% 
+#   group_by(team, pred_wins_calib, dk_wins_imp, dk_wins, odds_over, odds_under) %>%
+#   summarise(
+#     mean_wins = mean(wins),
+#     median_wins = median(wins),
+#     sd_wins = sd(wins),
+#     prob_over = mean(wins > dk_wins_imp),
+#     prob_under = mean(wins < dk_wins_imp),
+#     .groups = "drop"
+#   )
+# 
+# df_win_bets_2022 = 
+#   df_dk_probs_2022 %>% 
+#   mutate(
+#     # Convert American odds to decimal
+#     decimal_over = if_else(
+#       odds_over < 0,
+#       1 + 100 / abs(odds_over),
+#       1 + odds_over / 100
+#     ),
+#     
+#     decimal_under = if_else(
+#       odds_under < 0,
+#       1 + 100 / abs(odds_under),
+#       1 + odds_under / 100
+#     ),
+#     ev_over =
+#       prob_over * (decimal_over - 1) -
+#       (1 - prob_over),
+#     
+#     ev_under =
+#       prob_under * (decimal_under - 1) -
+#       (1 - prob_under),
+#     # Net odds
+#     b_over = decimal_over - 1,
+#     b_under = decimal_under - 1,
+#     
+#     # Full Kelly
+#     kelly_over =
+#       (prob_over * b_over - (1 - prob_over)) / b_over,
+#     
+#     kelly_under =
+#       (prob_under * b_under - (1 - prob_under)) / b_under,
+#     kelly_over = pmax(kelly_over, 0),
+#     kelly_under = pmax(kelly_under, 0),
+#     stake_frac_over = pmin(0.03, 0.05 * pmax(kelly_over, 0)),
+#     stake_over = stake_frac_over * 100,
+#     stake_frac_under = pmin(0.03, 0.05 * pmax(kelly_under, 0)),
+#     stake_under = stake_frac_under * 100,
+#     best_side = 
+#       case_when(
+#         abs(pred_wins_calib - dk_wins_imp) <= 0.5 ~ "No Bet",
+#         stake_over > stake_under & stake_over >= 0.5 ~ "Over",
+#         stake_under > stake_over & stake_under >= 0.5 ~ "Under",
+#         TRUE ~ "No Bet"
+#       ),
+#     stake_tot = 
+#       case_when(
+#         best_side == "Over" ~ round(stake_over, 1),
+#         best_side == "Under" ~ round(stake_under, 1),
+#         .default = NA
+#       ),
+#     bet = case_when(
+#       best_side == "Over" ~ "Over",
+#       best_side == "Under" ~ "Under",
+#       TRUE ~ NA_character_
+#     ),
+#     model_prob = case_when(
+#       best_side == "Over" ~ prob_over,
+#       best_side == "Under" ~ prob_under,
+#       TRUE ~ NA_real_
+#     ),
+#     odds = case_when(
+#       best_side == "Over" ~ odds_over,
+#       best_side == "Under" ~ odds_under,
+#       TRUE ~ NA_real_
+#     ),
+#     ev = case_when(
+#       best_side == "Over" ~ ev_over,
+#       best_side == "Under" ~ ev_under,
+#       TRUE ~ 0
+#     ),
+#     pred_wins_calib = round(pred_wins_calib, 1)
+#   ) %>%
+#   arrange(desc(stake_tot), best_side) %>%
+#   select(
+#     team,
+#     pred_wins_calib,
+#     dk_wins,
+#     dk_wins_imp,
+#     best_side,
+#     odds,
+#     model_prob,
+#     # ev,
+#     stake_tot
+#   )
 
 df_win_bets_2022 = 
-  df_dk_probs_2022 %>% 
+  df_wins_pred_2022 %>% 
+  left_join(
+    df_dk_wins_2022 %>% 
+      select(team, dk_wins_imp, prob_dk_wins_over, prob_dk_wins_under), 
+    by = "team"
+  ) %>% 
   mutate(
     # Convert American odds to decimal
     decimal_over = if_else(
@@ -35531,33 +35975,33 @@ df_win_bets_2022 =
       1 + odds_under / 100
     ),
     ev_over =
-      prob_over * (decimal_over - 1) -
-      (1 - prob_over),
+      prob_dk_wins_over * (decimal_over - 1) -
+      (1 - prob_dk_wins_over),
     
     ev_under =
-      prob_under * (decimal_under - 1) -
-      (1 - prob_under),
+      prob_dk_wins_under * (decimal_under - 1) -
+      (1 - prob_dk_wins_under),
     # Net odds
     b_over = decimal_over - 1,
     b_under = decimal_under - 1,
     
     # Full Kelly
     kelly_over =
-      (prob_over * b_over - (1 - prob_over)) / b_over,
+      (prob_dk_wins_over * b_over - (1 - prob_dk_wins_over)) / b_over,
     
     kelly_under =
-      (prob_under * b_under - (1 - prob_under)) / b_under,
+      (prob_dk_wins_under * b_under - (1 - prob_dk_wins_under)) / b_under,
     kelly_over = pmax(kelly_over, 0),
     kelly_under = pmax(kelly_under, 0),
     stake_frac_over = pmin(0.03, 0.05 * pmax(kelly_over, 0)),
-    stake_over = stake_frac_over * 100,
+    stake_over = 1,
     stake_frac_under = pmin(0.03, 0.05 * pmax(kelly_under, 0)),
-    stake_under = stake_frac_under * 100,
+    stake_under = 1,
     best_side = 
       case_when(
         abs(pred_wins_calib - dk_wins_imp) <= 0.5 ~ "No Bet",
-        stake_over > stake_under & stake_over >= 0.5 ~ "Over",
-        stake_under > stake_over & stake_under >= 0.5 ~ "Under",
+        pred_wins_calib > dk_wins_imp ~ "Over",
+        pred_wins_calib < dk_wins_imp ~ "Under",
         TRUE ~ "No Bet"
       ),
     stake_tot = 
@@ -35572,8 +36016,8 @@ df_win_bets_2022 =
       TRUE ~ NA_character_
     ),
     model_prob = case_when(
-      best_side == "Over" ~ prob_over,
-      best_side == "Under" ~ prob_under,
+      best_side == "Over" ~ prob_dk_wins_over,
+      best_side == "Under" ~ prob_dk_wins_under,
       TRUE ~ NA_real_
     ),
     odds = case_when(
@@ -35610,7 +36054,7 @@ df_win_bets_results_2022 =
     by = "team"
   ) %>% 
   mutate(
-    stake_tot = 1.5,
+    # stake_tot = 1.5,
     result_bet = 
       case_when(
         best_side == "Over" & wins > dk_wins ~ "Win",
@@ -35623,7 +36067,7 @@ df_win_bets_results_2022 =
       ),
     result_stake = 
       case_when(
-        result_bet == "Win" ~ stake_tot,
+        result_bet == "Win" ~ stake_tot * 210/110 - stake_tot,
         result_bet == "Lose" ~ -stake_tot,
         .default = NA
       )
@@ -35658,6 +36102,78 @@ df_win_bets_results_2022 %>%
     profit = sum(result_stake),
     roi = sum(result_stake) / sum(stake_tot)
   )
+
+df_win_bets_results_2022 %>% 
+  mutate(season = 2022) %>% 
+  bind_rows(
+    df_win_bets_results_2023 %>% 
+      mutate(season = 2023),
+    df_win_bets_results_2024 %>% 
+      mutate(season = 2024),
+    df_win_bets_results_2025 %>% 
+      mutate(season = 2025)
+  ) %>% 
+  mutate(
+    abs_diff_mod_dk = round(abs(pred_wins_calib - dk_wins_imp), 1)
+  ) %>% 
+  select(season, team, pred_wins_calib, dk_wins_imp, abs_diff_mod_dk, dk_wins, odds, best_side, wins, result_bet, result_stake) %>% 
+  group_by()
+  view
+  
+df_wins_hist = 
+  df_win_bets_results_2022 %>% 
+  mutate(season = 2022) %>% 
+  bind_rows(
+    df_win_bets_results_2023 %>% 
+      mutate(season = 2023),
+    df_win_bets_results_2024 %>% 
+      mutate(season = 2024),
+    df_win_bets_results_2025 %>% 
+      mutate(season = 2025)
+  ) %>% 
+  mutate(
+    diff_mod_dk_bin = 
+      case_when(
+        abs(pred_wins_calib - dk_wins) < 0.5 ~ NA,
+        abs(pred_wins_calib - dk_wins) < 1 ~ "0.5 - 1",
+        abs(pred_wins_calib - dk_wins) < 1.5 ~ "1 - 1.5",
+        abs(pred_wins_calib - dk_wins) < 2 ~ "1.5 - 2",
+        abs(pred_wins_calib - dk_wins) < 2.5 ~ "2 - 2.5",
+        abs(pred_wins_calib - dk_wins) >= 2.5 ~ "2.5+",
+        .default = NA
+      ),
+    bet_win_ind = 
+      case_match(
+        result_bet,
+        "Win" ~ 1,
+        "Lose" ~ 0,
+        .default = NA
+      )
+  ) %>% 
+  group_by(season) %>% 
+  drop_na() %>%  
+  summarise(
+    n_bets = n(),
+    wins = sum(bet_win_ind),
+    hit_rate = mean(bet_win_ind),
+    profit = sum(result_stake)#,
+    # roi = sum(result_stake) / sum(stake_tot)
+  ) %>% 
+  mutate(
+    hit_rate = str_c(100 * round(hit_rate, 3), "%"),
+    profit = round(profit, 1)
+  ) %>% 
+  labelled::set_variable_labels(
+    season = "Season",
+    n_bets = "Number of Bets",
+    wins = "Bets Won",
+    hit_rate = "Hit Rate",
+    profit = "Units of Profit"
+  )
+
+saveRDS(df_wins_hist, str_c("data/wins_data/", "df_wins_hist.rds"))
+
+view(df_wins_hist)
 ```
 
 
