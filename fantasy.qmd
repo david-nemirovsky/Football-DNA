@@ -13,8 +13,10 @@ editor: source
 ---
 
 :::{.callout-note}
-Updated as of `r format(Sys.time(), '%A, %B %d, %Y at %X')`
+Updated as of Tuesday, September 01, 2026 at 2:49:43 PM
 :::
+
+<!-- `r format(Sys.time(), '%A, %B %d, %Y at %X')` -->
 
 ```{r setup}
 #| include: false

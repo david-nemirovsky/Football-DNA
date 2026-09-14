@@ -6818,92 +6818,6 @@ fan_te_ppr =
 # 2026
 
 ```{r}
-
-
-# Load 2025 data
-# szn2025 = 
-#   load_pbp(2025) %>%  
-#   filter(season_type == "REG")# %>% 
-#   #filter(week >= 11)
-# 
-# szn_all = 
-#   szn_all %>% 
-#   filter(season != 2025) %>% 
-#   rbind(szn2025)
-
-# ros2024 = 
-#   fast_scraper_roster(2024) 
-
-teams_df = 
-  szn_all %>% 
-  tibble() %>% 
-  distinct(home_team) %>% 
-  rename(team = home_team) %>% 
-  arrange(team) %>% 
-  rowid_to_column("team_id")
-
-division_df = 
-  teams_df %>% 
-  mutate(
-    division = 
-      case_match(
-        team,
-        c("BUF", "MIA", "NE", "NYJ") ~ "AFC East",
-        c("PIT", "CIN", "BAL", "CLE") ~ "AFC North",
-        c("IND", "JAX", "TEN", "HOU") ~ "AFC South",
-        c("LAC", "KC", "DEN", "LV") ~ "AFC West",
-        c("NYG", "DAL", "WAS", "PHI") ~ "NFC East",
-        c("GB", "MIN", "CHI", "DET") ~ "NFC North",
-        c("NO", "ATL", "CAR", "TB") ~ "NFC South",
-        c("SF", "ARI", "SEA", "LA") ~ "NFC West"
-      ),
-    conf = str_extract(division, "^[A-Z]FC")
-  )
-
-# Spreads boxplots
-spreads_df = 
-  szn2025 %>% 
-  distinct(game_id, .keep_all = T) %>% 
-  select(week, game_id, posteam, home_team, away_team, spread_line, result) %>% 
-  pivot_longer(
-    c(home_team, away_team),
-    values_to = "team",
-    names_to = "home_away",
-    names_pattern = "(.*)_team"
-  ) %>% 
-  mutate(spread = ifelse(home_away == "home", spread_line, -spread_line),
-         result = ifelse(home_away == "home", result, -result),
-         dif = result - spread) %>% 
-  select(week, team, spread, result, dif)
-
-med_spread_df = 
-  spreads_df %>% 
-  group_by(team) %>% 
-  summarize(med_diff = median(dif)) %>% 
-  arrange(med_diff)
-
-spreads_df = 
-  spreads_df %>% 
-  left_join(med_spread_df)
-
-spread_cols = 
-  teams_colors_logos %>% 
-  mutate(team = team_abbr) %>% 
-  left_join(med_spread_df) %>% 
-  mutate(team = fct_reorder(as.factor(team), med_diff)) %>% 
-  arrange(med_diff)
-
-plot_spreads = 
-  spreads_df %>% 
-  mutate(team = fct_reorder(as.factor(team), med_diff)) %>% 
-  ggplot(aes(x = dif, y = team)) +
-  geom_boxplot(fill = spread_cols$team_color, alpha = 0.75) +
-  geom_vline(xintercept = 0, linetype = "dotted", color = "black") +
-  labs(title = "Game Results vs Spread (Thru Week 9)", 
-       x = "Point Difference (Result - Spread)", 
-       y = "Team") + 
-  theme(plot.title = element_text(hjust = 0.5))
-
 szn_2025_epa = 
   szn2025 %>% 
   # filter(week == 1) %>% 
@@ -7325,8 +7239,8 @@ szn_all %>%
 #   ) %>%
 #   ungroup()
   
-rolling_epa_df =
-  szn_all %>%
+df_rolling_epa =
+  df_szn_all %>%
   filter(season > 2008) %>%
   filter(rush == 1 | pass == 1, !is.na(epa), !is.na(posteam), posteam != "") %>%
   select(season, week, posteam, pass, epa) %>%
@@ -7336,7 +7250,7 @@ rolling_epa_df =
   rename(off_pass_epa = "1", off_rush_epa = "0", team = "posteam") %>%
   ungroup() %>%
   left_join(
-    szn_all %>%
+    df_szn_all %>%
       filter(season > 2008) %>%
       filter(rush == 1 | pass == 1, !is.na(epa), !is.na(defteam), defteam != "") %>%
       select(season, week, defteam, pass, epa) %>%
@@ -7384,8 +7298,10 @@ rolling_epa_df =
   select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
   ungroup()
 
-rolling_pace_df =
-  szn_all %>%
+saveRDS(df_rolling_epa, str_c("data/game_mod_data/", "df_rolling_epa.rds"))
+
+df_rolling_pace =
+  df_szn_all %>%
   filter(season > 2008) %>%
   group_by(season, week, game_id, posteam) %>%
   summarise(n_plays = n()) %>%
@@ -7411,8 +7327,10 @@ rolling_pace_df =
   select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
   ungroup()
 
-rolling_rz_eff_df =
-  szn_all %>%
+saveRDS(df_rolling_pace, str_c("data/game_mod_data/", "df_rolling_pace.rds"))
+
+df_rolling_rz_eff =
+  df_szn_all %>%
   filter(season > 2008) %>%
   group_by(season, week, game_id, posteam) %>%
   mutate(
@@ -7462,8 +7380,10 @@ rolling_rz_eff_df =
   select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
   ungroup()
 
-rolling_success_df =
-  szn_all %>%
+saveRDS(df_rolling_rz_eff, str_c("data/game_mod_data/", "df_rolling_rz_eff.rds"))
+
+df_rolling_success =
+  df_szn_all %>%
   filter(season > 2008) %>%
   filter(down %in% c(1:4) & !is.na(yards_gained)) %>%
   group_by(season, week, game_id, posteam) %>%
@@ -7485,7 +7405,7 @@ rolling_success_df =
   ungroup() %>%
   rename(team = posteam) %>%
   left_join(
-    szn_all %>%
+    df_szn_all %>%
       filter(season > 2008) %>%
       filter(down %in% c(1:4) & !is.na(yards_gained)) %>%
       group_by(season, week, game_id, defteam) %>%
@@ -7539,8 +7459,10 @@ rolling_success_df =
   select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
   ungroup()
 
-rolling_exp_plays_df =
-  szn_all %>%
+saveRDS(df_rolling_success, str_c("data/game_mod_data/", "df_rolling_success.rds"))
+
+df_rolling_exp_plays =
+  df_szn_all %>%
   filter(season > 2008) %>%
   filter(!is.na(posteam)) %>%
   group_by(season, week, game_id, posteam) %>%
@@ -7556,7 +7478,7 @@ rolling_exp_plays_df =
   ungroup() %>%
   rename(team = posteam) %>%
   left_join(
-    szn_all %>%
+    df_szn_all %>%
       filter(season > 2008) %>%
       filter(!is.na(defteam)) %>%
       group_by(season, week, game_id, defteam) %>%
@@ -7604,8 +7526,10 @@ rolling_exp_plays_df =
   # left_join(df_rolling_exp_plays %>% select(team, game_id, rolling_exp_off_rate, rolling_exp_def_rate), by = c("team", "game_id")) %>%
   ungroup()
 
-rolling_to_rate_df =
-  szn_all %>%
+saveRDS(df_rolling_exp_plays, str_c("data/game_mod_data/", "df_rolling_exp_plays.rds"))
+
+df_rolling_to_rate =
+  df_szn_all %>%
   filter(season > 2008) %>%
   filter(!is.na(posteam)) %>%
   group_by(season, week, game_id, posteam) %>%
@@ -7621,7 +7545,7 @@ rolling_to_rate_df =
   ungroup() %>%
   rename(team = posteam) %>%
   left_join(
-    szn_all %>%
+    df_szn_all %>%
       filter(season > 2008) %>%
       filter(!is.na(defteam)) %>%
       group_by(season, week, game_id, defteam) %>%
@@ -7668,9 +7592,11 @@ rolling_to_rate_df =
   ) %>%
   # left_join(df_rolling_to_rate %>% select(team, game_id, rolling_to_off_rate, rolling_to_def_rate), by = c("team", "game_id")) %>%
   ungroup()
-  
-rolling_pen_yards_df = 
-  szn_all %>% 
+
+saveRDS(df_rolling_to_rate, str_c("data/game_mod_data/", "df_rolling_to_rate.rds"))
+
+df_rolling_pen_yards = 
+  df_szn_all %>% 
   filter(season > 2008) %>%
   filter(!is.na(posteam)) %>%
   group_by(season, week, game_id, posteam) %>%
@@ -7683,7 +7609,7 @@ rolling_pen_yards_df =
   ungroup() %>% 
   rename(team = posteam) %>% 
   left_join(
-    szn_all %>% 
+    df_szn_all %>% 
       filter(season > 2008) %>% 
       filter(!is.na(defteam)) %>%
       group_by(season, week, game_id, defteam) %>%
@@ -7728,6 +7654,8 @@ rolling_pen_yards_df =
   select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>% 
   # left_join(df_rolling_pen_yards %>% select(team, game_id, rolling_pen_yards_off, rolling_pen_yards_def), by = c("team", "game_id")) %>% 
   ungroup()
+
+saveRDS(df_rolling_pen_yards, str_c("data/game_mod_data/", "df_rolling_pen_yards.rds"))
 
 # view(rolling_pen_yards_df)
 
