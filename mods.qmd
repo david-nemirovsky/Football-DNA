@@ -3534,7 +3534,6 @@ df_game_sims %>%
 ```
 
 ```{r tots spreads plot}
-
 #| eval: false
 
 # Boxplots w/ 90% CIs
@@ -4076,8 +4075,8 @@ df_pred_total_spread_fin %>%
     team = fct_reorder(factor(team), game),
     points_text_label_position = 
       case_when(
-        team_points_diff >= 0 ~ team_points_diff + 0.6,
-        team_points_diff < 0 ~ team_points_diff - 0.6,
+        team_points_diff >= 0 ~ team_points_diff + 0.8,
+        team_points_diff < 0 ~ team_points_diff - 0.8,
         .default = NA
       ),
     points_text_label = str_c("(", round(team_points_mod, 1), "-", team_points_vegas, ")")
