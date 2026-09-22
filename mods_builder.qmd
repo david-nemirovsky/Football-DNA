@@ -7298,7 +7298,7 @@ df_rolling_epa =
   select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
   ungroup()
 
-saveRDS(df_rolling_epa, str_c("data/game_mod_data/", "df_rolling_epa.rds"))
+# saveRDS(df_rolling_epa, str_c("data/game_mod_data/", "df_rolling_epa.rds"))
 
 df_rolling_pace =
   df_szn_all %>%
@@ -7327,7 +7327,7 @@ df_rolling_pace =
   select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
   ungroup()
 
-saveRDS(df_rolling_pace, str_c("data/game_mod_data/", "df_rolling_pace.rds"))
+# saveRDS(df_rolling_pace, str_c("data/game_mod_data/", "df_rolling_pace.rds"))
 
 df_rolling_rz_eff =
   df_szn_all %>%
@@ -7380,7 +7380,7 @@ df_rolling_rz_eff =
   select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
   ungroup()
 
-saveRDS(df_rolling_rz_eff, str_c("data/game_mod_data/", "df_rolling_rz_eff.rds"))
+# saveRDS(df_rolling_rz_eff, str_c("data/game_mod_data/", "df_rolling_rz_eff.rds"))
 
 df_rolling_success =
   df_szn_all %>%
@@ -7459,7 +7459,7 @@ df_rolling_success =
   select(-starts_with("sum_"), -ends_with("_prev"), -ends_with("_recent")) %>%
   ungroup()
 
-saveRDS(df_rolling_success, str_c("data/game_mod_data/", "df_rolling_success.rds"))
+# saveRDS(df_rolling_success, str_c("data/game_mod_data/", "df_rolling_success.rds"))
 
 df_rolling_exp_plays =
   df_szn_all %>%
@@ -7526,7 +7526,7 @@ df_rolling_exp_plays =
   # left_join(df_rolling_exp_plays %>% select(team, game_id, rolling_exp_off_rate, rolling_exp_def_rate), by = c("team", "game_id")) %>%
   ungroup()
 
-saveRDS(df_rolling_exp_plays, str_c("data/game_mod_data/", "df_rolling_exp_plays.rds"))
+# saveRDS(df_rolling_exp_plays, str_c("data/game_mod_data/", "df_rolling_exp_plays.rds"))
 
 df_rolling_to_rate =
   df_szn_all %>%
@@ -7593,7 +7593,7 @@ df_rolling_to_rate =
   # left_join(df_rolling_to_rate %>% select(team, game_id, rolling_to_off_rate, rolling_to_def_rate), by = c("team", "game_id")) %>%
   ungroup()
 
-saveRDS(df_rolling_to_rate, str_c("data/game_mod_data/", "df_rolling_to_rate.rds"))
+# saveRDS(df_rolling_to_rate, str_c("data/game_mod_data/", "df_rolling_to_rate.rds"))
 
 df_rolling_pen_yards = 
   df_szn_all %>% 
@@ -7655,12 +7655,170 @@ df_rolling_pen_yards =
   # left_join(df_rolling_pen_yards %>% select(team, game_id, rolling_pen_yards_off, rolling_pen_yards_def), by = c("team", "game_id")) %>% 
   ungroup()
 
-saveRDS(df_rolling_pen_yards, str_c("data/game_mod_data/", "df_rolling_pen_yards.rds"))
+# saveRDS(df_rolling_pen_yards, str_c("data/game_mod_data/", "df_rolling_pen_yards.rds"))
 
 # view(rolling_pen_yards_df)
 
-qb_starters = 
-  szn_all %>% 
+df_rolling_team_total = 
+  df_szn_all %>% 
+  distinct(game_id, season, week, home_team, home_score, away_score) %>% 
+  rename(
+    team = home_team,
+    total_team = home_score,
+    total_team_opp = away_score
+  ) %>% 
+  bind_rows(
+    df_szn_all %>% 
+      distinct(game_id, season, week, away_team, away_score, home_score) %>% 
+      rename(
+        team = away_team,
+        total_team = away_score,
+        total_team_opp = home_score
+      )
+  ) %>% 
+  rename(
+    total_team_off = total_team,
+    total_team_def = total_team_opp
+  ) %>% 
+  group_by(season, team) %>% 
+  arrange(season, team, week) %>% 
+  mutate(
+    n_game = row_number()
+  ) %>% 
+  mutate(
+    across(starts_with("total_team"), ~ cumsum(.), .names = "sum_{col}"),
+    across(starts_with("total_team"), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
+    rolling_recent_team_total_off = sum_recent_total_team_off / 5,
+    rolling_recent_team_total_def = sum_recent_total_team_def / 5,
+    rolling_prev_team_total_off = sum_total_team_off / n_game,
+    rolling_prev_team_total_def = sum_total_team_def / n_game,
+    rolling_team_total_off = 
+      case_when(
+        n_game <= 5 ~ rolling_prev_team_total_off,
+        .default = 0.65 * rolling_recent_team_total_off + 0.35 * rolling_prev_team_total_off
+      ),
+    rolling_team_total_def = 
+      case_when(
+        n_game <= 5 ~ rolling_prev_team_total_def,
+        .default = 0.65 * rolling_recent_team_total_def + 0.35 * rolling_prev_team_total_def
+      ),
+    across(starts_with("rolling_team_total_"), ~ lag(.), .names = "prior_{col}")
+  ) %>% 
+  select(game_id, season, week, team, prior_rolling_team_total_def, prior_rolling_team_total_off) %>% 
+  ungroup()
+
+# saveRDS(df_rolling_team_total, str_c("data/game_mod_data/", "df_rolling_team_total.rds"))
+
+# view(df_rolling_team_total)
+
+df_rolling_pressure = 
+  df_szn_all %>% 
+  filter(!is.na(defteam)) %>%
+  group_by(season, week, game_id, defteam) %>%
+  summarise(
+    dropbacks_def = sum(pass_attempt == 1, na.rm = T),
+    sacks_def = sum(sack == 1, na.rm = T),
+    qb_hits_def = sum(qb_hit == 1, na.rm = T),
+    pressures_def = sum(qb_hit == 1 | sack == 1, na.rm = T),
+    .groups = "drop"
+  ) %>%
+  # mutate(
+  #   sack_rate_def = sacks_def / dropbacks_def,
+  #   qb_hit_rate_def = qb_hits_def / dropbacks_def,
+  #   pressure_rate_def = (sacks_def + qb_hits_def) / dropbacks_def
+  # ) %>% 
+  rename(team = defteam) %>% 
+  select(season, week, game_id, team, dropbacks_def, sacks_def, qb_hits_def, pressures_def) %>% 
+  left_join(
+    df_szn_all %>% 
+      filter(!is.na(posteam)) %>%
+      group_by(season, week, game_id, posteam) %>%
+      summarise(
+        dropbacks_off = sum(pass_attempt == 1, na.rm = T),
+        sacks_off = sum(sack == 1, na.rm = T),
+        qb_hits_off = sum(qb_hit == 1, na.rm = T),
+        pressures_off = sum(qb_hit == 1 | sack == 1, na.rm = T),
+        .groups = "drop"
+      ) %>%
+      # mutate(
+      #   sack_rate_off = sacks_off / dropbacks_off,
+      #   qb_hit_rate_off = qb_hits_off / dropbacks_off,
+      #   pressure_rate_off = (sacks_off + qb_hits_off) / dropbacks_off
+      # ) %>% 
+      rename(team = posteam) %>% 
+      select(season, week, game_id, team, dropbacks_off, sacks_off, qb_hits_off, pressures_off),
+    by = c("season", "week", "game_id", "team")
+  ) %>%
+  group_by(season, team) %>%
+  arrange(season, team, week) %>%
+  mutate(
+    n_game = row_number()
+  ) %>%
+  mutate(
+    across(c(ends_with("_def"), ends_with("_off")), ~ cumsum(.), .names = "sum_{col}"),
+    across(c(ends_with("_def"), ends_with("_off"), -starts_with("sum_")), ~ . + lag(.) + lag(lag(.)) + lag(lag(lag(.))) + lag(lag(lag(lag(.)))), .names = "sum_recent_{col}"),
+    rolling_recent_sacks_off = (sum_recent_sacks_off / sum_recent_dropbacks_off),
+    rolling_recent_sacks_def = (sum_recent_sacks_def / sum_recent_dropbacks_def),
+    rolling_recent_qb_hits_off = (sum_recent_qb_hits_off / sum_recent_dropbacks_off),
+    rolling_recent_qb_hits_def = (sum_recent_qb_hits_def / sum_recent_dropbacks_def),
+    rolling_recent_pressures_off = (sum_recent_pressures_off / sum_recent_dropbacks_off),
+    rolling_recent_pressures_def = (sum_recent_pressures_def / sum_recent_dropbacks_def),
+    sum_prev_sack_off = sum_sacks_off - sum_recent_sacks_off,
+    sum_prev_qb_hits_off = sum_qb_hits_off - sum_recent_qb_hits_off,
+    sum_prev_pressures_off = sum_pressures_off - sum_recent_pressures_off,
+    sum_prev_dropbacks_off = sum_dropbacks_off - sum_recent_dropbacks_off,
+    sum_prev_sack_def = sum_sacks_def - sum_recent_sacks_def,
+    sum_prev_qb_hits_def = sum_qb_hits_def - sum_recent_qb_hits_def,
+    sum_prev_pressures_def = sum_pressures_def - sum_recent_pressures_def,
+    sum_prev_dropbacks_def = sum_dropbacks_def - sum_recent_dropbacks_def,
+    rolling_prev_sacks_off = (sum_prev_sack_off / sum_prev_dropbacks_off),
+    rolling_prev_qb_hits_off = (sum_prev_qb_hits_off / sum_prev_dropbacks_off),
+    rolling_prev_pressures_off = (sum_prev_pressures_off / sum_prev_dropbacks_off),
+    rolling_prev_sacks_def = (sum_prev_sack_def / sum_prev_dropbacks_def),
+    rolling_prev_qb_hits_def = (sum_prev_qb_hits_def / sum_prev_dropbacks_def),
+    rolling_prev_pressures_def = (sum_prev_pressures_def / sum_prev_dropbacks_def),
+    rolling_sack_rate_off =
+      case_when(
+        n_game <= 5 ~ (sum_sacks_off / sum_dropbacks_off),
+        .default = 0.65 * rolling_recent_sacks_off + 0.35 * rolling_prev_sacks_off
+      ),
+    rolling_sack_rate_def =
+      case_when(
+        n_game <= 5 ~ (sum_sacks_def / sum_dropbacks_def),
+        .default = 0.65 * rolling_recent_sacks_def + 0.35 * rolling_prev_sacks_def
+      ),
+    rolling_qb_hit_rate_off =
+      case_when(
+        n_game <= 5 ~ (sum_qb_hits_off / sum_dropbacks_off),
+        .default = 0.65 * rolling_recent_qb_hits_off + 0.35 * rolling_prev_qb_hits_off
+      ),
+    rolling_qb_hit_rate_def =
+      case_when(
+        n_game <= 5 ~ (sum_qb_hits_def / sum_dropbacks_def),
+        .default = 0.65 * rolling_recent_qb_hits_def + 0.35 * rolling_prev_qb_hits_def
+      ),
+    rolling_pressure_rate_off =
+      case_when(
+        n_game <= 5 ~ (sum_pressures_off / sum_dropbacks_off),
+        .default = 0.65 * rolling_recent_pressures_off + 0.35 * rolling_prev_pressures_off
+      ),
+    rolling_pressure_rate_def =
+      case_when(
+        n_game <= 5 ~ (sum_pressures_off / sum_dropbacks_def),
+        .default = 0.65 * rolling_recent_pressures_def + 0.35 * rolling_prev_pressures_def
+      ),
+    across(starts_with("rolling_") & contains("_rate"), ~ lag(.), .names = "prior_{col}")
+  ) %>% 
+  select(game_id, season, week, team, starts_with("prior_")) %>% 
+  # left_join(df_rolling_to_rate %>% select(team, game_id, rolling_to_off_rate, rolling_to_def_rate), by = c("team", "game_id")) %>%
+  ungroup()
+
+# saveRDS(df_rolling_pressure, str_c("data/game_mod_data/", "df_rolling_pressure.rds"))
+
+# view(df_rolling_pressure)
+
+df_qb_starters = 
+  df_szn_all %>% 
   filter(qtr == 1) %>%
   filter(!is.na(passer_id)) %>% 
   group_by(season, week, game_id, posteam, passer_id) %>%
@@ -7669,10 +7827,12 @@ qb_starters =
   ungroup() %>%
   rename(team = posteam, qb_id = passer_id)
 
+# saveRDS(df_qb_starters, str_c("data/game_mod_data/", "df_qb_starters.rds"))
+
 # view(qb_starters)
 
-qb_cont_df = 
-  szn_all %>% 
+df_qb_cont = 
+  df_szn_all %>% 
   filter(season > 2008) %>% 
   distinct(season, week, game_id, home_team, away_team, total_line, total, spread_line, result, home_score, away_score) %>%
   pivot_longer(
@@ -7681,7 +7841,7 @@ qb_cont_df =
     values_to = "team"
   ) %>% 
   left_join(
-    qb_starters %>% 
+    df_qb_starters %>% 
       select(game_id, team, qb_id), 
     by = c("game_id", "team")
   ) %>%
@@ -7694,10 +7854,12 @@ qb_cont_df =
   ungroup() %>% 
   select(season, week, team, game_id, qb_cont)
 
+# saveRDS(df_qb_cont, str_c("data/game_mod_data/", "df_qb_cont.rds"))
+
 # view(qb_cont_df)
 
-rest_days_df = 
-  szn_all %>% 
+df_rest_days = 
+  df_szn_all %>% 
   filter(season > 2008) %>% 
   mutate(date_game = as.Date(game_date)) %>% 
   distinct(season, week, game_id, home_team, away_team, date_game) %>%
@@ -7714,6 +7876,8 @@ rest_days_df =
   ) %>%
   ungroup() %>% 
   select(season, week, team, game_id, rest_days)
+
+# saveRDS(df_rest_days, str_c("data/game_mod_data/", "df_rest_days.rds"))
 
 # view(rest_days_df)
 
@@ -7740,7 +7904,7 @@ rest_days_df =
 #     values_from = starts_with("prior_")
 #   )
 
-stadium_coords_df = 
+df_stadium_coords = 
   tibble::tribble(
     ~team,    ~stadium,                        ~lat,      ~lon,
     # --- Current Teams ---
@@ -7808,20 +7972,24 @@ stadium_coords_df =
     lon     = -79.3894
   )
 
-# view(stadium_coords_df)
+# saveRDS(df_stadium_coords, str_c("data/game_mod_data/", "df_stadium_coords.rds"))
+
+# view(df_stadium_coords)
 
 df_schedules_szn_all = 
   fast_scraper_schedules() %>% 
   filter(season > 2008)
 
-# view(schedules_szn_all)
+# saveRDS(df_schedules_szn_all, str_c("data/game_mod_data/", "df_schedules_szn_all.rds"))
 
-games_coords_df = 
+# view(df_schedules_szn_all)
+
+df_games_coords = 
   df_schedules_szn_all %>% 
   rename(stadium_old = stadium) %>% 
   filter(location != "Neutral") %>% 
   left_join(
-    stadium_coords_df %>% 
+    df_stadium_coords %>% 
       rename(home_team = team),
     by = "home_team"
   ) %>% 
@@ -7829,21 +7997,21 @@ games_coords_df =
     df_schedules_szn_all %>% 
       filter(location == "Neutral") %>% 
       left_join(
-        stadium_coords_df %>% 
+        df_stadium_coords %>% 
           select(-team),
         by = "stadium"
       ) %>% 
       mutate(
         lat = 
           case_when(
-            is.na(lat) & game_type == "REG" ~ stadium_coords_df %>% filter(stadium == "Wembley Stadium") %>% pull(lat), 
-            game_type == "REG" ~ stadium_coords_df %>% filter(stadium == "Wembley Stadium") %>% pull(lat), 
+            is.na(lat) & game_type == "REG" ~ df_stadium_coords %>% filter(stadium == "Wembley Stadium") %>% pull(lat), 
+            game_type == "REG" ~ df_stadium_coords %>% filter(stadium == "Wembley Stadium") %>% pull(lat), 
             .default = lat
           ),
         lon = 
           case_when(
-            is.na(lon) & game_type == "REG" ~ stadium_coords_df %>% filter(stadium == "Wembley Stadium") %>% pull(lon), 
-            game_type == "REG" ~ stadium_coords_df %>% filter(stadium == "Wembley Stadium") %>% pull(lon), 
+            is.na(lon) & game_type == "REG" ~ df_stadium_coords %>% filter(stadium == "Wembley Stadium") %>% pull(lon), 
+            game_type == "REG" ~ df_stadium_coords %>% filter(stadium == "Wembley Stadium") %>% pull(lon), 
             .default = lon
           ),
         stadium_old = NA
@@ -7857,15 +8025,20 @@ games_coords_df =
   select(game_id, home_team, location, stadium, game_lat, game_lon) %>% 
   distinct()
 
-team_coords_df = 
-  games_coords_df %>%
+# saveRDS(df_games_coords, str_c("data/game_mod_data/", "df_games_coords.rds"))
+
+df_team_coords = 
+  df_games_coords %>%
   distinct(home_team, .keep_all = TRUE) %>%
   select(-game_id) %>% 
   rename(
     team = home_team,
     home_lat = game_lat, 
     home_lon = game_lon
-  )
+  ) %>% 
+  tibble()
+
+# saveRDS(df_team_coords, str_c("data/game_mod_data/", "df_team_coords.rds"))
 
 # Function to compute haversine distance (km)
 haversine <- function(lat1, lon1, lat2, lon2) {
@@ -7877,8 +8050,8 @@ haversine <- function(lat1, lon1, lat2, lon2) {
   R * c
 }
 
-team_travel_df =
-  szn_all %>% 
+df_team_travel =
+  df_szn_all %>% 
   distinct(season, week, game_id, home_team, away_team) %>% 
   mutate(
     home_team = 
@@ -7901,8 +8074,8 @@ team_travel_df =
     names_to = "home_away",
     values_to = "team"
   ) %>% 
-  left_join(games_coords_df %>% select(game_id, location, stadium, game_lat, game_lon), by = "game_id") %>% 
-  left_join(team_coords_df %>% select(-location), by = "team") %>% 
+  left_join(df_games_coords %>% select(game_id, location, stadium, game_lat, game_lon), by = "game_id") %>% 
+  left_join(df_team_coords %>% select(-location), by = "team") %>% 
   mutate(
     travel_km = ifelse(home_away == "home" & location != "Neutral", 0, haversine(home_lat, home_lon, game_lat, game_lon)),
     team = 
@@ -7915,14 +8088,50 @@ team_travel_df =
   ) %>% 
   select(season, week, team, game_id, travel_km)
 
-# view(team_travel_df)
+# saveRDS(df_team_travel, str_c("data/game_mod_data/", "df_team_travel.rds"))
 
-team_total_spread_rolling_df =
-  szn_all %>% 
+# view(df_team_travel)
+
+# df_mean_scoring =
+#   df_szn_all %>% 
+#   distinct(game_id, season, week, home_team, home_score, away_score) %>% 
+#   rename(
+#     team = home_team,
+#     total_team = home_score,
+#     total_team_opp = away_score
+#   ) %>% 
+#   bind_rows(
+#     df_szn_all %>% 
+#       distinct(game_id, season, week, away_team, away_score, home_score) %>% 
+#       rename(
+#         team = away_team,
+#         total_team = away_score,
+#         total_team_opp = home_score
+#       )
+#   ) %>% 
+#   arrange(season, week) %>%
+#   group_by(season, week) %>%
+#   summarise(
+#     sum_total = sum(total_team, na.rm = T),
+#     n_games = n()
+#     # mean_total = mean(total_team, na.rm = T),
+#     # prior_mean_total = lag(mean_total)
+#   ) %>% 
+#   mutate(
+#     mean_total = (cumsum(sum_total) / cumsum(n_games)),
+#     prior_mean_total = lag(mean_total)
+#   ) %>% 
+#   ungroup() %>% 
+#   select(season, week, prior_mean_total)
+# 
+# view(df_mean_scoring)
+
+df_team_total_spread_rolling =
+  df_szn_all %>% 
   filter(season > 2008) %>% 
   distinct(season, week, game_id, home_team, away_team, total_line, total, spread_line, result, home_score, away_score) %>%
-  left_join(division_df %>% select(team, division) %>% rename(home_team = team, division_home = division), by = "home_team") %>%
-  left_join(division_df %>% select(team, division) %>% rename(away_team = team, division_away = division), by = "away_team") %>% 
+  left_join(df_division %>% select(team, division) %>% rename(home_team = team, division_home = division), by = "home_team") %>%
+  left_join(df_division %>% select(team, division) %>% rename(away_team = team, division_away = division), by = "away_team") %>% 
   mutate(division_game = ifelse(division_home == division_away, 1, 0)) %>%
   pivot_longer(
     ends_with("_team"),
@@ -7930,16 +8139,19 @@ team_total_spread_rolling_df =
     values_to = "team"
   ) %>% 
   mutate(home_away = str_remove(home_away, "_team$")) %>% 
-  left_join(rolling_epa_df, by = c("season", "week", "team")) %>% 
-  left_join(rolling_pace_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
-  left_join(rolling_rz_eff_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
-  left_join(rolling_success_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
-  left_join(rolling_exp_plays_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
-  left_join(rolling_to_rate_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
-  left_join(rolling_pen_yards_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
-  left_join(qb_cont_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
-  left_join(rest_days_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
-  left_join(team_travel_df %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  left_join(df_rolling_epa, by = c("season", "week", "team")) %>% 
+  left_join(df_rolling_pace %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  left_join(df_rolling_rz_eff %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  left_join(df_rolling_success %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  left_join(df_rolling_exp_plays %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  left_join(df_rolling_to_rate %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  left_join(df_rolling_pen_yards %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  left_join(df_rolling_team_total %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  left_join(df_rolling_pressure %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  left_join(df_qb_cont %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  left_join(df_rest_days %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  left_join(df_team_travel %>% select(-game_id), by = c("season", "week", "team")) %>% 
+  # left_join(df_mean_scoring, by = c("season", "week")) %>% 
   select(season, week, game_id, team, total_line, total, spread_line, result, home_away, home_score, away_score, division_game, starts_with("prior_"), qb_cont, rest_days, travel_km) %>%
   mutate(
     travel_km = 
@@ -7956,10 +8168,12 @@ team_total_spread_rolling_df =
   ) %>% 
   ungroup()
 
-# view(team_total_spread_rolling_df)
+# saveRDS(df_team_total_spread_rolling, str_c("data/game_mod_data/", "df_team_total_spread_rolling.rds"))
 
-field_game_df = 
-  szn_all %>% 
+# view(df_team_total_spread_rolling)
+
+df_field_game = 
+  df_szn_all %>% 
   distinct(game_id, home_team, away_team, roof, surface, wind, temp, start_time, total) %>% 
   # pull(roof) %>% table(useNA = "ifany")
   mutate(
@@ -7993,17 +8207,31 @@ field_game_df =
   # ggplot(aes(x = as.factor(turf_field), y = total)) + 
   # geom_boxplot()
   select(game_id, home_team, away_team, ends_with("_field"), international, time_start, wind, temp) %>%
-  left_join(division_df %>% select(team, division) %>% rename(home_team = team, division_home = division), by = "home_team") %>%
-  left_join(division_df %>% select(team, division) %>% rename(away_team = team, division_away = division), by = "away_team") %>% 
+  left_join(df_division %>% select(team, division) %>% rename(home_team = team, division_home = division), by = "home_team") %>%
+  left_join(df_division %>% select(team, division) %>% rename(away_team = team, division_away = division), by = "away_team") %>% 
   mutate(division_game = ifelse(division_home == division_away, 1, 0))
 
-ctrl = trainControl(method = "repeatedcv", number = 5, repeats = 10)
-ctrl2 = trainControl(method = "cv", number = 5)
+# saveRDS(df_field_game, str_c("data/game_mod_data/", "df_field_game.rds"))
 
-total_team_train_df = 
-  team_total_spread_rolling_df %>% 
+ctrl = 
+  trainControl(
+    method = "repeatedcv", 
+    number = 5, 
+    repeats = 10,
+    savePredictions = "final"
+  )
+
+ctrl2 = 
+  trainControl(
+    method = "cv", 
+    number = 5,
+    savePredictions = "final"
+  )
+
+df_total_team_train = 
+  df_team_total_spread_rolling %>% 
   left_join(
-    team_total_spread_rolling_df %>% 
+    df_team_total_spread_rolling %>% 
       group_by(game_id) %>% 
       mutate(
         team_opp = 
@@ -8023,15 +8251,38 @@ total_team_train_df =
   # filter(season != 2025) %>%
   # left_join(field_game_df, by = "game_id") %>%
   filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
+  # filter(season != 2020) %>% 
   select(total_team, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
+  # select(total_team, prior_rolling_success_off_rate, prior_rolling_off_pass_epa, prior_rolling_team_total_off, prior_rolling_team_total_def_opp, travel_km_opp, travel_km, prior_rolling_to_off_rate, prior_rolling_off_pass_epa_opp, prior_rolling_team_total_def, prior_rolling_success_def_rate_opp, prior_rolling_def_pass_epa_opp, prior_rolling_exp_def_rate_opp, prior_rolling_exp_off_rate) %>%
+  select(-c(starts_with("prior_rolling_def_rush_epa"), prior_rolling_exp_off_rate_opp, prior_rolling_def_pass_epa, prior_rolling_team_total_off_opp, prior_rolling_exp_def_rate, prior_rolling_pen_yards_off_opp, prior_rolling_pen_yards_off, prior_rolling_pen_yards_def_opp, starts_with("rest_days"), prior_rolling_rz_eff, prior_rolling_rz_eff_opp, prior_rolling_success_off_rate_opp, prior_rolling_off_rush_epa_opp, prior_rolling_to_off_rate_opp, prior_rolling_off_rush_epa, starts_with("prior_rolling_sack_rate"), prior_rolling_qb_hit_rate_def, prior_rolling_qb_hit_rate_def_opp, prior_rolling_qb_hit_rate_off_opp, prior_rolling_pressure_rate_off, prior_rolling_pressure_rate_def_opp, prior_rolling_pressure_rate_off_opp, prior_rolling_to_def_rate_opp, prior_rolling_to_def_rate)) %>% 
+  # mutate(noise_var = rnorm(n = nrow(.))) %>% 
   drop_na()
 
-# saveRDS(total_team_train_df, "df_total_team_train_2009_2026.rds")
+# saveRDS(df_total_team_train, "df_total_team_train_2009_2026.rds")
 
-id_total_team_train_df = 
-  team_total_spread_rolling_df %>% 
+# dev.new(width = 12, height = 10)
+# df_total_team_train %>%
+#   cor() %>%
+#   corrplot::corrplot(
+#     method = "number",
+#     addCoef.col = "black",
+#     number.cex = 0.5,
+#     type = "upper"
+#   )
+# 
+# df_total_team_train %>%names
+#   cor() %>% 
+#   as.data.frame() %>% 
+#   tibble() %>% 
+#   mutate(var_name = df_total_team_train %>% names()) %>% 
+#   relocate(var_name) %>% 
+#   filter(if_any(everything(), ~ abs(as.double(.)) > 0.7 & . < 1)) %>% 
+#   view
+
+df_total_team_train_id = 
+  df_team_total_spread_rolling %>% 
   left_join(
-    team_total_spread_rolling_df %>% 
+    df_team_total_spread_rolling %>% 
       group_by(game_id) %>% 
       mutate(
         team_opp = 
@@ -8051,10 +8302,72 @@ id_total_team_train_df =
   # filter(season != 2025) %>%
   # left_join(field_game_df, by = "game_id") %>%
   filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
-  select(game_id, total_team, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
+  select(season, team, game_id, total_team, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>%
+  # select(season, team, game_id, total_team, prior_rolling_success_off_rate, prior_rolling_off_pass_epa, prior_rolling_team_total_off, prior_rolling_team_total_def_opp, travel_km_opp, travel_km, prior_rolling_to_off_rate, prior_rolling_off_pass_epa_opp, prior_rolling_team_total_def, prior_rolling_success_def_rate_opp, prior_rolling_def_pass_epa_opp, prior_rolling_exp_def_rate_opp, prior_rolling_exp_off_rate) %>%
   drop_na()
 
-# saveRDS(id_total_team_train_df, "df_total_team_train_2009_2026_id.rds")
+# saveRDS(df_total_team_train_id, "df_total_team_train_2009_2026_id.rds")
+
+# examine season effects on team totals:
+
+df_total_team_train_id %>% 
+  ggplot(aes(x = total_team)) + 
+  geom_histogram() +
+  # geom_boxplot() + 
+  facet_wrap(~ season)
+
+df_total_team_train_id %>% 
+  group_by(season) %>% 
+  summarise(
+    tot_med = median(total_team, na.rm = F),
+    tot_mean = mean(total_team, na.rm = F),
+    tot_sd = sd(total_team, na.rm = F),
+    tot_error_high = tot_mean + tot_sd * qnorm(0.975),
+    tot_error_low = tot_mean - tot_sd * qnorm(0.975)
+  ) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = season, y = tot_mean)) + 
+  geom_point() + 
+  geom_line() + 
+  geom_errorbar(aes(ymin = tot_error_low, ymax = tot_error_high))
+
+df_total_team_train_id %>% 
+  gtsummary::tbl_summary(by = season, include = total_team) %>% 
+  gtsummary::add_p()
+
+library(lme4)
+library(lmerTest)  # gives p-values for fixed effects
+library(mgcv)
+
+mod_season_tot = 
+  glm(total_team ~ season, data = df_total_team_train_id)
+
+summary(mod_season_tot)
+
+mod_season_tot_mixed = 
+  lmer(total_team ~ season + (1 | team), data = df_total_team_train_id)
+
+summary(mod_season_tot_mixed)
+
+mod_season_tot_gam = 
+  gam(
+    total_team ~ s(season, k = 8), 
+    data = df_total_team_train_id, 
+    method = "REML"
+  )
+
+summary(mod_season_tot_gam)
+
+mod_season_tot_gam_team = 
+  gam(
+    total_team ~ s(season, k = 8) + s(team, bs = "re"),
+    data = df_total_team_train_id %>% mutate(team = as.factor(team)), 
+    method = "REML"
+  )
+
+summary(mod_season_tot_gam_team)
+
+# df_total_team_train_id = df_total_team_train_id %>% filter(season != 2020)
 
 # total_team_train_df = 
 #   team_total_spread_rolling_df %>% 
@@ -8069,7 +8382,7 @@ view(total_team_train_df)
 set.seed(37564)
 mod_total_team_glm = train(total_team ~ .,
                 na.action = na.exclude, 
-                data = total_team_train_df, 
+                data = df_total_team_train, #%>% select(-starts_with("prior_rolling_team_total")), 
                 #subset = season,
                 method = "glm", 
                 trControl = ctrl)
@@ -8079,7 +8392,7 @@ mod_total_team_glm
 set.seed(37564)
 mod_total_team_enet = train(total_team ~ .,
                  na.action = na.exclude, 
-                 data = total_team_train_df, 
+                 data = df_total_team_train, 
                  method = "glmnet", 
                  tuneGrid = expand.grid(alpha = seq(0, 1, by = 0.2),
                                         # alpha = 0,
@@ -8095,10 +8408,10 @@ min(mod_total_team_enet$results$RMSE)
 set.seed(37564)
 mod_total_team_knn = train(total_team ~ .,
                 na.action = na.exclude, 
-                data = total_team_train_df, 
+                data = df_total_team_train, 
                 method = "knn", 
                 preProcess = c("center","scale"),
-                tuneGrid = data.frame(k = seq(140, 170, by = 2)), 
+                tuneGrid = data.frame(k = seq(120, 150, by = 2)), 
                 trControl = ctrl)
 ggplot(mod_total_team_knn, highlight = T) + 
   ggtitle("KNN") +
@@ -8110,9 +8423,9 @@ min(mod_total_team_knn$results$RMSE)
 set.seed(37564)
 mod_total_team_mars = train(total_team ~ .,
                  na.action = na.exclude, 
-                 data = total_team_train_df, 
+                 data = df_total_team_train, 
                  method = "earth", 
-                 tuneGrid = expand.grid(degree = 1:3, nprune = 1:10), 
+                 tuneGrid = expand.grid(degree = 1:3, nprune = 1:15), 
                  trControl = ctrl)
 ggplot(mod_total_team_mars, highlight = T) + 
   ggtitle("MARS") +
@@ -8125,13 +8438,13 @@ min(mod_total_team_mars$results$RMSE)
 set.seed(37564)
 mod_total_team_boost = train(total_team ~ .,
                   na.action = na.exclude, 
-                  data = total_team_train_df, 
+                  data = df_total_team_train, 
                   method = "gbm", 
-                  tuneGrid = expand.grid(n.trees = c(1000, 4000, 7000),
-                                         interaction.depth = 1:3,
-                                         shrinkage = c(0.01, 0.03, 0.05), 
+                  tuneGrid = expand.grid(n.trees = c(700, 1000),
+                                         interaction.depth = 2:3,
+                                         shrinkage = c(0.008, 0.01), 
                                          n.minobsinnode = 10), 
-                  trControl = ctrl2,
+                  trControl = ctrl,
                   verbose = F)
 ggplot(mod_total_team_boost, highlight = T) + 
   ggtitle("Boost") +
@@ -8145,7 +8458,7 @@ min(mod_total_team_boost$results$RMSE)
 set.seed(37564)
 mod_total_team_svm = train(total_team ~ .,
                 na.action = na.exclude, 
-                data = total_team_train_df,
+                data = df_total_team_train,
                 preProcess = c("scale", "center"),
                 method = "svmRadialSigma",
                 tuneGrid = expand.grid(C = #c(0.03877421, 0.08208500),
@@ -8159,14 +8472,24 @@ ggplot(mod_total_team_svm, highlight = T) +
 mod_total_team_svm$bestTune
 min(mod_total_team_svm$results$RMSE)
 
+# pred_full <- predict(mod_svm_full, newdata = df_total_team_train)  # use the caret model, not $finalModel
+# pred_reduced <- predict(mod_svm_reduced, newdata = df_total_team_train)
+# 
+# # Manually compute residuals
+# resid_full <- df_total_team_train$total_team - pred_full
+# resid_reduced <- df_total_team_train$total_team - pred_reduced
+# 
+# # Now compare
+# cor(resid_full, resid_reduced)
+
 set.seed(37564)
 vip(
-  mod_total_team_boost, 
+  mod_total_team_svm, 
   method = "permute", 
-  train = total_team_train_df,
+  train = df_total_team_train,
   target = "total_team",
   metric = "rmse",
-  nsim = 50,
+  nsim = 10,
   pred_wrapper = predict,
   geom = "boxplot", 
   all_permutations = T,
@@ -8177,10 +8500,11 @@ vip(
 coef(mod_total_team_enet$finalModel, mod_total_team_enet$bestTune$lambda)
 
 set.seed(37564)
-res = resamples(list(GLM = mod_total_team_glm, ENET = mod_total_team_enet, MARS = mod_total_team_mars, KNN = mod_total_team_knn, #BOOST = mod_total_team_boost,
-                     SVM = mod_total_team_svm))
+res = resamples(list(GLM = mod_total_team_glm, ENET = mod_total_team_enet, MARS = mod_total_team_mars, KNN = mod_total_team_knn, BOOST = mod_total_team_boost, SVM = mod_total_team_svm))
 summary(res)
 bwplot(res, metric = "RMSE", main = "RMSE for Repeated 5-Fold CV Using Various Models")
+bwplot(res, metric = "MAE", main = "RMSE for Repeated 5-Fold CV Using Various Models")
+bwplot(res, metric = "Rsquared", main = "RMSE for Repeated 5-Fold CV Using Various Models")
 
 # save final SVM model:
 
@@ -8189,10 +8513,10 @@ mod_total_team_svm = readRDS("mod_total_team_svm.rds")
 
 ## Total Correction Mods:
   
-total_correct_train_df = 
-  team_total_spread_rolling_df %>% 
+df_total_correct_train = 
+  df_team_total_spread_rolling %>% 
   left_join(
-    team_total_spread_rolling_df %>% 
+    df_team_total_spread_rolling %>% 
       group_by(game_id) %>% 
       mutate(
         team_opp = 
@@ -8225,19 +8549,19 @@ total_correct_train_df =
   mutate(
     resid_total = actual_total - pred_total
   ) %>% 
-  left_join(field_game_df, by = "game_id") %>% 
+  left_join(df_field_game, by = "game_id") %>% 
   ungroup() %>% 
   select(resid_total, ends_with("_field"), division_game, international, wind, temp, time_start) %>% 
   select(-c(time_start, international)) %>% 
   drop_na()
 
-view(total_correct_train_df)
+view(df_total_correct_train)
 
 # GLM
 set.seed(37564)
 mod_total_correct_glm = train(resid_total ~ .,
                 na.action = na.exclude, 
-                data = total_correct_train_df, 
+                data = df_total_correct_train, 
                 #subset = season,
                 method = "glm", 
                 trControl = ctrl)
@@ -8247,10 +8571,10 @@ mod_total_correct_glm
 set.seed(37564)
 mod_total_correct_enet = train(resid_total ~ .,
                  na.action = na.exclude, 
-                 data = total_correct_train_df, 
+                 data = df_total_correct_train, 
                  method = "glmnet", 
                  tuneGrid = expand.grid(alpha = seq(0, 1, by = 0.2),
-                                        lambda = exp(seq(-4, 1, length = 50))),
+                                        lambda = exp(seq(-4, 1, length = 10))),
                  trControl = ctrl)
 ggplot(mod_total_correct_enet, highlight = T) + 
   ggtitle("ENET") +
@@ -8258,15 +8582,17 @@ ggplot(mod_total_correct_enet, highlight = T) +
 mod_total_correct_enet$bestTune
 min(mod_total_correct_enet$results$RMSE)
 
+coef(mod_total_correct_enet$finalModel, mod_total_correct_enet$bestTune$lambda)
+
 # saveRDS(mod_total_correct_enet, glue::glue("mod_total_correct_enet_{format(Sys.Date(), '%Y_%m_%d')}.rds"))
 mod_total_correct_enet = readRDS("mod_total_correct_enet.rds")
 
 ## Spread Correction Mods:
   
-spread_correct_train_df = 
-  team_total_spread_rolling_df %>% 
+df_spread_correct_train = 
+  df_team_total_spread_rolling %>% 
   left_join(
-    team_total_spread_rolling_df %>% 
+    df_team_total_spread_rolling %>% 
       group_by(game_id) %>% 
       mutate(
         team_opp = 
@@ -8299,19 +8625,19 @@ spread_correct_train_df =
   mutate(
     resid_spread = result - pred_spread
   ) %>% 
-  left_join(field_game_df, by = "game_id") %>% 
+  left_join(df_field_game, by = "game_id") %>% 
   ungroup() %>% 
   select(resid_spread, ends_with("_field"), division_game, international, wind, temp, time_start) %>% 
   select(-c(time_start, international)) %>% 
   drop_na()
 
-view(spread_correct_train_df)
+view(df_spread_correct_train)
 
 # GLM
 set.seed(37564)
 mod_spread_correct_glm = train(resid_spread ~ .,
                 na.action = na.exclude, 
-                data = spread_correct_train_df, 
+                data = df_spread_correct_train, 
                 #subset = season,
                 method = "glm", 
                 trControl = ctrl)
@@ -8321,10 +8647,10 @@ mod_spread_correct_glm
 set.seed(37564)
 mod_spread_correct_enet = train(resid_spread ~ .,
                  na.action = na.exclude, 
-                 data = spread_correct_train_df, 
+                 data = df_spread_correct_train, 
                  method = "glmnet", 
                  tuneGrid = expand.grid(alpha = seq(0, 1, by = 0.2),
-                                        lambda = exp(seq(-1, 3, length = 50))),
+                                        lambda = exp(seq(-1, 3, length = 10))),
                  trControl = ctrl)
 ggplot(mod_spread_correct_enet, highlight = T) + 
   ggtitle("ENET") +
@@ -8332,8 +8658,70 @@ ggplot(mod_spread_correct_enet, highlight = T) +
 mod_spread_correct_enet$bestTune
 min(mod_spread_correct_enet$results$RMSE)
 
+coef(mod_spread_correct_enet$finalModel, mod_spread_correct_enet$bestTune$lambda)
+
 # saveRDS(mod_spread_correct_enet, glue::glue("mod_spread_correct_enet_{format(Sys.Date(), '%Y_%m_%d')}.rds"))
 mod_spread_correct_enet = readRDS("mod_spread_correct_enet.rds")
+
+df_total_team_train_id %>% 
+  mutate(
+    pred_total_team = predict(mod_total_team_svm, .)
+  ) %>% 
+  group_by(game_id) %>% 
+  summarise(
+    pred_total = sum(pred_total_team),
+    actual_total = sum(total_team)
+  ) %>% 
+  left_join(df_field_game, by = "game_id") %>% 
+  drop_na() %>% 
+  ungroup() %>% 
+  mutate(
+    pred_total_resid = predict(mod_total_correct_enet, newdata = .),
+    pred_total_adj = pred_total + pred_total_resid
+  ) %>% 
+  left_join(
+    df_szn_all %>% 
+      distinct(game_id, total_line),
+    by = "game_id"
+  ) %>% 
+  summarise(
+    rmse_vegas = sqrt(mean((actual_total - total_line)^2)),
+    rmse_mod = sqrt(mean((actual_total - pred_total_adj)^2)),
+    mae_vegas = mean(abs(actual_total - total_line)),
+    mae_mod = mean(abs(actual_total - pred_total_adj))
+  ) %>% 
+  knitr::kable()
+
+df_total_team_train_id %>% 
+  mutate(
+    pred_total_team = predict(mod_total_team_svm, .)
+  ) %>% 
+  group_by(game_id) %>% 
+  mutate(
+    pred_spread = pred_total_team - lead(pred_total_team),
+    actual_spread = total_team - lead(total_team)
+  ) %>% 
+  drop_na() %>% 
+  left_join(df_field_game, by = "game_id") %>% 
+  drop_na() %>% 
+  ungroup() %>% 
+  mutate(
+    pred_spread_resid = predict(mod_spread_correct_enet, newdata = .),
+    pred_spread_adj = pred_spread + pred_spread_resid
+  ) %>% 
+  left_join(
+    df_szn_all %>% 
+      distinct(game_id, spread_line),
+    by = "game_id"
+  ) %>% 
+  summarise(
+    rmse_vegas = sqrt(mean((actual_spread - spread_line)^2)),
+    rmse_mod = sqrt(mean((actual_spread - pred_spread_adj)^2)),
+    mae_vegas = mean(abs(actual_spread - spread_line)),
+    mae_mod = mean(abs(actual_spread - pred_spread_adj))
+  ) %>% 
+  knitr::kable()
+
 
 ```
 
@@ -8401,14 +8789,14 @@ df_team_sims_2024 =
 df_pred_total_spread_adj_2024 = 
   df_team_sims_2024 %>% 
   left_join(
-    field_game_df, by = "game_id"
+    df_field_game, by = "game_id"
   ) %>% 
   mutate(
     team_away = str_extract(str_remove(game_id, "\\d+_\\d+_"), "^[A-Z]+"),
     team_home = str_extract(game_id, "[A-Z]+$")
   ) %>% 
-  left_join(division_df %>% select(team, division) %>% rename(team_home = team), by = "team_home") %>% 
-  left_join(division_df %>% select(team, division) %>% rename(team_away = team, division_opp = division), by = "team_away") %>% 
+  left_join(df_division %>% select(team, division) %>% rename(team_home = team), by = "team_home") %>% 
+  left_join(df_division %>% select(team, division) %>% rename(team_away = team, division_opp = division), by = "team_away") %>% 
   group_by(game_id) %>% 
   mutate(
     division_game = ifelse(division == division_opp, 1, 0),
@@ -8766,7 +9154,7 @@ df_totals_profit_2024 =
   df_open_lines_2024 %>% 
   left_join(df_pred_total_spread_adj_2024, by = c("team_home", "team_away")) %>% 
   left_join(df_game_sims_2024, by = "game_id") %>% 
-  left_join(szn_all %>% distinct(game_id, total_line, spread_line) %>% rename(total_line_current = total_line), by = "game_id") %>% 
+  left_join(df_szn_all %>% distinct(game_id, total_line, spread_line) %>% rename(total_line_current = total_line), by = "game_id") %>% 
   mutate(
     over_odds = -112, 
     under_odds = -112,
@@ -8881,7 +9269,7 @@ df_spreads_profit_2024 =
   df_open_lines_2024 %>% 
   left_join(df_pred_total_spread_adj_2024, by = c("team_home", "team_away")) %>% 
   left_join(df_game_sims_2024, by = "game_id") %>% 
-  left_join(szn_all %>% distinct(game_id, total_line, spread_line) %>% rename(spread_line_current = spread_line), by = "game_id") %>% 
+  left_join(df_szn_all %>% distinct(game_id, total_line, spread_line) %>% rename(spread_line_current = spread_line), by = "game_id") %>% 
   mutate(
     home_odds = -112, 
     away_odds = -112,
@@ -9008,7 +9396,7 @@ df_totals_profit_2024 %>%
   # ) %>% 
   arrange(week) %>% 
   left_join(
-    df_spreads_profit %>%
+    df_spreads_profit_2024 %>%
       filter(stake_spread >= 0.5) %>%
       mutate(week = str_extract(str_remove(game_id, "^\\d+_"), "\\d+")) %>% 
       # filter(week != 18) %>%
@@ -9156,14 +9544,14 @@ df_team_sims_2025 =
 df_pred_total_spread_adj_2025 = 
   df_team_sims_2025 %>% 
   left_join(
-    field_game_df, by = "game_id"
+    df_field_game, by = "game_id"
   ) %>% 
   mutate(
     team_home = str_extract(str_remove(game_id, "\\d+_\\d+_"), "^[A-Z]+"),
     team_away = str_extract(game_id, "[A-Z]+$")
   ) %>% 
-  left_join(division_df %>% select(team, division) %>% rename(team_home = team), by = "team_home") %>% 
-  left_join(division_df %>% select(team, division) %>% rename(team_away = team, division_opp = division), by = "team_away") %>% 
+  left_join(df_division %>% select(team, division) %>% rename(team_home = team), by = "team_home") %>% 
+  left_join(df_division %>% select(team, division) %>% rename(team_away = team, division_opp = division), by = "team_away") %>% 
   group_by(game_id) %>% 
   mutate(
     division_game = ifelse(division == division_opp, 1, 0),
@@ -9223,7 +9611,7 @@ df_totals_profit_2025 =
   # left_join(df_pred_total_spread_adj, by = c("team_home", "team_away")) %>% 
   left_join(df_pred_total_spread_adj_2025, by = c("game_id")) %>% 
   left_join(df_game_sims_2025, by = "game_id") %>% 
-  left_join(szn_all %>% distinct(game_id, total_line, spread_line) %>% rename(total_line_current = total_line), by = "game_id") %>% 
+  left_join(df_szn_all %>% distinct(game_id, total_line, spread_line) %>% rename(total_line_current = total_line), by = "game_id") %>% 
   mutate(
     over_odds = -112, 
     under_odds = -112,
@@ -9339,7 +9727,7 @@ df_spreads_profit_2025 =
   # left_join(df_pred_total_spread_adj, by = c("team_home", "team_away")) %>% 
   left_join(df_pred_total_spread_adj_2025, by = c("game_id")) %>% 
   left_join(df_game_sims_2025, by = "game_id") %>% 
-  left_join(szn_all %>% distinct(game_id, total_line, spread_line) %>% rename(spread_line_current = spread_line), by = "game_id") %>% 
+  left_join(df_szn_all %>% distinct(game_id, total_line, spread_line) %>% rename(spread_line_current = spread_line), by = "game_id") %>% 
   mutate(
     home_odds = -112, 
     away_odds = -112,
@@ -9466,7 +9854,7 @@ df_totals_profit_2025 %>%
   # ) %>% 
   arrange(week) %>% 
   left_join(
-    df_spreads_profit %>%
+    df_spreads_profit_2025 %>%
       filter(stake_spread >= 0.5) %>% 
       mutate(week = str_extract(str_remove(game_id, "^\\d+_"), "\\d+")) %>% 
       # filter(week != 18) %>%
@@ -9518,7 +9906,7 @@ df_totals_profit_2025 %>%
   # ) %>% 
   arrange(week) %>% 
   left_join(
-    df_spreads_profit %>%
+    df_spreads_profit_2025 %>%
       filter(stake_current_spread >= 0.5) %>% 
       mutate(week = str_extract(str_remove(game_id, "^\\d+_"), "\\d+")) %>% 
       # filter(week != 18) %>%

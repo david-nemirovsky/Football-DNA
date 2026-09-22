@@ -65,19 +65,19 @@ teams_colors_logos = teams_colors_logos %>% filter(team_abbr %nin% c("OAK", "SD"
 ```{r load data and mods}
 #| include: false
 
-week_n = ifelse(ceiling(as.integer(Sys.Date() - as.Date("2025-09-07")) / 7) > 18, 18, ceiling(as.integer(Sys.Date() - as.Date("2025-09-07")) / 7))
+week_n = ifelse(ceiling(as.integer(Sys.Date() - as.Date("2026-09-13")) / 7) > 18, 18, ceiling(as.integer(Sys.Date() - as.Date("2026-09-13")) / 7))
 # week_n = 18
 n_targets = round(week_n * 4, -1)
 n_touches = round(week_n * 8, -1)
 n_att = week_n * 15
 n_rec = round(week_n * 3, -1)
 
-# Load 2025 data
+# Load 2026 data
 df_szn_pbp = 
-  load_pbp(2025) %>%  
+  load_pbp(2026) %>%  
   filter(season_type == "REG")
 
-df_roster = fast_scraper_roster(2025)
+df_roster = fast_scraper_roster(2026)
 
 df_fantasy = 
   df_szn_pbp %>% 
@@ -2890,7 +2890,7 @@ df_te_hit_miss_24 %>%
 
 :::
 
-## **Fantasy Football Stats (2025)**
+## **Fantasy Football Stats (2026)**
 
 ::: panel-tabset
 
@@ -2914,7 +2914,7 @@ df_qb_fpts =
   left_join(df_qb_att) %>% 
   filter(n_att >= n_att) %>% 
   inner_join(
-    fast_scraper_roster(2025) %>% 
+    fast_scraper_roster(2026) %>% 
     filter(position == "QB") %>% 
     select(gsis_id),
       by = c("player_id" = "gsis_id")
@@ -2953,7 +2953,7 @@ df_qb_fpts %>%
   ggplot(aes(x = fpts, y = rank_name)) +
   geom_boxplot(fill = df_qb_fpts_cols$team_color, alpha = 0.75) +
   labs(
-    title = glue::glue("2025 QB PPG (Min. {n_att} Passing Attempts)"), 
+    title = glue::glue("2026 QB PPG (Min. {n_att} Passing Attempts)"), 
     x = "Fantasy PPG", 
     y = "QB"
   ) + 
@@ -2989,7 +2989,7 @@ df_rb_fpts =
   ) %>% 
   filter(touches >= n_touches) %>% 
   inner_join(
-    fast_scraper_roster(2025) %>% 
+    fast_scraper_roster(2026) %>% 
     filter(position == "RB") %>% 
     select(gsis_id),
       by = c("player_id" = "gsis_id")
@@ -3056,7 +3056,7 @@ df_rb_fpts %>%
   ggplot(aes(x = fpts_ppr, y = fct_reorder(as.factor(rank_name), -rank_og))) +
   geom_boxplot(fill = df_rb_fpts_ppr_cols$team_color, alpha = 0.75) +
   labs(
-    title = glue::glue("2025 RB PPG (Min. {n_touches} Touches)"),     
+    title = glue::glue("2026 RB PPG (Min. {n_touches} Touches)"),     
     x = "PPR Fantasy PPG", 
     y = "RB"
   ) + 
@@ -3152,7 +3152,7 @@ df_wr_fpts =
   filter(targets >= n_targets) %>% 
   left_join(df_wr_rec) %>% 
   inner_join(
-    fast_scraper_roster(2025) %>% 
+    fast_scraper_roster(2026) %>% 
     filter(position == "WR") %>% 
     select(gsis_id),
       by = c("player_id" = "gsis_id")
@@ -3221,7 +3221,7 @@ df_wr_fpts %>%
   geom_boxplot(aes(fill = team_color), alpha = 0.75) +
   scale_fill_identity() +
   labs(
-    title = glue::glue("2025 WR PPG (Min. {n_targets} Targets)"), 
+    title = glue::glue("2026 WR PPG (Min. {n_targets} Targets)"), 
     x = "PPR Fantasy PPG", 
     y = "WR"
   ) + 
@@ -3352,7 +3352,7 @@ df_te_fpts =
   left_join(df_te_rec) %>% 
   filter(n_rec >= n_rec) %>% 
   inner_join(
-    fast_scraper_roster(2025) %>% 
+    fast_scraper_roster(2026) %>% 
     filter(position == "TE") %>% 
     select(gsis_id),
       by = c("player_id" = "gsis_id")
@@ -3409,7 +3409,7 @@ df_te_fpts %>%
   ggplot(aes(x = fpts_ppr, y = rank_name)) +
   geom_boxplot(fill = df_te_fpts_ppr_cols$team_color, alpha = 0.75) +
   labs(
-    title = glue::glue("2025 TE PPG (Min. {n_rec} Receptions)"), 
+    title = glue::glue("2026 TE PPG (Min. {n_rec} Receptions)"), 
     x = "PPR Fantasy PPG", 
     y = "TE"
   ) + 
@@ -3438,7 +3438,7 @@ df_qb_fpts %>%
   ggplot(aes(x = fpts, y = rank_name)) +
   geom_boxplot(fill = df_qb_fpts_cols$team_color, alpha = 0.75) +
   labs(
-    title = glue::glue("2025 QB PPG (Min. {n_att} Passing Attempts)"), 
+    title = glue::glue("2026 QB PPG (Min. {n_att} Passing Attempts)"), 
     x = "Fantasy PPG", 
     y = "QB"
   ) + 
@@ -3457,7 +3457,7 @@ df_rb_fpts %>%
   ggplot(aes(x = fpts, y = fct_reorder(as.factor(rank_name), -rank_og))) +
   geom_boxplot(fill = df_rb_fpts_cols$team_color, alpha = 0.75) +
   labs(
-    title = glue::glue("2025 RB PPG (Min. {n_touches} Touches)"), 
+    title = glue::glue("2026 RB PPG (Min. {n_touches} Touches)"), 
     x = "Fantasy PPG", 
     y = "RB"
   ) + 
@@ -3480,7 +3480,7 @@ df_wr_fpts %>%
   geom_boxplot(aes(fill = team_color), alpha = 0.75) +
   scale_fill_identity() +
   labs(
-    title = glue::glue("2025 WR PPG (Min. {n_targets} Targets)"), 
+    title = glue::glue("2026 WR PPG (Min. {n_targets} Targets)"), 
     x = "Fantasy PPG", 
     y = "WR"
   ) + 
@@ -3501,7 +3501,7 @@ df_te_fpts %>%
   ggplot(aes(x = fpts, y = rank_name)) +
   geom_boxplot(fill = df_te_fpts_cols$team_color, alpha = 0.75) +
   labs(
-    title = glue::glue("2025 TE PPG (Min. {n_rec} Receptions)"), 
+    title = glue::glue("2026 TE PPG (Min. {n_rec} Receptions)"), 
     x = "Fantasy PPG", 
     y = "TE"
   ) + 
