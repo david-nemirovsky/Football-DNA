@@ -270,3 +270,106 @@
 .wins-table-dark {
   margin-bottom: 40px;
 }
+
+/* ------------------------------------------------------------
+   Main table
+------------------------------------------------------------ */
+
+.bets-table-dark {
+  background-color: #1e1e1e;
+  color: #f0f0f0;
+}
+
+
+/* ------------------------------------------------------------
+   Header
+------------------------------------------------------------ */
+
+.bets-table-dark .rt-th {
+  background-color: #2b2b2b;
+  color: #ffffff;
+  border-bottom: 1px solid #555555;
+
+  /* Allow headers to wrap onto multiple lines */
+  white-space: normal !important;
+
+  /* Only break lines at normal word boundaries */
+  word-break: normal;
+  overflow-wrap: normal;
+
+  /* Improve readability of multi-line headers */
+  line-height: 1.2;
+  padding: 8px 6px;
+}
+
+/* ------------------------------------------------------------
+   Normal body cells
+------------------------------------------------------------ */
+
+.bets-table-dark .rt-td {
+  background-color: #1e1e1e;
+  color: #f0f0f0;
+  border-bottom: 1px solid #333333;
+}
+
+
+/* ------------------------------------------------------------
+   Hover
+------------------------------------------------------------ */
+
+.bets-table-dark .rt-tr:hover .rt-td {
+  background-color: #333333;
+}
+
+/* ------------------------------------------------------------
+   Sticky Game column - body
+------------------------------------------------------------ */
+
+.bets-table-dark .sticky-game {
+  background-color: #1e1e1e;
+  z-index: 3;
+
+  box-shadow: 4px 0 6px -4px
+    rgba(0, 0, 0, 0.8);
+}
+
+/* ------------------------------------------------------------
+   Search box
+------------------------------------------------------------ */
+
+.bets-table-dark input {
+  background-color: #2b2b2b;
+  color: #ffffff;
+  border: 1px solid #555555;
+}
+
+
+/* ------------------------------------------------------------
+   Select/filter controls
+------------------------------------------------------------ */
+
+.bets-table-dark select {
+  background-color: #2b2b2b;
+  color: #ffffff;
+  border: 1px solid #555555;
+}
+
+
+/* ------------------------------------------------------------
+   Pagination
+------------------------------------------------------------ */
+
+.bets-table-dark button {
+  background-color: #2b2b2b;
+  color: #ffffff;
+  border: 1px solid #555555;
+}
+
+
+.bets-table-dark button:hover {
+  background-color: #444444;
+}
+
+.bets-table-dark {
+  margin-bottom: 40px;
+}

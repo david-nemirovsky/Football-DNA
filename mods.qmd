@@ -39,6 +39,7 @@ library(e1071)
 # library(gtsummary)
 library(httr)
 library(jsonlite)
+library(reactable)
 
 knitr::opts_chunk$set(
   fig.width = 7,
@@ -2343,7 +2344,8 @@ df_game_sims =
     spread_sim_adj = list(sim[[1]] - sim[[2]] + spread_adjust)
   )
 
-df_game_sims %>% 
+df_game_sims_bets = 
+  df_game_sims %>% 
   left_join(df_pred_total_spread_adj, by = "game_id") %>% 
   # left_join(df_pred_total_spread_fin, by = "game_id") %>% 
   left_join(
@@ -2554,11 +2556,14 @@ df_game_sims %>%
         .default = side_spread
       )
   ) %>% 
-  ungroup() %>% 
+  ungroup()# %>% 
   # left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_home = team, qb_cont_home = qb_cont), by = c("team_home")) %>% 
   # left_join(df_qb_cont %>% select(team, qb_cont) %>% rename(team_away = team, qb_cont_away = qb_cont), by = c("team_away")) %>% 
   # filter(qb_cont_home == 1 & qb_cont_away == 1) %>% 
   # filter(stake_total >= 0.5 | stake_spread >= 0.5) %>%
+
+df_game_bets = 
+  df_game_sims_bets %>% 
   filter((stake_current_total >= 0.5 & (side_current_total == side_total)) | (stake_current_spread >= 0.5 & (side_current_spread == side_spread))) %>%# != "No Bet") %>%
   # select(game, side_current_total, stake_current_total, total_line_current_label, stake_current_spread, side_current_spread, spread_line_current_label, contains("current"), starts_with("total_line"), total_adjust, total_game_adj, starts_with("spread_line"), spread_game_adj) %>% 
   # arrange(desc(side_total), desc(side_spread)) %>%
@@ -2574,22 +2579,228 @@ df_game_sims %>%
   #   side_spread = "Spread to Bet",
   #   stake_spread = "Stake for Spread"
   # ) %>%
-  arrange(desc(side_current_total), desc(side_current_spread)) %>%
-  select(game, total_line_current_label, total_mod_label, side_current_total, stake_current_total, spread_line_current_label, spread_mod_label, side_current_spread, stake_current_spread) %>%
+  # arrange(desc(side_current_total), desc(side_current_spread)) %>%
+  left_join(df_schedule %>% select(game_id, gametime), by = "game_id") %>% 
+  arrange(gametime) %>% 
+  select(game, total_line_label, total_line_current_label, total_mod_label, side_current_total, stake_current_total, spread_line_label, spread_line_current_label, spread_mod_label, side_current_spread, stake_current_spread) %>%
+  mutate(
+    across(c(spread_line_current_label, spread_line_label), ~ str_remove(str_remove(., "\\("), "\\)")),
+    side_current_total = 
+      case_when(
+        side_current_total != "NA" ~ str_c(side_current_total, " ", total_line_current_label),
+        .default = NA
+      ),
+    stake_current_total = 
+      case_when(
+        is.na(side_current_total) ~ NA,
+        .default = stake_current_total
+      ),
+    side_current_spread = 
+      case_when(
+        side_current_spread == "Away" & as.numeric(str_extract(spread_line_current_label, "-?\\d+\\.?\\d*")) < 0 ~ str_c(str_extract(game, "^[A-Z]+"), " +", -as.numeric(str_extract(spread_line_current_label, "-?\\d+\\.?\\d*"))),
+        side_current_spread == "Away" & as.numeric(str_extract(spread_line_current_label, "-?\\d+\\.?\\d*")) > 0 ~ str_c(str_extract(game, "^[A-Z]+"), " -", -as.numeric(str_extract(spread_line_current_label, "-?\\d+\\.?\\d*"))),
+        side_current_spread == "Home" ~ spread_line_current_label,
+        .default = NA
+      ),
+    stake_current_spread = 
+      case_when(
+        is.na(side_current_spread) ~ NA,
+        .default = stake_current_spread
+      )
+  ) %>% 
   labelled::set_variable_labels(
     game = "Game",
-    total_line_current_label = "Current Total Line",
+    total_line_label = "Total Line Open",
+    total_line_current_label = "Total Line Current",
     total_mod_label = "Predicted Total",
     side_current_total = "Total to Bet",
     stake_current_total = "Stake for Total",
-    spread_line_current_label = "Current Spread Line",
+    spread_line_label = "Spread Line Open",
+    spread_line_current_label = "Spread Line Current",
     spread_mod_label = "Predicted Spread",
     side_current_spread = "Spread to Bet",
     stake_current_spread = "Stake for Spread"
-  ) %>%
-  gtreg::tbl_listing() %>% 
-  gtsummary::modify_caption("**Bets to Take, Updated for Current Odds**")# %>%
+  )# %>%
+  # gtreg::tbl_listing() %>%
+  # gtsummary::modify_caption("**Bets to Take, Updated for Current Odds**")# %>%
   # gtsummary::modify_caption("**Bets to Take, Based on Opening Odds**")
+
+# --------------------------------------------------------------
+# Style helpers
+# --------------------------------------------------------------
+
+# Over/Under coloring for the total bet column
+style_total_bet <- function(value) {
+  if (is.na(value)) return(list())
+  if (str_detect(value, "Over")) {
+    list(backgroundColor = "#1a9850", color = "white", fontWeight = "bold")
+  } else if (str_detect(value, "Under")) {
+    list(backgroundColor = "#d73027", color = "white", fontWeight = "bold")
+  } else {
+    list()
+  }
+}
+
+team_colors <- 
+  teams_colors_logos %>%
+  select(team_abbr, team_color) %>%
+  deframe()
+
+# Team-color coding for the spread bet column
+style_spread_bet <- function(value) {
+  if (is.na(value)) return(list())
+  team <- str_extract(value, "^[A-Z]+")
+  color <- team_colors[[team]]
+  if (is.null(color) || is.na(color)) color <- "#555555"
+  list(backgroundColor = color, color = "white", fontWeight = "bold")
+}
+
+# Numeric red -> green scale for stake columns (same logic as your make_style())
+make_stake_style <- function(data, column) {
+  
+  values <- data[[column]]
+  domain <- range(values, na.rm = TRUE)
+  
+  pal <- scales::col_numeric(
+    palette = c("#d73027", "#fee08b", "#1a9850"),
+    domain = domain
+  )
+  
+  function(value) {
+    if (is.na(value)) return(list())
+    scaled_value <- (value - domain[1]) / diff(domain)
+    list(
+      backgroundColor = pal(value),
+      color = ifelse(scaled_value > 0.70, "white", "black"),
+      fontWeight = "bold"
+    )
+  }
+}
+
+# --------------------------------------------------------------
+# Main table function
+# --------------------------------------------------------------
+make_bets_table <- function(
+    data,
+    default_sorted = NULL,
+    game_column = "game",
+    height = NULL   # <-- no fixed height by default
+) {
+  
+  columns <- names(data)
+  
+  base_style <- list(
+    whiteSpace = "normal",
+    lineHeight = "1.2",
+    padding = "8px 6px",
+    textAlign = "center"
+  )
+  
+  stake_total_style  <- make_stake_style(data, "stake_current_total")
+  stake_spread_style <- make_stake_style(data, "stake_current_spread")
+  
+  column_defs <- setNames(
+    lapply(columns, function(column) {
+      
+      label <- labelled::var_label(data[[column]])
+      if (is.null(label)) label <- column
+      
+      is_game          <- column == game_column
+      is_total_bet     <- column == "side_current_total"
+      is_spread_bet    <- column == "side_current_spread"
+      is_stake_total   <- column == "stake_current_total"
+      is_stake_spread  <- column == "stake_current_spread"
+      
+      column_width <- if (is_game) {
+        130
+      } else if (is_total_bet || is_spread_bet) {
+        140
+      } else {
+        120
+      }
+      
+      style_fn <- switch(
+        TRUE,
+        is_total_bet    = function(value) c(base_style, style_total_bet(value)),
+        is_spread_bet   = function(value) c(base_style, style_spread_bet(value)),
+        is_stake_total  = function(value) c(base_style, stake_total_style(value)),
+        is_stake_spread = function(value) c(base_style, stake_spread_style(value)),
+        base_style
+      )
+      
+      # (switch(TRUE, ...) above won't dispatch correctly in base R —
+      # use explicit if/else instead)
+      if (is_total_bet) {
+        style_fn <- function(value) c(base_style, style_total_bet(value))
+      } else if (is_spread_bet) {
+        style_fn <- function(value) c(base_style, style_spread_bet(value))
+      } else if (is_stake_total) {
+        style_fn <- function(value) c(base_style, stake_total_style(value))
+      } else if (is_stake_spread) {
+        style_fn <- function(value) c(base_style, stake_spread_style(value))
+      } else {
+        style_fn <- base_style
+      }
+      
+      colDef(
+        name = label,
+        minWidth = column_width,
+        width = column_width,
+        align = "center",
+        sticky = if (is_game) "left" else NULL,
+        style = style_fn,
+        headerStyle = list(
+          whiteSpace = "normal",
+          textAlign = "center",
+          lineHeight = "1.2",
+          padding = "8px 6px",
+          backgroundColor = if (is_game) "#2b2b2b" else NULL,
+          color = if (is_game) "#ffffff" else NULL
+        )
+      )
+    }),
+    columns
+  )
+  
+  reactable(
+    data,
+    class = "bets-table-dark",
+    searchable = TRUE,
+    filterable = TRUE,
+    sortable = TRUE,
+    striped = FALSE,
+    highlight = TRUE,
+    bordered = FALSE,
+    fullWidth = TRUE,
+    height = height, # NULL by default = auto-size to content, no scroll
+    defaultPageSize = 400,
+    defaultSorted = default_sorted,
+    defaultSortOrder = "asc",
+    defaultColDef = colDef(
+      headerStyle = list(
+        whiteSpace = "normal",
+        textAlign = "center",
+        lineHeight = "1.2",
+        padding = "8px 6px"
+      ),
+      style = list(
+        whiteSpace = "normal",
+        lineHeight = "1.2",
+        padding = "8px 6px"
+      )
+    ),
+    columns = column_defs,
+    theme = reactableTheme(style = list(overflow = "visible"))
+  )
+}
+
+make_bets_table(
+  
+  data = df_game_bets,
+  
+  default_sorted = NULL
+  
+)
 
 # SD calibration:
 # 

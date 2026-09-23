@@ -8730,23 +8730,33 @@ df_total_team_train_id %>%
 ### 2024
 
 ```{r check prior year bets 2024}
-# df_total_team_train = 
-#   mod_total_team_svm$trainingData %>% 
-#   rename(total_team = .outcome) %>% 
-#   left_join(df_total_team_id) %>% 
-#   filter(as.integer(str_extract(game_id, "^\\d+")) != 2024) %>% 
-#   relocate(game_id)
+df_total_team_train_2024 =
+  mod_total_team_svm$trainingData %>%
+  rename(total_team = .outcome) %>%
+  left_join(df_total_team_train_id %>% select(game_id, all_of(names(df_total_team_train)))) %>%
+  filter(as.integer(str_extract(game_id, "^\\d+")) != 2024) %>%
+  select(-game_id)
 
 # df_total_team_train_id = readRDS("df_total_team_train_2009_2026_id.rds")
 
-
+set.seed(37564)
+mod_total_team_svm_2024 = train(total_team ~ .,
+                na.action = na.exclude, 
+                data = df_total_team_train_2024,
+                preProcess = c("scale", "center"),
+                method = "svmRadialSigma",
+                tuneGrid = expand.grid(C = mod_total_team_svm$bestTune[[2]],
+                                       sigma = mod_total_team_svm$bestTune[[1]]),
+                trControl = ctrl2)
+# mod_total_team_svm_2024$bestTune
+min(mod_total_team_svm_2024$results$RMSE)
 
 resid_sd_2024 =
   df_total_team_train_id %>% 
   filter(as.integer(str_extract(game_id, "^\\d+")) != 2024) %>% 
   # filter(season != 2024) %>% 
   mutate(
-    pred = predict(mod_total_team_svm, .),
+    pred = predict(mod_total_team_svm_2024, .),
     resid = .data[["total_team"]] - pred
   ) %>%
   summarise(sd = sd(resid, na.rm = TRUE)) %>%
@@ -8776,7 +8786,7 @@ df_team_sims_2024 =
     #     team == lag(team_opp) ~ lag(game_id),
     #     .default = game_id
     #   ),
-    mu = predict(mod_total_team_svm, .)
+    mu = predict(mod_total_team_svm_2024, .)
   ) %>% 
   # relocate(game_id) %>%
   mutate(
@@ -9487,21 +9497,33 @@ df_totals_profit_2024 %>%
 ### 2025
 
 ```{r check prior year bets 2025}
-# df_total_team_train = 
-#   mod_total_team_svm$trainingData %>% 
-#   rename(total_team = .outcome) %>% 
-#   left_join(df_total_team_id) %>% 
-#   filter(as.integer(str_extract(game_id, "^\\d+")) != 2024) %>% 
-#   relocate(game_id)
+df_total_team_train_2025 =
+  mod_total_team_svm$trainingData %>%
+  rename(total_team = .outcome) %>%
+  left_join(df_total_team_train_id %>% select(game_id, all_of(names(df_total_team_train)))) %>%
+  filter(as.integer(str_extract(game_id, "^\\d+")) != 2025) %>%
+  select(-game_id)
 
-df_total_team_train_id = readRDS("df_total_team_train_2009_2026_id.rds")
+# df_total_team_train_id = readRDS("df_total_team_train_2009_2026_id.rds")
+
+set.seed(37564)
+mod_total_team_svm_2025 = train(total_team ~ .,
+                na.action = na.exclude, 
+                data = df_total_team_train_2025,
+                preProcess = c("scale", "center"),
+                method = "svmRadialSigma",
+                tuneGrid = expand.grid(C = mod_total_team_svm$bestTune[[2]],
+                                       sigma = mod_total_team_svm$bestTune[[1]]),
+                trControl = ctrl2)
+# mod_total_team_svm_2024$bestTune
+min(mod_total_team_svm_2025$results$RMSE)
 
 resid_sd_2025 =
   df_total_team_train_id %>% 
   filter(as.integer(str_extract(game_id, "^\\d+")) != 2025) %>% 
   # filter(season != 2024) %>% 
   mutate(
-    pred = predict(mod_total_team_svm, .),
+    pred = predict(mod_total_team_svm_2025, .),
     resid = .data[["total_team"]] - pred
   ) %>%
   summarise(sd = sd(resid, na.rm = TRUE)) %>%
@@ -9531,7 +9553,7 @@ df_team_sims_2025 =
     #     team == lag(team_opp) ~ lag(game_id),
     #     .default = game_id
     #   ),
-    mu = predict(mod_total_team_svm, .)
+    mu = predict(mod_total_team_svm_2025, .)
   ) %>% 
   # relocate(game_id) %>%
   mutate(
