@@ -27,6 +27,7 @@ library(httr2)
 library(rvest)
 # library(httr)
 library(jsonlite)
+library(slider)
 
 knitr::opts_chunk$set(
   fig.width = 7,
@@ -8615,7 +8616,8 @@ df_spread_correct_train =
   select(game_id, result, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
   drop_na() %>% 
   mutate(
-    pred_total_team = predict(mod_total_team_svm, newdata = .)
+    pred_total_team = predict(mod_total_team_svm, newdata = .),
+    rest_days_diff = rest_days - rest_days_opp
   ) %>% 
   group_by(game_id) %>% 
   mutate(
@@ -8659,6 +8661,34 @@ mod_spread_correct_enet$bestTune
 min(mod_spread_correct_enet$results$RMSE)
 
 coef(mod_spread_correct_enet$finalModel, mod_spread_correct_enet$bestTune$lambda)
+
+# # KNN
+# set.seed(37564)
+# mod_spread_correct_knn = train(resid_spread ~ .,
+#                 na.action = na.exclude, 
+#                 data = df_spread_correct_train, 
+#                 method = "knn", 
+#                 preProcess = c("center","scale"),
+#                 tuneGrid = data.frame(k = seq(200, 230, by = 2)), 
+#                 trControl = ctrl)
+# ggplot(mod_spread_correct_knn, highlight = T) + 
+#   ggtitle("KNN") +
+#   theme(plot.title = element_text(hjust = 0.5))
+# mod_spread_correct_knn$bestTune
+# min(mod_spread_correct_knn$results$RMSE)
+# 
+# set.seed(37564)
+# mod_spread_correct_mars = train(resid_spread ~ .,
+#                  na.action = na.exclude, 
+#                  data = df_spread_correct_train, 
+#                  method = "earth", 
+#                  tuneGrid = expand.grid(degree = 1:3, nprune = 1:15), 
+#                  trControl = ctrl)
+# ggplot(mod_spread_correct_mars, highlight = T) + 
+#   ggtitle("MARS") +
+#   theme(plot.title = element_text(hjust = 0.5))
+# mod_spread_correct_mars$bestTune
+# min(mod_spread_correct_mars$results$RMSE)
 
 # saveRDS(mod_spread_correct_enet, glue::glue("mod_spread_correct_enet_{format(Sys.Date(), '%Y_%m_%d')}.rds"))
 mod_spread_correct_enet = readRDS("mod_spread_correct_enet.rds")
@@ -8725,7 +8755,1627 @@ df_total_team_train_id %>%
 
 ```
 
+### Try Points Allowed Model
+
+```{r}
+df_total_team_allow_train =
+  df_team_total_spread_rolling %>% 
+  left_join(
+    df_team_total_spread_rolling %>% 
+      group_by(game_id) %>% 
+      mutate(
+        team_opp = 
+          case_when(
+            row_number() == 1 ~ lead(team),
+            row_number() == 2 ~ lag(team),
+            .default = NA
+          )
+      ) %>% 
+      relocate(team_opp, .after = team) %>% 
+      ungroup() %>% 
+      select(game_id, team_opp, starts_with("prior_"), qb_cont, rest_days, travel_km) %>% 
+      rename_with(~ str_c(., "_opp"), everything() & -c(game_id, team_opp)) %>% 
+      rename(team = team_opp),
+    by = c("game_id", "team")
+  ) %>% 
+  # filter(season != 2025) %>%
+  # left_join(field_game_df, by = "game_id") %>%
+  filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
+  group_by(game_id) %>% 
+  mutate(
+    total_team_allow = 
+      case_when(
+        row_number() == 1 ~ lead(total_team),
+        row_number() == 2 ~ lag(total_team),
+        .default = NA
+      )
+  ) %>% 
+  ungroup() %>% 
+  # filter(season != 2020) %>% 
+  select(total_team_allow, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp, -any_of(df_total_team_train %>% names)) %>% 
+  select(total_team_allow, contains("_off") & contains("_opp"), contains("_def") & !contains("_opp"), rest_days, rest_days_opp) %>% 
+  drop_na()
+
+df_total_team_allow_train_id = 
+  df_team_total_spread_rolling %>% 
+  left_join(
+    df_team_total_spread_rolling %>% 
+      group_by(game_id) %>% 
+      mutate(
+        team_opp = 
+          case_when(
+            row_number() == 1 ~ lead(team),
+            row_number() == 2 ~ lag(team),
+            .default = NA
+          )
+      ) %>% 
+      relocate(team_opp, .after = team) %>% 
+      ungroup() %>% 
+      select(game_id, team_opp, starts_with("prior_"), qb_cont, rest_days, travel_km) %>% 
+      rename_with(~ str_c(., "_opp"), everything() & -c(game_id, team_opp)) %>% 
+      rename(team = team_opp),
+    by = c("game_id", "team")
+  ) %>% 
+  # filter(season != 2025) %>%
+  # left_join(field_game_df, by = "game_id") %>%
+  filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
+  group_by(game_id) %>% 
+  mutate(
+    total_team_allow = 
+      case_when(
+        row_number() == 1 ~ lead(total_team),
+        row_number() == 2 ~ lag(total_team),
+        .default = NA
+      )
+  ) %>% 
+  ungroup() %>% 
+  # filter(season != 2020) %>% 
+  select(season, team, game_id, total_team_allow, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp, -any_of(df_total_team_train %>% names)) %>% 
+  select(season, team, game_id, total_team_allow, contains("_off") & contains("_opp"), contains("_def") & !contains("_opp"), rest_days, rest_days_opp) %>% 
+  drop_na()
+
+# GLM
+set.seed(37564)
+mod_total_team_allow_glm = train(total_team_allow ~ .,
+                na.action = na.exclude, 
+                data = df_total_team_allow_train, #%>% select(-starts_with("prior_rolling_team_total")), 
+                #subset = season,
+                method = "glm", 
+                trControl = ctrl2)
+mod_total_team_allow_glm
+
+# ENET
+set.seed(37564)
+mod_total_team_allow_enet = train(total_team_allow ~ .,
+                 na.action = na.exclude, 
+                 data = df_total_team_allow_train, 
+                 method = "glmnet", 
+                 tuneGrid = expand.grid(alpha = seq(0, 1, by = 0.2),
+                                        # alpha = 0,
+                                        lambda = exp(seq(-4, 1, length = 10))),
+                 trControl = ctrl2)
+ggplot(mod_total_team_allow_enet, highlight = T) + 
+  ggtitle("ENET") +
+  theme(plot.title = element_text(hjust = 0.5))
+mod_total_team_allow_enet$bestTune
+min(mod_total_team_allow_enet$results$RMSE)
+
+# KNN
+set.seed(37564)
+mod_total_team_allow_knn = train(total_team_allow ~ .,
+                na.action = na.exclude, 
+                data = df_total_team_allow_train, 
+                method = "knn", 
+                preProcess = c("center","scale"),
+                tuneGrid = data.frame(k = seq(120, 150, by = 2)), 
+                trControl = ctrl2)
+ggplot(mod_total_team_allow_knn, highlight = T) + 
+  ggtitle("KNN") +
+  theme(plot.title = element_text(hjust = 0.5))
+mod_total_team_allow_knn$bestTune
+min(mod_total_team_allow_knn$results$RMSE)
+
+# MARS
+set.seed(37564)
+mod_total_team_allow_mars = train(total_team_allow ~ .,
+                 na.action = na.exclude, 
+                 data = df_total_team_allow_train, 
+                 method = "earth", 
+                 tuneGrid = expand.grid(degree = 1:3, nprune = 1:15), 
+                 trControl = ctrl2)
+ggplot(mod_total_team_allow_mars, highlight = T) + 
+  ggtitle("MARS") +
+  theme(plot.title = element_text(hjust = 0.5))
+mod_total_team_allow_mars$bestTune
+min(mod_total_team_allow_mars$results$RMSE)
+#mod_mars$finalModel %>% summary
+
+# Boost
+set.seed(37564)
+mod_total_team_allow_boost = train(total_team_allow ~ .,
+                  na.action = na.exclude, 
+                  data = df_total_team_allow_train, 
+                  method = "gbm", 
+                  tuneGrid = expand.grid(n.trees = c(700, 1000),
+                                         interaction.depth = 2:3,
+                                         shrinkage = c(0.008, 0.01), 
+                                         n.minobsinnode = 10), 
+                  trControl = ctrl2,
+                  verbose = F)
+ggplot(mod_total_team_allow_boost, highlight = T) + 
+  ggtitle("Boost") +
+  theme(plot.title = element_text(hjust = 0.5))
+mod_total_team_allow_boost$bestTune
+min(mod_total_team_allow_boost$results$RMSE)
+
+#boost = tibble(wins_boost = predict(mod_boost, newdata = test_df))
+
+# SVM
+set.seed(37564)
+mod_total_team_allow_svm = train(total_team_allow ~ .,
+                na.action = na.exclude, 
+                data = df_total_team_allow_train,
+                preProcess = c("scale", "center"),
+                method = "svmRadialSigma",
+                tuneGrid = expand.grid(C = #c(0.03877421, 0.08208500),
+                                         exp(seq(-4, -1, len = 5)),
+                                       sigma = #c(0.014264234, 0.030197383)),
+                                         exp(seq(-5, -2, len = 5))),
+                trControl = ctrl2)
+ggplot(mod_total_team_allow_svm, highlight = T) + 
+  ggtitle("SVM Radial") +
+  theme(plot.title = element_text(hjust = 0.5))
+mod_total_team_allow_svm$bestTune
+min(mod_total_team_allow_svm$results$RMSE)
+
+df_total_team_train_id %>% 
+  mutate(
+    pred_total_team = predict(mod_total_team_svm, .)
+  ) %>% 
+  left_join(
+    df_total_team_allow_train_id %>% 
+      mutate(
+        pred_total_team_allow = predict(mod_total_team_allow_svm, .)
+      ),
+    by = c("game_id", "team", "season")
+  ) %>% #select(season, team, game_id, pred_total_team, pred_total_team_allow) %>% 
+  group_by(game_id) %>% 
+  mutate(
+    pred_total_team_adj = 
+      case_when(
+        row_number() == 1 ~ 0.75 * pred_total_team + 0.25 * lead(pred_total_team_allow),
+        row_number() == 2 ~ 0.75 * pred_total_team + 0.25 * lag(pred_total_team_allow),
+        .default = NA
+      )
+  ) %>% 
+  summarise(
+    pred_total = sum(pred_total_team),
+    pred_total_new = sum(pred_total_team_adj),
+    actual_total = sum(total_team)
+  ) %>% 
+  left_join(df_field_game, by = "game_id") %>% 
+  drop_na() %>% 
+  ungroup() %>% 
+  mutate(
+    pred_total_resid = predict(mod_total_correct_enet, newdata = .),
+    pred_total_adj = pred_total + pred_total_resid,
+    pred_total_new_adj = pred_total_new + pred_total_resid
+  ) %>% 
+  left_join(
+    df_szn_all %>% 
+      distinct(game_id, total_line),
+    by = "game_id"
+  ) %>% 
+  summarise(
+    rmse_vegas = sqrt(mean((actual_total - total_line)^2)),
+    rmse_mod = sqrt(mean((actual_total - pred_total_adj)^2)),
+    rmse_mod_new = sqrt(mean((actual_total - pred_total_new_adj)^2)),
+    mae_vegas = mean(abs(actual_total - total_line)),
+    mae_mod = mean(abs(actual_total - pred_total_adj)),
+    mae_mod_new = mean(abs(actual_total - pred_total_new_adj))
+  ) %>% view
+  knitr::kable()
+
+df_total_team_train_id %>% 
+  mutate(
+    pred_total_team = predict(mod_total_team_svm, .)
+  ) %>% 
+  left_join(
+    df_total_team_allow_train_id %>% 
+      mutate(
+        pred_total_team_allow = predict(mod_total_team_allow_svm, .)
+      ),
+    by = c("game_id", "team", "season")
+  ) %>% 
+  group_by(game_id) %>% 
+  mutate(
+    pred_total_team_adj = 
+      case_when(
+        row_number() == 1 ~ 0.75 * pred_total_team + 0.25 * lead(pred_total_team_allow),
+        row_number() == 2 ~ 0.75 * pred_total_team + 0.25 * lag(pred_total_team_allow),
+        .default = NA
+      )
+  ) %>% 
+  mutate(
+    pred_spread = pred_total_team - lead(pred_total_team),
+    pred_spread_new = pred_total_team_adj - lead(pred_total_team_adj),
+    actual_spread = total_team - lead(total_team)
+  ) %>% #select(season, team, game_id, pred_total_team, pred_total_team_allow, pred_total_team_adj, pred_spread, pred_spread_new) %>% view
+  drop_na() %>% 
+  left_join(df_field_game, by = "game_id") %>% 
+  drop_na() %>% 
+  ungroup() %>% 
+  mutate(
+    pred_spread_resid = predict(mod_spread_correct_enet, newdata = .),
+    pred_spread_adj = pred_spread + pred_spread_resid,
+    pred_spread_new_adj = pred_spread_new + pred_spread_resid
+  ) %>% 
+  left_join(
+    df_szn_all %>% 
+      distinct(game_id, spread_line),
+    by = "game_id"
+  ) %>% 
+  summarise(
+    rmse_vegas = sqrt(mean((actual_spread - spread_line)^2)),
+    rmse_mod = sqrt(mean((actual_spread - pred_spread_adj)^2)),
+    rmse_mod_new = sqrt(mean((actual_spread - pred_spread_new_adj)^2)),
+    mae_vegas = mean(abs(actual_spread - spread_line)),
+    mae_mod = mean(abs(actual_spread - pred_spread_adj)),
+    mae_mod_new = mean(abs(actual_spread - pred_spread_new_adj))
+  ) %>% view
+  # knitr::kable()
+  
+# make proper weights:
+df_total_team_allow_weights = 
+  df_total_team_train_id %>% 
+  mutate(
+    pred_total_team = predict(mod_total_team_svm, .)
+  ) %>% 
+  left_join(
+    df_total_team_allow_train_id %>% 
+      mutate(
+        pred_total_team_allow = predict(mod_total_team_allow_svm, .)
+      ),
+    by = c("game_id", "team", "season")
+  ) %>% #select(season, team, game_id, pred_total_team, pred_total_team_allow) %>% 
+  group_by(game_id) %>% 
+  mutate(
+    pred_total_team_def = 
+      case_when(
+        row_number() == 1 ~ lead(pred_total_team_allow),
+        row_number() == 2 ~ lag(pred_total_team_allow),
+        .default = NA
+      )
+  ) %>% 
+  select(season, team, game_id, pred_total_team, pred_total_team_allow, pred_total_team_def, total_team) %>% 
+  ungroup()
+
+rmse_mod_weights = list()
+mae_mod_weights = list()
+for(i in seq(0.05, 1, by = 0.05)){
+  
+  df = 
+    df_total_team_allow_weights %>% 
+    mutate(
+      pred_total = pred_total_team * i + pred_total_team_def * (1 - i),
+      rmse_mod = sqrt(mean((total_team - pred_total)^2)),
+      mae_mod = mean(abs(total_team - pred_total))
+    )
+  
+  rmse_mod_weights[[i]] = df$rmse_mod
+  mae_mod_weights[[i]] = df$mae_mod
+
+}
+
+weights = seq(0.05, 1, by = 0.05)
+
+rmse_mod_weights = numeric(length(weights))
+mae_mod_weights  = numeric(length(weights))
+
+for(j in seq_along(weights)){
+  w = weights[j]
+
+  df = 
+    df_total_team_allow_weights %>% 
+    mutate(
+      pred_total = pred_total_team * w + pred_total_team_def * (1 - w),
+      rmse_mod = sqrt(mean((total_team - pred_total)^2)),
+      mae_mod = mean(abs(total_team - pred_total))
+    )
+
+  rmse_mod_weights[j] = df$rmse_mod[1]
+  mae_mod_weights[j]  = df$mae_mod[1]
+}
+
+df_mod_weights = data.frame(weight = weights, rmse = rmse_mod_weights, mae = mae_mod_weights)
+  
+view(df_mod_weights)  
+  
+```
+
 ## Backtesting
+
+### 2022
+
+```{r check prior year bets 2022}
+df_total_team_train_2022 =
+  mod_total_team_svm$trainingData %>%
+  rename(total_team = .outcome) %>%
+  left_join(df_total_team_train_id %>% select(game_id, all_of(names(df_total_team_train)))) %>%
+  filter(as.integer(str_extract(game_id, "^\\d+")) != 2022) %>%
+  select(-game_id)
+
+# df_total_team_train_id = readRDS("df_total_team_train_2009_2026_id.rds")
+
+set.seed(37564)
+mod_total_team_svm_2022 = train(total_team ~ .,
+                na.action = na.exclude, 
+                data = df_total_team_train_2022,
+                preProcess = c("scale", "center"),
+                method = "svmRadialSigma",
+                tuneGrid = expand.grid(C = mod_total_team_svm$bestTune[[2]],
+                                       sigma = mod_total_team_svm$bestTune[[1]]),
+                trControl = ctrl2)
+# mod_total_team_svm_2024$bestTune
+min(mod_total_team_svm_2022$results$RMSE)
+
+resid_sd_2022 =
+  df_total_team_train_id %>% 
+  filter(as.integer(str_extract(game_id, "^\\d+")) != 2022) %>% 
+  # filter(season != 2024) %>% 
+  mutate(
+    pred = predict(mod_total_team_svm_2022, .),
+    resid = .data[["total_team"]] - pred
+  ) %>%
+  summarise(sd = sd(resid, na.rm = TRUE)) %>%
+  pull(sd)
+
+df_total_team_test_2022 = 
+  df_total_team_train_id %>% 
+  filter(as.integer(str_extract(game_id, "^\\d+")) == 2022)
+
+df_total_correct_train_2022 = 
+  df_team_total_spread_rolling %>% 
+  left_join(
+    df_team_total_spread_rolling %>% 
+      group_by(game_id) %>% 
+      mutate(
+        team_opp = 
+          case_when(
+            row_number() == 1 ~ lead(team),
+            row_number() == 2 ~ lag(team),
+            .default = NA
+          )
+      ) %>% 
+      relocate(team_opp, .after = team) %>% 
+      ungroup() %>% 
+      select(game_id, team_opp, starts_with("prior_"), qb_cont, rest_days, travel_km) %>% 
+      rename_with(~ str_c(., "_opp"), everything() & -c(game_id, team_opp)) %>% 
+      rename(team = team_opp),
+    by = c("game_id", "team")
+  ) %>% 
+  filter(season != 2022) %>%
+  # left_join(field_game_df, by = "game_id") %>%
+  filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
+  select(game_id, total_team, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
+  drop_na() %>% 
+  mutate(
+    pred_total_team = predict(mod_total_team_svm_2022, newdata = .)
+  ) %>% 
+  group_by(game_id) %>% 
+  summarise(
+    pred_total = sum(pred_total_team),
+    actual_total = sum(total_team)
+  ) %>% 
+  mutate(
+    resid_total = actual_total - pred_total
+  ) %>% 
+  left_join(df_field_game, by = "game_id") %>% 
+  ungroup() %>% 
+  select(resid_total, ends_with("_field"), division_game, international, wind, temp, time_start) %>% 
+  select(-c(time_start, international)) %>% 
+  drop_na()
+
+# ENET
+set.seed(37564)
+mod_total_correct_enet_2022 = train(resid_total ~ .,
+                 na.action = na.exclude, 
+                 data = df_total_correct_train_2022, 
+                 method = "glmnet", 
+                 tuneGrid = expand.grid(alpha = mod_total_correct_enet$bestTune[[1]],
+                                        lambda = mod_total_correct_enet$bestTune[[2]]),
+                 trControl = ctrl2)
+# mod_total_correct_enet$bestTune
+min(mod_total_correct_enet_2022$results$RMSE)
+
+coef(mod_total_correct_enet_2022$finalModel, mod_total_correct_enet_2022$bestTune$lambda)
+
+df_spread_correct_train_2022 = 
+  df_team_total_spread_rolling %>% 
+  left_join(
+    df_team_total_spread_rolling %>% 
+      group_by(game_id) %>% 
+      mutate(
+        team_opp = 
+          case_when(
+            row_number() == 1 ~ lead(team),
+            row_number() == 2 ~ lag(team),
+            .default = NA
+          )
+      ) %>% 
+      relocate(team_opp, .after = team) %>% 
+      ungroup() %>% 
+      select(game_id, team_opp, starts_with("prior_"), qb_cont, rest_days, travel_km) %>% 
+      rename_with(~ str_c(., "_opp"), everything() & -c(game_id, team_opp)) %>% 
+      rename(team = team_opp),
+    by = c("game_id", "team")
+  ) %>% 
+  filter(season != 2022) %>%
+  # left_join(field_game_df, by = "game_id") %>%
+  filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
+  select(game_id, result, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
+  drop_na() %>% 
+  mutate(
+    pred_total_team = predict(mod_total_team_svm_2022, newdata = .),
+    rest_days_diff = rest_days - rest_days_opp
+  ) %>% 
+  group_by(game_id) %>% 
+  mutate(
+    pred_spread = pred_total_team - lead(pred_total_team)
+  ) %>% 
+  drop_na() %>% 
+  mutate(
+    resid_spread = result - pred_spread
+  ) %>% 
+  left_join(df_field_game, by = "game_id") %>% 
+  ungroup() %>% 
+  select(resid_spread, ends_with("_field"), division_game, international, wind, temp, time_start) %>% 
+  select(-c(time_start, international)) %>% 
+  drop_na()
+
+# ENET
+set.seed(37564)
+mod_spread_correct_enet_2022 = train(resid_spread ~ .,
+                 na.action = na.exclude, 
+                 data = df_spread_correct_train_2022, 
+                 method = "glmnet", 
+                 tuneGrid = expand.grid(alpha = mod_total_correct_enet$bestTune[[1]],
+                                        lambda = mod_total_correct_enet$bestTune[[2]]),
+                 trControl = ctrl2)
+mod_spread_correct_enet_2022$bestTune
+min(mod_spread_correct_enet_2022$results$RMSE)
+
+# coef(mod_spread_correct_enet_2022$finalModel, mod_spread_correct_enet_2022$bestTune$lambda)
+
+set.seed(37564)
+df_team_sims_2022 =
+  df_total_team_test_2022 %>% 
+  # mutate(
+  #   game = 
+  #     case_when(
+  #       team < team_opp ~ str_c(team, "vs", team_opp),
+  #       team > team_opp ~ str_c(team_opp, "vs", team),
+  #       .default = NA
+  #     )
+  # ) %>% 
+  # arrange(game) %>% 
+  # rowid_to_column("game_id") %>% 
+  mutate(
+    # game_id = rep(seq(1:c(nrow(.) / 2)), each = 2),
+    # game_id =
+    #   case_when(
+    #     team == lag(team_opp) ~ lag(game_id),
+    #     .default = game_id
+    #   ),
+    mu = predict(mod_total_team_svm_2022, .)
+  ) %>% 
+  # relocate(game_id) %>%
+  mutate(
+    sim = map(
+      mu,
+      ~ rnorm(10000, mean = .x, sd = resid_sd_2022)
+    )
+  )
+
+df_pred_total_spread_adj_2022 = 
+  df_team_sims_2022 %>% 
+  left_join(
+    df_field_game, by = "game_id"
+  ) %>% 
+  mutate(
+    team_away = str_extract(str_remove(game_id, "\\d+_\\d+_"), "^[A-Z]+"),
+    team_home = str_extract(game_id, "[A-Z]+$")
+  ) %>% 
+  left_join(df_division %>% select(team, division) %>% rename(team_home = team), by = "team_home") %>% 
+  left_join(df_division %>% select(team, division) %>% rename(team_away = team, division_opp = division), by = "team_away") %>% 
+  group_by(game_id) %>% 
+  mutate(
+    division_game = ifelse(division == division_opp, 1, 0),
+    total_game = sum(mu, na.rm = T),
+    actual_total = sum(total_team, na.rm = T),
+    spread_game = mu - lead(mu),
+    actual_spread = total_team - lead(total_team)
+    # division_game = 
+    #   case_when(
+    #     week <= 18 & division == division_opp ~ 1,
+    #     week > 18 ~ 1,
+    #     .default = 0
+    #   )
+  ) %>%
+  distinct(game_id, team_home, team_away, enclosed_field, turf_field, division_game, wind, temp, total_game, actual_total, spread_game, actual_spread) %>% 
+  drop_na() %>% 
+  ungroup() %>% 
+  mutate(
+    total_adjust = predict(mod_total_correct_enet_2022, newdata = .),
+    total_game_adj = total_game + total_adjust,
+    spread_adjust = predict(mod_spread_correct_enet_2022, newdata = .),
+    spread_game_adj = spread_game + spread_adjust,
+    spread_adj_label =
+      case_when(
+        spread_game_adj < 0 ~ str_c(team_home, " +", -round(spread_game_adj, 1)),
+        spread_game_adj >= 0 ~ str_c(team_home, " ", -round(spread_game_adj, 1))
+      )
+  ) %>%
+  relocate(total_adjust, total_game_adj, .after = total_game) %>%
+  relocate(spread_game, spread_adjust, spread_game_adj, spread_adj_label, .after = total_game_adj)
+
+df_game_sims_2022 =
+  df_team_sims_2022 %>%
+  select(game_id, sim) %>%
+  group_by(game_id) %>% 
+  left_join(df_pred_total_spread_adj_2022 %>% select(game_id, total_adjust, spread_adjust), by = "game_id") %>%
+  summarise(
+    total_sim_adj = list(sim[[1]] + sim[[2]] + total_adjust),
+    spread_sim_adj = list(sim[[1]] - sim[[2]] + spread_adjust)
+  )
+
+df_open_lines_2022 =
+  read_xlsx("nfl_game_lines_aus.xlsx") %>% 
+  janitor::clean_names() %>% 
+  mutate(
+    across(
+      c(home_team, away_team),
+      ~ case_match(
+        .,
+        "Arizona Cardinals" ~ "ARI", 
+        "Atlanta Falcons" ~ "ATL", 
+        "Baltimore Ravens" ~ "BAL", 
+        "Buffalo Bills" ~ "BUF", 
+        "Carolina Panthers" ~ "CAR", 
+        "Chicago Bears" ~ "CHI", 
+        "Cincinnati Bengals" ~ "CIN", 
+        "Cleveland Browns" ~ "CLE", 
+        "Dallas Cowboys" ~ "DAL", 
+        "Denver Broncos" ~ "DEN", 
+        "Detroit Lions" ~ "DET", 
+        "Green Bay Packers" ~ "GB", 
+        "Houston Texans" ~ "HOU", 
+        "Indianapolis Colts" ~ "IND", 
+        "Jacksonville Jaguars" ~ "JAX", 
+        "Kansas City Chiefs" ~ "KC", 
+        "Las Vegas Raiders" ~ "LV", 
+        "Los Angeles Chargers" ~ "LAC", 
+        "Los Angeles Rams" ~ "LA", 
+        "Miami Dolphins" ~ "MIA", 
+        "Minnesota Vikings" ~ "MIN", 
+        "New England Patriots" ~ "NE", 
+        "New Orleans Saints" ~ "NO", 
+        "New York Giants" ~ "NYG", 
+        "New York Jets" ~ "NYJ", 
+        "Oakland Raiders" ~ "LV", 
+        "Philadelphia Eagles" ~ "PHI", 
+        "Pittsburgh Steelers" ~ "PIT", 
+        "San Diego Chargers" ~ "LAC", 
+        "San Francisco 49ers" ~ "SF", 
+        "Seattle Seahawks" ~ "SEA", 
+        "St. Louis Rams" ~ "LA", 
+        "Tampa Bay Buccaneers" ~ "TB", 
+        "Tennessee Titans" ~ "TEN", 
+        "Washington Commanders" ~ "WAS", 
+        "Washington Football Team" ~ "WAS", 
+        "Washington Redskins" ~ "WAS",
+        .default = NA
+      )
+    ),
+    team_game = str_c(away_team, "_", home_team)
+  ) %>% 
+  rename(
+    team_home = home_team, 
+    team_away = away_team,
+    total_line = total_score_open
+  ) %>% 
+  filter(between(as.Date(date), as.Date("2022-09-01"),  as.Date("2023-08-01"))) %>% 
+  mutate(
+    week = ceiling(as.integer(as.Date(date) - as.Date("2022-09-07")) / 7),
+    spread_line = -home_line_open
+  ) %>% 
+  select(week, team_home, team_away, spread_line, home_line_odds_open, away_line_odds_open, total_line, total_score_over_open, total_score_under_open) %>% 
+  filter(between(week, 2, 18))
+
+df_totals_profit_2022 =
+  df_open_lines_2022 %>% 
+  left_join(df_pred_total_spread_adj_2022, by = c("team_home", "team_away")) %>% 
+  left_join(df_game_sims_2022, by = "game_id") %>% 
+  left_join(df_szn_all %>% distinct(game_id, total_line, spread_line) %>% rename(total_line_current = total_line), by = "game_id") %>% 
+  mutate(
+    # over_odds = -112, 
+    # under_odds = -112,
+    over_odds_current = -112, 
+    under_odds_current = -112,
+    p_over = map_dbl(total_sim_adj, ~ mean(.x > total_line, na.rm = T)),
+    p_under = 1 - p_over,
+    p_over_current  = map_dbl(total_sim_adj, ~ mean(.x > total_line_current, na.rm = T)),
+    p_under_current = 1 - p_over_current,
+    odds_over_current_dec =
+      if_else(
+        over_odds_current < 0,
+        1 + 100 / abs(over_odds_current),
+        1 + over_odds_current / 100
+      ),
+    odds_under_current_dec =
+      if_else(
+        under_odds_current < 0,
+        1 + 100 / abs(under_odds_current),
+        1 + under_odds_current / 100
+      ),
+    odds_over_dec = total_score_over_open,
+      # if_else(
+      #   over_odds < 0,
+      #   1 + 100 / abs(over_odds),
+      #   1 + over_odds / 100
+      # ),
+    odds_under_dec = total_score_under_open,
+      # if_else(
+      #   under_odds < 0,
+      #   1 + 100 / abs(under_odds),
+      #   1 + under_odds / 100
+      # ),
+    ev_over_current  = p_over_current  * (odds_over_current_dec  - 1) - (1 - p_over_current),
+    ev_under_current = p_under_current * (odds_under_current_dec - 1) - (1 - p_under_current),
+    ev_over  = p_over  * (odds_over_dec - 1) - (1 - p_over),
+    ev_under = p_under * (odds_under_dec - 1) - (1 - p_under),
+    bet_total =
+      case_when(
+        ev_over  > 0.03 ~ "Bet Over",
+        ev_under > 0.03 ~ "Bet Under",
+        .default = "No Bet"
+      ),
+    bet_current_total =
+      case_when(
+        ev_over_current  > 0.03 ~ "Bet Over",
+        ev_under_current > 0.03 ~ "Bet Under",
+        .default = "No Bet"
+      ),
+    ev_max_total = pmax(ev_over, ev_under),
+    ev_max_current_total = pmax(ev_over_current, ev_under_current),
+    side_total = case_when(
+      p_over  * odds_over_dec  > p_under * odds_under_dec  ~ "Over",
+      p_under * odds_under_dec > p_over  * odds_over_dec  ~ "Under",
+      .default = NA
+    ),
+    side_current_total = case_when(
+      p_over_current  * odds_over_current_dec  > p_under_current * odds_under_current_dec  ~ "Over",
+      p_under_current * odds_under_current_dec > p_over_current  * odds_over_current_dec  ~ "Under",
+      .default = NA
+    ),
+    p_total = if_else(side_total == "Over",  p_over,  p_under),
+    p_current_total = if_else(side_current_total == "Over",  p_over_current,  p_under_current),
+    dec_odds_total = if_else(side_total == "Over", odds_over_dec, odds_under_dec),
+    dec_odds_current_total = if_else(side_current_total == "Over", odds_over_current_dec, odds_under_current_dec),
+    kelly_total = (p_total * dec_odds_total - 1) / (dec_odds_total - 1),
+    kelly_current_total = (p_current_total * dec_odds_current_total - 1) / (dec_odds_current_total - 1),
+    stake_frac_total = pmin(0.03, 0.05 * pmax(kelly_total, 0)),
+    stake_total = stake_frac_total * 100,
+    stake_frac_current_total = pmin(0.03, 0.05 * pmax(kelly_current_total, 0)),
+    stake_current_total = stake_frac_current_total * 100
+  ) %>% 
+  ungroup() %>% 
+  # left_join(df_qb_cont_old %>% select(game_id, week, qb_cont), by = c("game_id", "week")) %>% 
+  # group_by(game_id) %>%
+  # filter(sum(qb_cont) == 2) %>%
+  # ungroup() %>%
+  distinct() %>%
+  # filter(stake_total >= 0.5) %>%
+  # filter(stake_current_total >= 0.5) %>%
+  # filter(ind_total_hit != "No Bet") %>% 
+  mutate(
+    ind_bet_hit =
+      case_when(
+        side_total == "Under" & actual_total < total_line ~ 1,
+        side_total == "Over" & actual_total > total_line ~ 1,
+        side_total == "Under" & actual_total == total_line ~ NA,
+        side_total == "Over" & actual_total == total_line ~ NA,
+        .default = 0
+      ),
+    ind_bet_hit_current =
+      case_when(
+        side_current_total == "Under" & actual_total < total_line_current ~ 1,
+        side_current_total == "Over" & actual_total > total_line_current ~ 1,
+        side_current_total == "Under" & actual_total == total_line_current ~ NA,
+        side_current_total == "Over" & actual_total == total_line_current ~ NA,
+        .default = 0
+      ),
+    profit =
+      case_when(
+        ind_bet_hit == 1 ~ stake_total * (dec_odds_total - 1),
+        ind_bet_hit == 0 ~ -stake_total
+      ),
+    profit_current =
+      case_when(
+        ind_bet_hit_current == 1 ~ stake_current_total * (dec_odds_current_total - 1),
+        ind_bet_hit_current == 0 ~ -stake_current_total
+      )
+  ) 
+  
+df_spreads_profit_2022 =
+  df_open_lines_2022 %>% 
+  left_join(df_pred_total_spread_adj_2022, by = c("team_home", "team_away")) %>% 
+  left_join(df_game_sims_2022, by = "game_id") %>% 
+  left_join(df_szn_all %>% distinct(game_id, total_line, spread_line) %>% rename(spread_line_current = spread_line), by = "game_id") %>% 
+  mutate(
+    # home_odds = -112, 
+    # away_odds = -112,
+    home_odds_current = -112, 
+    away_odds_current = -112,
+    p_home = map_dbl(spread_sim_adj, ~ mean(.x > spread_line, na.rm = T)),
+    p_away = 1 - p_home,
+    p_home_current = map_dbl(spread_sim_adj, ~ mean(.x > spread_line_current, na.rm = T)),
+    p_away_current = 1 - p_home_current,
+    odds_home_dec = home_line_odds_open,
+      # if_else(
+      #   home_odds < 0,
+      #   1 + 100 / abs(home_odds),
+      #   1 + home_odds / 100
+      # ),
+    odds_away_dec = away_line_odds_open,
+      # if_else(
+      #   away_odds < 0,
+      #   1 + 100 / abs(away_odds),
+      #   1 + away_odds / 100
+      # ),
+    odds_home_current_dec =
+      if_else(
+        home_odds_current < 0,
+        1 + 100 / abs(home_odds_current),
+        1 + home_odds_current / 100
+      ),
+    odds_away_current_dec =
+      if_else(
+        away_odds_current < 0,
+        1 + 100 / abs(away_odds_current),
+        1 + away_odds_current / 100
+      ),
+    ev_home  = p_home  * (odds_home_dec  - 1) - (1 - p_home),
+    ev_away = p_away * (odds_away_dec - 1) - (1 - p_away),
+    ev_home_current  = p_home_current  * (odds_home_current_dec  - 1) - (1 - p_home_current),
+    ev_away_current = p_away_current * (odds_away_current_dec - 1) - (1 - p_away_current),
+    bet_spread =
+      case_when(
+        ev_home > 0.03 ~ "Bet Home",
+        ev_away > 0.03 ~ "Bet Away",
+        .default = "No Bet"
+      ),
+    bet_spread_current =
+      case_when(
+        ev_home_current  > 0.03 ~ "Bet Home",
+        ev_away_current > 0.03 ~ "Bet Away",
+        .default = "No Bet"
+      ),
+    ev_max_spread = pmax(ev_home, ev_away),
+    ev_max_current_spread = pmax(ev_home_current, ev_away_current),
+    side_spread = case_when(
+      p_home  * odds_home_dec  > p_away * odds_away_dec  ~ "Home",
+      p_away * odds_away_dec > p_home  * odds_home_dec  ~ "Away",
+      .default = NA
+    ),
+    side_current_spread = case_when(
+      p_home_current  * odds_home_current_dec  > p_away_current * odds_away_current_dec  ~ "Home",
+      p_away_current * odds_away_current_dec > p_home_current  * odds_home_current_dec  ~ "Away",
+      .default = NA
+    ),
+    p_spread = if_else(side_spread == "Home",  p_home,  p_away),
+    p_current_spread = if_else(side_current_spread == "Home",  p_home_current,  p_away_current),
+    dec_odds_spread = if_else(side_spread == "Home", odds_home_dec, odds_away_dec),
+    dec_odds_current_spread = if_else(side_current_spread == "Home", odds_home_current_dec, odds_away_current_dec),
+    kelly_spread = (p_spread * dec_odds_spread - 1) / (dec_odds_spread - 1),
+    kelly_current_spread = (p_current_spread * dec_odds_current_spread - 1) / (dec_odds_current_spread - 1),
+    stake_frac_spread = pmin(0.03, 0.05 * pmax(kelly_spread, 0)),
+    stake_frac_current_spread = pmin(0.03, 0.05 * pmax(kelly_current_spread, 0)),
+    stake_spread = stake_frac_spread * 100,
+    stake_current_spread = stake_frac_current_spread * 100
+  ) %>% 
+  ungroup() %>% 
+  # left_join(df_qb_cont_old %>% select(game_id, week, qb_cont), by = c("game_id", "week")) %>% 
+  # group_by(game_id) %>%
+  # filter(sum(qb_cont) == 2) %>%
+  # ungroup() %>%
+  distinct() %>%
+  # filter(stake_spread >= 0.5) %>%
+  # filter(stake_current_spread >= 0.5) %>%
+  mutate(
+    ind_bet_hit =
+      case_when(
+        side_spread == "Away" & actual_spread < spread_line ~ 1,
+        side_spread == "Home" & actual_spread > spread_line ~ 1,
+        side_spread == "Away" & actual_spread == spread_line ~ NA,
+        side_spread == "Home" & actual_spread == spread_line ~ NA,
+        .default = 0
+      ),
+    ind_bet_hit_current =
+      case_when(
+        side_current_spread == "Away" & actual_spread < spread_line_current ~ 1,
+        side_current_spread == "Home" & actual_spread > spread_line_current ~ 1,
+        side_current_spread == "Away" & actual_spread == spread_line_current ~ NA,
+        side_current_spread == "Home" & actual_spread == spread_line_current ~ NA,
+        .default = 0
+      ),
+    profit =
+      case_when(
+        ind_bet_hit == 1 ~ stake_spread * (dec_odds_spread - 1),
+        ind_bet_hit == 0 ~ -stake_spread
+      ),
+    profit_current =
+      case_when(
+        ind_bet_hit_current == 1 ~ stake_current_spread * (dec_odds_current_spread - 1),
+        ind_bet_hit_current == 0 ~ -stake_current_spread
+      )
+  )
+
+df_totals_profit_2022 %>%
+  filter(stake_total >= 0.5) %>%
+  mutate(week = str_extract(str_remove(game_id, "^\\d+_"), "\\d+")) %>% 
+  # filter(week != 18) %>% 
+  group_by(week) %>% 
+  summarise(
+    profit_tot = sum(profit),
+    n_bets_tot = n()
+  ) %>% 
+  # rows_insert(
+  #   tibble(
+  #     week = "04",
+  #     profit_tot = 0
+  #   ),
+  #   by = "week"
+  # ) %>% 
+  arrange(week) %>% 
+  left_join(
+    df_spreads_profit_2022 %>%
+      filter(stake_spread >= 0.5) %>%
+      mutate(week = str_extract(str_remove(game_id, "^\\d+_"), "\\d+")) %>% 
+      # filter(week != 18) %>%
+      group_by(week) %>%
+      summarise(
+        profit_spread = sum(profit),
+        n_bets_spread = n()
+      ),
+    by = "week"
+  ) %>%
+  mutate(
+    across(everything(), ~ replace_na(., 0)),
+    week = as.character(week),
+    profit_ovr = profit_tot + profit_spread,
+    n_bets = n_bets_tot + n_bets_spread
+  ) %>% 
+  rows_insert(
+    tibble(
+      week = "Season",
+      profit_tot = sum(.$profit_tot, na.rm = T),
+      profit_spread = sum(.$profit_spread, na.rm = T),
+      profit_ovr = sum(.$profit_ovr, na.rm = T),
+      n_bets = sum(.$n_bets, na.rm = T)
+    ),
+    by = "week"
+  ) %>% 
+  mutate(across(starts_with("profit_"), ~ round(., 1))) %>% 
+  select(week, n_bets, profit_tot, profit_spread, profit_ovr) %>% 
+  labelled::set_variable_labels(
+    week = "Week",
+    n_bets = "Bets",
+    profit_tot = "Totals",
+    profit_spread = "Spreads",
+    profit_ovr = "Overall"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  gtsummary::modify_caption("**2022 Opening Line Betting Profit by Week (Units)**")
+
+df_totals_profit_2022 %>%
+  filter(stake_current_total >= 0.5) %>% 
+  mutate(week = str_extract(str_remove(game_id, "^\\d+_"), "\\d+")) %>% 
+  # filter(week != 18) %>% 
+  group_by(week) %>% 
+  summarise(
+    profit_tot = sum(profit_current),
+    n_bets_tot = n()
+  ) %>% 
+  # rows_insert(
+  #   tibble(
+  #     week = "04",
+  #     profit_tot = 0
+  #   ),
+  #   by = "week"
+  # ) %>%
+  arrange(week) %>% 
+  left_join(
+    df_spreads_profit_2022 %>%
+      filter(stake_current_spread >= 0.5) %>% 
+      mutate(week = str_extract(str_remove(game_id, "^\\d+_"), "\\d+")) %>% 
+      # filter(week != 18) %>%
+      group_by(week) %>%
+      summarise(
+        profit_spread = sum(profit_current),
+        n_bets_spread = n()
+      ),
+    by = "week"
+  ) %>%
+  mutate(
+    across(everything(), ~ replace_na(., 0)),
+    week = as.character(week),
+    profit_ovr = profit_tot + profit_spread,
+    n_bets = n_bets_tot + n_bets_spread  
+  ) %>% 
+  rows_insert(
+    tibble(
+      week = "Season",
+      profit_tot = sum(.$profit_tot, na.rm = T),
+      profit_spread = sum(.$profit_spread, na.rm = T),
+      profit_ovr = sum(.$profit_ovr, na.rm = T),
+      n_bets = sum(.$n_bets, na.rm = T)
+    ),
+    by = "week"
+  ) %>% 
+  mutate(across(starts_with("profit_"), ~ round(., 1))) %>% 
+  select(week, n_bets, profit_tot, profit_spread, profit_ovr) %>% 
+  labelled::set_variable_labels(
+    week = "Week",
+    n_bets = "Bets",
+    profit_tot = "Totals",
+    profit_spread = "Spreads",
+    profit_ovr = "Overall"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  gtsummary::modify_caption("**2022 Closing Line Betting Profit by Week (Units)**")
+```
+
+### 2023
+
+```{r check prior year bets 2023}
+df_total_team_train_2023 =
+  mod_total_team_svm$trainingData %>%
+  rename(total_team = .outcome) %>%
+  left_join(df_total_team_train_id %>% select(game_id, all_of(names(df_total_team_train)))) %>%
+  filter(as.integer(str_extract(game_id, "^\\d+")) != 2023) %>%
+  select(-game_id)
+
+# df_total_team_train_id = readRDS("df_total_team_train_2009_2026_id.rds")
+
+set.seed(37564)
+mod_total_team_svm_2023 = train(total_team ~ .,
+                na.action = na.exclude, 
+                data = df_total_team_train_2023,
+                preProcess = c("scale", "center"),
+                method = "svmRadialSigma",
+                tuneGrid = expand.grid(C = mod_total_team_svm$bestTune[[2]],
+                                       sigma = mod_total_team_svm$bestTune[[1]]),
+                trControl = ctrl2)
+# mod_total_team_svm_2024$bestTune
+min(mod_total_team_svm_2023$results$RMSE)
+
+resid_sd_2023 =
+  df_total_team_train_id %>% 
+  filter(as.integer(str_extract(game_id, "^\\d+")) != 2023) %>% 
+  # filter(season != 2024) %>% 
+  mutate(
+    pred = predict(mod_total_team_svm_2023, .),
+    resid = .data[["total_team"]] - pred
+  ) %>%
+  summarise(sd = sd(resid, na.rm = TRUE)) %>%
+  pull(sd)
+
+df_total_team_test_2023 = 
+  df_total_team_train_id %>% 
+  filter(as.integer(str_extract(game_id, "^\\d+")) == 2023)
+
+df_total_correct_train_2023 = 
+  df_team_total_spread_rolling %>% 
+  left_join(
+    df_team_total_spread_rolling %>% 
+      group_by(game_id) %>% 
+      mutate(
+        team_opp = 
+          case_when(
+            row_number() == 1 ~ lead(team),
+            row_number() == 2 ~ lag(team),
+            .default = NA
+          )
+      ) %>% 
+      relocate(team_opp, .after = team) %>% 
+      ungroup() %>% 
+      select(game_id, team_opp, starts_with("prior_"), qb_cont, rest_days, travel_km) %>% 
+      rename_with(~ str_c(., "_opp"), everything() & -c(game_id, team_opp)) %>% 
+      rename(team = team_opp),
+    by = c("game_id", "team")
+  ) %>% 
+  filter(season != 2023) %>%
+  # left_join(field_game_df, by = "game_id") %>%
+  filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
+  select(game_id, total_team, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
+  drop_na() %>% 
+  mutate(
+    pred_total_team = predict(mod_total_team_svm_2023, newdata = .)
+  ) %>% 
+  group_by(game_id) %>% 
+  summarise(
+    pred_total = sum(pred_total_team),
+    actual_total = sum(total_team)
+  ) %>% 
+  mutate(
+    resid_total = actual_total - pred_total
+  ) %>% 
+  left_join(df_field_game, by = "game_id") %>% 
+  ungroup() %>% 
+  select(resid_total, ends_with("_field"), division_game, international, wind, temp, time_start) %>% 
+  select(-c(time_start, international)) %>% 
+  drop_na()
+
+# ENET
+set.seed(37564)
+mod_total_correct_enet_2023 = train(resid_total ~ .,
+                 na.action = na.exclude, 
+                 data = df_total_correct_train_2023, 
+                 method = "glmnet", 
+                 tuneGrid = expand.grid(alpha = mod_total_correct_enet$bestTune[[1]],
+                                        lambda = mod_total_correct_enet$bestTune[[2]]),
+                 trControl = ctrl2)
+# mod_total_correct_enet$bestTune
+min(mod_total_correct_enet_2023$results$RMSE)
+
+# coef(mod_total_correct_enet_2023$finalModel, mod_total_correct_enet_2023$bestTune$lambda)
+
+df_spread_correct_train_2023 = 
+  df_team_total_spread_rolling %>% 
+  left_join(
+    df_team_total_spread_rolling %>% 
+      group_by(game_id) %>% 
+      mutate(
+        team_opp = 
+          case_when(
+            row_number() == 1 ~ lead(team),
+            row_number() == 2 ~ lag(team),
+            .default = NA
+          )
+      ) %>% 
+      relocate(team_opp, .after = team) %>% 
+      ungroup() %>% 
+      select(game_id, team_opp, starts_with("prior_"), qb_cont, rest_days, travel_km) %>% 
+      rename_with(~ str_c(., "_opp"), everything() & -c(game_id, team_opp)) %>% 
+      rename(team = team_opp),
+    by = c("game_id", "team")
+  ) %>% 
+  filter(season != 2023) %>%
+  # left_join(field_game_df, by = "game_id") %>%
+  filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
+  select(game_id, result, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
+  drop_na() %>% 
+  mutate(
+    pred_total_team = predict(mod_total_team_svm_2023, newdata = .),
+    rest_days_diff = rest_days - rest_days_opp
+  ) %>% 
+  group_by(game_id) %>% 
+  mutate(
+    pred_spread = pred_total_team - lead(pred_total_team)
+  ) %>% 
+  drop_na() %>% 
+  mutate(
+    resid_spread = result - pred_spread
+  ) %>% 
+  left_join(df_field_game, by = "game_id") %>% 
+  ungroup() %>% 
+  select(resid_spread, ends_with("_field"), division_game, international, wind, temp, time_start) %>% 
+  select(-c(time_start, international)) %>% 
+  drop_na()
+
+# ENET
+set.seed(37564)
+mod_spread_correct_enet_2023 = train(resid_spread ~ .,
+                 na.action = na.exclude, 
+                 data = df_spread_correct_train_2023, 
+                 method = "glmnet", 
+                 tuneGrid = expand.grid(alpha = mod_total_correct_enet$bestTune[[1]],
+                                        lambda = mod_total_correct_enet$bestTune[[2]]),
+                 trControl = ctrl2)
+mod_spread_correct_enet_2023$bestTune
+min(mod_spread_correct_enet_2023$results$RMSE)
+
+# coef(mod_spread_correct_enet_2022$finalModel, mod_spread_correct_enet_2022$bestTune$lambda)
+
+set.seed(37564)
+df_team_sims_2023 =
+  df_total_team_test_2023 %>% 
+  # mutate(
+  #   game = 
+  #     case_when(
+  #       team < team_opp ~ str_c(team, "vs", team_opp),
+  #       team > team_opp ~ str_c(team_opp, "vs", team),
+  #       .default = NA
+  #     )
+  # ) %>% 
+  # arrange(game) %>% 
+  # rowid_to_column("game_id") %>% 
+  mutate(
+    # game_id = rep(seq(1:c(nrow(.) / 2)), each = 2),
+    # game_id =
+    #   case_when(
+    #     team == lag(team_opp) ~ lag(game_id),
+    #     .default = game_id
+    #   ),
+    mu = predict(mod_total_team_svm_2023, .)
+  ) %>% 
+  # relocate(game_id) %>%
+  mutate(
+    sim = map(
+      mu,
+      ~ rnorm(10000, mean = .x, sd = resid_sd_2023)
+    )
+  )
+
+df_pred_total_spread_adj_2023 = 
+  df_team_sims_2023 %>% 
+  left_join(
+    df_field_game, by = "game_id"
+  ) %>% 
+  mutate(
+    team_away = str_extract(str_remove(game_id, "\\d+_\\d+_"), "^[A-Z]+"),
+    team_home = str_extract(game_id, "[A-Z]+$")
+  ) %>% 
+  left_join(df_division %>% select(team, division) %>% rename(team_home = team), by = "team_home") %>% 
+  left_join(df_division %>% select(team, division) %>% rename(team_away = team, division_opp = division), by = "team_away") %>% 
+  group_by(game_id) %>% 
+  mutate(
+    division_game = ifelse(division == division_opp, 1, 0),
+    total_game = sum(mu, na.rm = T),
+    actual_total = sum(total_team, na.rm = T),
+    spread_game = mu - lead(mu),
+    actual_spread = total_team - lead(total_team)
+    # division_game = 
+    #   case_when(
+    #     week <= 18 & division == division_opp ~ 1,
+    #     week > 18 ~ 1,
+    #     .default = 0
+    #   )
+  ) %>%
+  distinct(game_id, team_home, team_away, enclosed_field, turf_field, division_game, wind, temp, total_game, actual_total, spread_game, actual_spread) %>% 
+  drop_na() %>% 
+  ungroup() %>% 
+  mutate(
+    total_adjust = predict(mod_total_correct_enet_2023, newdata = .),
+    total_game_adj = total_game + total_adjust,
+    spread_adjust = predict(mod_spread_correct_enet_2023, newdata = .),
+    spread_game_adj = spread_game + spread_adjust,
+    spread_adj_label =
+      case_when(
+        spread_game_adj < 0 ~ str_c(team_home, " +", -round(spread_game_adj, 1)),
+        spread_game_adj >= 0 ~ str_c(team_home, " ", -round(spread_game_adj, 1))
+      )
+  ) %>%
+  relocate(total_adjust, total_game_adj, .after = total_game) %>%
+  relocate(spread_game, spread_adjust, spread_game_adj, spread_adj_label, .after = total_game_adj)
+
+df_game_sims_2023 =
+  df_team_sims_2023 %>%
+  select(game_id, sim) %>%
+  group_by(game_id) %>% 
+  left_join(df_pred_total_spread_adj_2023 %>% select(game_id, total_adjust, spread_adjust), by = "game_id") %>%
+  summarise(
+    total_sim_adj = list(sim[[1]] + sim[[2]] + total_adjust),
+    spread_sim_adj = list(sim[[1]] - sim[[2]] + spread_adjust)
+  )
+
+df_open_lines_2023 =
+  read_xlsx("nfl_game_lines_aus.xlsx") %>% 
+  janitor::clean_names() %>% 
+  mutate(
+    across(
+      c(home_team, away_team),
+      ~ case_match(
+        .,
+        "Arizona Cardinals" ~ "ARI", 
+        "Atlanta Falcons" ~ "ATL", 
+        "Baltimore Ravens" ~ "BAL", 
+        "Buffalo Bills" ~ "BUF", 
+        "Carolina Panthers" ~ "CAR", 
+        "Chicago Bears" ~ "CHI", 
+        "Cincinnati Bengals" ~ "CIN", 
+        "Cleveland Browns" ~ "CLE", 
+        "Dallas Cowboys" ~ "DAL", 
+        "Denver Broncos" ~ "DEN", 
+        "Detroit Lions" ~ "DET", 
+        "Green Bay Packers" ~ "GB", 
+        "Houston Texans" ~ "HOU", 
+        "Indianapolis Colts" ~ "IND", 
+        "Jacksonville Jaguars" ~ "JAX", 
+        "Kansas City Chiefs" ~ "KC", 
+        "Las Vegas Raiders" ~ "LV", 
+        "Los Angeles Chargers" ~ "LAC", 
+        "Los Angeles Rams" ~ "LA", 
+        "Miami Dolphins" ~ "MIA", 
+        "Minnesota Vikings" ~ "MIN", 
+        "New England Patriots" ~ "NE", 
+        "New Orleans Saints" ~ "NO", 
+        "New York Giants" ~ "NYG", 
+        "New York Jets" ~ "NYJ", 
+        "Oakland Raiders" ~ "LV", 
+        "Philadelphia Eagles" ~ "PHI", 
+        "Pittsburgh Steelers" ~ "PIT", 
+        "San Diego Chargers" ~ "LAC", 
+        "San Francisco 49ers" ~ "SF", 
+        "Seattle Seahawks" ~ "SEA", 
+        "St. Louis Rams" ~ "LA", 
+        "Tampa Bay Buccaneers" ~ "TB", 
+        "Tennessee Titans" ~ "TEN", 
+        "Washington Commanders" ~ "WAS", 
+        "Washington Football Team" ~ "WAS", 
+        "Washington Redskins" ~ "WAS",
+        .default = NA
+      )
+    ),
+    team_game = str_c(away_team, "_", home_team)
+  ) %>% 
+  rename(
+    team_home = home_team, 
+    team_away = away_team,
+    total_line = total_score_open
+  ) %>% 
+  filter(between(as.Date(date), as.Date("2023-09-01"),  as.Date("2024-08-01"))) %>% 
+  mutate(
+    week = ceiling(as.integer(as.Date(date) - as.Date("2023-09-06")) / 7),
+    spread_line = -home_line_open
+  ) %>% 
+  select(week, team_home, team_away, spread_line, home_line_odds_open, away_line_odds_open, total_line, total_score_over_open, total_score_under_open) %>% 
+  filter(between(week, 2, 18))
+
+df_totals_profit_2023 =
+  df_open_lines_2023 %>% 
+  left_join(df_pred_total_spread_adj_2023, by = c("team_home", "team_away")) %>% 
+  left_join(df_game_sims_2023, by = "game_id") %>% 
+  left_join(df_szn_all %>% distinct(game_id, total_line, spread_line) %>% rename(total_line_current = total_line), by = "game_id") %>% 
+  mutate(
+    # over_odds = -112, 
+    # under_odds = -112,
+    over_odds_current = -112, 
+    under_odds_current = -112,
+    p_over = map_dbl(total_sim_adj, ~ mean(.x > total_line, na.rm = T)),
+    p_under = 1 - p_over,
+    p_over_current  = map_dbl(total_sim_adj, ~ mean(.x > total_line_current, na.rm = T)),
+    p_under_current = 1 - p_over_current,
+    odds_over_current_dec =
+      if_else(
+        over_odds_current < 0,
+        1 + 100 / abs(over_odds_current),
+        1 + over_odds_current / 100
+      ),
+    odds_under_current_dec =
+      if_else(
+        under_odds_current < 0,
+        1 + 100 / abs(under_odds_current),
+        1 + under_odds_current / 100
+      ),
+    odds_over_dec = total_score_over_open,
+      # if_else(
+      #   over_odds < 0,
+      #   1 + 100 / abs(over_odds),
+      #   1 + over_odds / 100
+      # ),
+    odds_under_dec = total_score_under_open,
+      # if_else(
+      #   under_odds < 0,
+      #   1 + 100 / abs(under_odds),
+      #   1 + under_odds / 100
+      # ),
+    ev_over_current  = p_over_current  * (odds_over_current_dec  - 1) - (1 - p_over_current),
+    ev_under_current = p_under_current * (odds_under_current_dec - 1) - (1 - p_under_current),
+    ev_over  = p_over  * (odds_over_dec - 1) - (1 - p_over),
+    ev_under = p_under * (odds_under_dec - 1) - (1 - p_under),
+    bet_total =
+      case_when(
+        ev_over  > 0.03 ~ "Bet Over",
+        ev_under > 0.03 ~ "Bet Under",
+        .default = "No Bet"
+      ),
+    bet_current_total =
+      case_when(
+        ev_over_current  > 0.03 ~ "Bet Over",
+        ev_under_current > 0.03 ~ "Bet Under",
+        .default = "No Bet"
+      ),
+    ev_max_total = pmax(ev_over, ev_under),
+    ev_max_current_total = pmax(ev_over_current, ev_under_current),
+    side_total = case_when(
+      p_over  * odds_over_dec  > p_under * odds_under_dec  ~ "Over",
+      p_under * odds_under_dec > p_over  * odds_over_dec  ~ "Under",
+      .default = NA
+    ),
+    side_current_total = case_when(
+      p_over_current  * odds_over_current_dec  > p_under_current * odds_under_current_dec  ~ "Over",
+      p_under_current * odds_under_current_dec > p_over_current  * odds_over_current_dec  ~ "Under",
+      .default = NA
+    ),
+    p_total = if_else(side_total == "Over",  p_over,  p_under),
+    p_current_total = if_else(side_current_total == "Over",  p_over_current,  p_under_current),
+    dec_odds_total = if_else(side_total == "Over", odds_over_dec, odds_under_dec),
+    dec_odds_current_total = if_else(side_current_total == "Over", odds_over_current_dec, odds_under_current_dec),
+    kelly_total = (p_total * dec_odds_total - 1) / (dec_odds_total - 1),
+    kelly_current_total = (p_current_total * dec_odds_current_total - 1) / (dec_odds_current_total - 1),
+    stake_frac_total = pmin(0.03, 0.05 * pmax(kelly_total, 0)),
+    stake_total = stake_frac_total * 100,
+    stake_frac_current_total = pmin(0.03, 0.05 * pmax(kelly_current_total, 0)),
+    stake_current_total = stake_frac_current_total * 100
+  ) %>% 
+  ungroup() %>% 
+  # left_join(df_qb_cont_old %>% select(game_id, week, qb_cont), by = c("game_id", "week")) %>% 
+  # group_by(game_id) %>%
+  # filter(sum(qb_cont) == 2) %>%
+  # ungroup() %>%
+  distinct() %>%
+  # filter(stake_total >= 0.5) %>%
+  # filter(stake_current_total >= 0.5) %>%
+  # filter(ind_total_hit != "No Bet") %>% 
+  mutate(
+    ind_bet_hit =
+      case_when(
+        side_total == "Under" & actual_total < total_line ~ 1,
+        side_total == "Over" & actual_total > total_line ~ 1,
+        side_total == "Under" & actual_total == total_line ~ NA,
+        side_total == "Over" & actual_total == total_line ~ NA,
+        .default = 0
+      ),
+    ind_bet_hit_current =
+      case_when(
+        side_current_total == "Under" & actual_total < total_line_current ~ 1,
+        side_current_total == "Over" & actual_total > total_line_current ~ 1,
+        side_current_total == "Under" & actual_total == total_line_current ~ NA,
+        side_current_total == "Over" & actual_total == total_line_current ~ NA,
+        .default = 0
+      ),
+    profit =
+      case_when(
+        ind_bet_hit == 1 ~ stake_total * (dec_odds_total - 1),
+        ind_bet_hit == 0 ~ -stake_total
+      ),
+    profit_current =
+      case_when(
+        ind_bet_hit_current == 1 ~ stake_current_total * (dec_odds_current_total - 1),
+        ind_bet_hit_current == 0 ~ -stake_current_total
+      )
+  ) 
+  
+df_spreads_profit_2023 =
+  df_open_lines_2023 %>% 
+  left_join(df_pred_total_spread_adj_2023, by = c("team_home", "team_away")) %>% 
+  left_join(df_game_sims_2023, by = "game_id") %>% 
+  left_join(df_szn_all %>% distinct(game_id, total_line, spread_line) %>% rename(spread_line_current = spread_line), by = "game_id") %>% 
+  mutate(
+    # home_odds = -112, 
+    # away_odds = -112,
+    home_odds_current = -112, 
+    away_odds_current = -112,
+    p_home = map_dbl(spread_sim_adj, ~ mean(.x > spread_line, na.rm = T)),
+    p_away = 1 - p_home,
+    p_home_current = map_dbl(spread_sim_adj, ~ mean(.x > spread_line_current, na.rm = T)),
+    p_away_current = 1 - p_home_current,
+    odds_home_dec = home_line_odds_open,
+      # if_else(
+      #   home_odds < 0,
+      #   1 + 100 / abs(home_odds),
+      #   1 + home_odds / 100
+      # ),
+    odds_away_dec = away_line_odds_open,
+      # if_else(
+      #   away_odds < 0,
+      #   1 + 100 / abs(away_odds),
+      #   1 + away_odds / 100
+      # ),
+    odds_home_current_dec =
+      if_else(
+        home_odds_current < 0,
+        1 + 100 / abs(home_odds_current),
+        1 + home_odds_current / 100
+      ),
+    odds_away_current_dec =
+      if_else(
+        away_odds_current < 0,
+        1 + 100 / abs(away_odds_current),
+        1 + away_odds_current / 100
+      ),
+    ev_home  = p_home  * (odds_home_dec  - 1) - (1 - p_home),
+    ev_away = p_away * (odds_away_dec - 1) - (1 - p_away),
+    ev_home_current  = p_home_current  * (odds_home_current_dec  - 1) - (1 - p_home_current),
+    ev_away_current = p_away_current * (odds_away_current_dec - 1) - (1 - p_away_current),
+    bet_spread =
+      case_when(
+        ev_home > 0.03 ~ "Bet Home",
+        ev_away > 0.03 ~ "Bet Away",
+        .default = "No Bet"
+      ),
+    bet_spread_current =
+      case_when(
+        ev_home_current  > 0.03 ~ "Bet Home",
+        ev_away_current > 0.03 ~ "Bet Away",
+        .default = "No Bet"
+      ),
+    ev_max_spread = pmax(ev_home, ev_away),
+    ev_max_current_spread = pmax(ev_home_current, ev_away_current),
+    side_spread = case_when(
+      p_home  * odds_home_dec  > p_away * odds_away_dec  ~ "Home",
+      p_away * odds_away_dec > p_home  * odds_home_dec  ~ "Away",
+      .default = NA
+    ),
+    side_current_spread = case_when(
+      p_home_current  * odds_home_current_dec  > p_away_current * odds_away_current_dec  ~ "Home",
+      p_away_current * odds_away_current_dec > p_home_current  * odds_home_current_dec  ~ "Away",
+      .default = NA
+    ),
+    p_spread = if_else(side_spread == "Home",  p_home,  p_away),
+    p_current_spread = if_else(side_current_spread == "Home",  p_home_current,  p_away_current),
+    dec_odds_spread = if_else(side_spread == "Home", odds_home_dec, odds_away_dec),
+    dec_odds_current_spread = if_else(side_current_spread == "Home", odds_home_current_dec, odds_away_current_dec),
+    kelly_spread = (p_spread * dec_odds_spread - 1) / (dec_odds_spread - 1),
+    kelly_current_spread = (p_current_spread * dec_odds_current_spread - 1) / (dec_odds_current_spread - 1),
+    stake_frac_spread = pmin(0.03, 0.05 * pmax(kelly_spread, 0)),
+    stake_frac_current_spread = pmin(0.03, 0.05 * pmax(kelly_current_spread, 0)),
+    stake_spread = stake_frac_spread * 100,
+    stake_current_spread = stake_frac_current_spread * 100
+  ) %>% 
+  ungroup() %>% 
+  # left_join(df_qb_cont_old %>% select(game_id, week, qb_cont), by = c("game_id", "week")) %>% 
+  # group_by(game_id) %>%
+  # filter(sum(qb_cont) == 2) %>%
+  # ungroup() %>%
+  distinct() %>%
+  # filter(stake_spread >= 0.5) %>%
+  # filter(stake_current_spread >= 0.5) %>%
+  mutate(
+    ind_bet_hit =
+      case_when(
+        side_spread == "Away" & actual_spread < spread_line ~ 1,
+        side_spread == "Home" & actual_spread > spread_line ~ 1,
+        side_spread == "Away" & actual_spread == spread_line ~ NA,
+        side_spread == "Home" & actual_spread == spread_line ~ NA,
+        .default = 0
+      ),
+    ind_bet_hit_current =
+      case_when(
+        side_current_spread == "Away" & actual_spread < spread_line_current ~ 1,
+        side_current_spread == "Home" & actual_spread > spread_line_current ~ 1,
+        side_current_spread == "Away" & actual_spread == spread_line_current ~ NA,
+        side_current_spread == "Home" & actual_spread == spread_line_current ~ NA,
+        .default = 0
+      ),
+    profit =
+      case_when(
+        ind_bet_hit == 1 ~ stake_spread * (dec_odds_spread - 1),
+        ind_bet_hit == 0 ~ -stake_spread
+      ),
+    profit_current =
+      case_when(
+        ind_bet_hit_current == 1 ~ stake_current_spread * (dec_odds_current_spread - 1),
+        ind_bet_hit_current == 0 ~ -stake_current_spread
+      )
+  )
+
+df_totals_profit_2023 %>%
+  filter(stake_total >= 0.5) %>%
+  mutate(week = str_extract(str_remove(game_id, "^\\d+_"), "\\d+")) %>% 
+  # filter(week != 18) %>% 
+  group_by(week) %>% 
+  summarise(
+    profit_tot = sum(profit),
+    n_bets_tot = n()
+  ) %>% 
+  # rows_insert(
+  #   tibble(
+  #     week = "04",
+  #     profit_tot = 0
+  #   ),
+  #   by = "week"
+  # ) %>% 
+  arrange(week) %>% 
+  left_join(
+    df_spreads_profit_2023 %>%
+      filter(stake_spread >= 0.5) %>%
+      mutate(week = str_extract(str_remove(game_id, "^\\d+_"), "\\d+")) %>% 
+      # filter(week != 18) %>%
+      group_by(week) %>%
+      summarise(
+        profit_spread = sum(profit),
+        n_bets_spread = n()
+      ),
+    by = "week"
+  ) %>%
+  mutate(
+    across(everything(), ~ replace_na(., 0)),
+    week = as.character(week),
+    profit_ovr = profit_tot + profit_spread,
+    n_bets = n_bets_tot + n_bets_spread
+  ) %>% 
+  rows_insert(
+    tibble(
+      week = "Season",
+      profit_tot = sum(.$profit_tot, na.rm = T),
+      profit_spread = sum(.$profit_spread, na.rm = T),
+      profit_ovr = sum(.$profit_ovr, na.rm = T),
+      n_bets = sum(.$n_bets, na.rm = T)
+    ),
+    by = "week"
+  ) %>% 
+  mutate(across(starts_with("profit_"), ~ round(., 1))) %>% 
+  select(week, n_bets, profit_tot, profit_spread, profit_ovr) %>% 
+  labelled::set_variable_labels(
+    week = "Week",
+    n_bets = "Bets",
+    profit_tot = "Totals",
+    profit_spread = "Spreads",
+    profit_ovr = "Overall"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  gtsummary::modify_caption("**2023 Opening Line Betting Profit by Week (Units)**")
+
+df_totals_profit_2023 %>%
+  filter(stake_current_total >= 0.5) %>% 
+  mutate(week = str_extract(str_remove(game_id, "^\\d+_"), "\\d+")) %>% 
+  # filter(week != 18) %>% 
+  group_by(week) %>% 
+  summarise(
+    profit_tot = sum(profit_current),
+    n_bets_tot = n()
+  ) %>% 
+  # rows_insert(
+  #   tibble(
+  #     week = "04",
+  #     profit_tot = 0
+  #   ),
+  #   by = "week"
+  # ) %>%
+  arrange(week) %>% 
+  left_join(
+    df_spreads_profit_2023 %>%
+      filter(stake_current_spread >= 0.5) %>% 
+      mutate(week = str_extract(str_remove(game_id, "^\\d+_"), "\\d+")) %>% 
+      # filter(week != 18) %>%
+      group_by(week) %>%
+      summarise(
+        profit_spread = sum(profit_current),
+        n_bets_spread = n()
+      ),
+    by = "week"
+  ) %>%
+  mutate(
+    across(everything(), ~ replace_na(., 0)),
+    week = as.character(week),
+    profit_ovr = profit_tot + profit_spread,
+    n_bets = n_bets_tot + n_bets_spread  
+  ) %>% 
+  rows_insert(
+    tibble(
+      week = "Season",
+      profit_tot = sum(.$profit_tot, na.rm = T),
+      profit_spread = sum(.$profit_spread, na.rm = T),
+      profit_ovr = sum(.$profit_ovr, na.rm = T),
+      n_bets = sum(.$n_bets, na.rm = T)
+    ),
+    by = "week"
+  ) %>% 
+  mutate(across(starts_with("profit_"), ~ round(., 1))) %>% 
+  select(week, n_bets, profit_tot, profit_spread, profit_ovr) %>% 
+  labelled::set_variable_labels(
+    week = "Week",
+    n_bets = "Bets",
+    profit_tot = "Totals",
+    profit_spread = "Spreads",
+    profit_ovr = "Overall"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  gtsummary::modify_caption("**2023 Closing Line Betting Profit by Week (Units)**")
+```
 
 ### 2024
 
@@ -8765,6 +10415,119 @@ resid_sd_2024 =
 df_total_team_test_2024 = 
   df_total_team_train_id %>% 
   filter(as.integer(str_extract(game_id, "^\\d+")) == 2024)
+
+df_total_correct_train_2024 = 
+  df_team_total_spread_rolling %>% 
+  left_join(
+    df_team_total_spread_rolling %>% 
+      group_by(game_id) %>% 
+      mutate(
+        team_opp = 
+          case_when(
+            row_number() == 1 ~ lead(team),
+            row_number() == 2 ~ lag(team),
+            .default = NA
+          )
+      ) %>% 
+      relocate(team_opp, .after = team) %>% 
+      ungroup() %>% 
+      select(game_id, team_opp, starts_with("prior_"), qb_cont, rest_days, travel_km) %>% 
+      rename_with(~ str_c(., "_opp"), everything() & -c(game_id, team_opp)) %>% 
+      rename(team = team_opp),
+    by = c("game_id", "team")
+  ) %>% 
+  filter(season != 2024) %>%
+  # left_join(field_game_df, by = "game_id") %>%
+  filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
+  select(game_id, total_team, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
+  drop_na() %>% 
+  mutate(
+    pred_total_team = predict(mod_total_team_svm_2024, newdata = .)
+  ) %>% 
+  group_by(game_id) %>% 
+  summarise(
+    pred_total = sum(pred_total_team),
+    actual_total = sum(total_team)
+  ) %>% 
+  mutate(
+    resid_total = actual_total - pred_total
+  ) %>% 
+  left_join(df_field_game, by = "game_id") %>% 
+  ungroup() %>% 
+  select(resid_total, ends_with("_field"), division_game, international, wind, temp, time_start) %>% 
+  select(-c(time_start, international)) %>% 
+  drop_na()
+
+# ENET
+set.seed(37564)
+mod_total_correct_enet_2024 = train(resid_total ~ .,
+                 na.action = na.exclude, 
+                 data = df_total_correct_train_2024, 
+                 method = "glmnet", 
+                 tuneGrid = expand.grid(alpha = mod_total_correct_enet$bestTune[[1]],
+                                        lambda = mod_total_correct_enet$bestTune[[2]]),
+                 trControl = ctrl2)
+# mod_total_correct_enet$bestTune
+min(mod_total_correct_enet_2024$results$RMSE)
+
+# coef(mod_total_correct_enet_2023$finalModel, mod_total_correct_enet_2023$bestTune$lambda)
+
+df_spread_correct_train_2024 = 
+  df_team_total_spread_rolling %>% 
+  left_join(
+    df_team_total_spread_rolling %>% 
+      group_by(game_id) %>% 
+      mutate(
+        team_opp = 
+          case_when(
+            row_number() == 1 ~ lead(team),
+            row_number() == 2 ~ lag(team),
+            .default = NA
+          )
+      ) %>% 
+      relocate(team_opp, .after = team) %>% 
+      ungroup() %>% 
+      select(game_id, team_opp, starts_with("prior_"), qb_cont, rest_days, travel_km) %>% 
+      rename_with(~ str_c(., "_opp"), everything() & -c(game_id, team_opp)) %>% 
+      rename(team = team_opp),
+    by = c("game_id", "team")
+  ) %>% 
+  filter(season != 2024) %>%
+  # left_join(field_game_df, by = "game_id") %>%
+  filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
+  select(game_id, result, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
+  drop_na() %>% 
+  mutate(
+    pred_total_team = predict(mod_total_team_svm_2024, newdata = .),
+    rest_days_diff = rest_days - rest_days_opp
+  ) %>% 
+  group_by(game_id) %>% 
+  mutate(
+    pred_spread = pred_total_team - lead(pred_total_team)
+  ) %>% 
+  drop_na() %>% 
+  mutate(
+    resid_spread = result - pred_spread
+  ) %>% 
+  left_join(df_field_game, by = "game_id") %>% 
+  ungroup() %>% 
+  select(resid_spread, ends_with("_field"), division_game, international, wind, temp, time_start) %>% 
+  select(-c(time_start, international)) %>% 
+  drop_na()
+
+# ENET
+set.seed(37564)
+mod_spread_correct_enet_2024 = train(resid_spread ~ .,
+                 na.action = na.exclude, 
+                 data = df_spread_correct_train_2024, 
+                 method = "glmnet", 
+                 tuneGrid = expand.grid(alpha = mod_total_correct_enet$bestTune[[1]],
+                                        lambda = mod_total_correct_enet$bestTune[[2]]),
+                 trControl = ctrl2)
+mod_spread_correct_enet_2024$bestTune
+min(mod_spread_correct_enet_2024$results$RMSE)
+
+# coef(mod_spread_correct_enet_2022$finalModel, mod_spread_correct_enet_2022$bestTune$lambda)
 
 set.seed(37564)
 df_team_sims_2024 =
@@ -8825,9 +10588,9 @@ df_pred_total_spread_adj_2024 =
   drop_na() %>% 
   ungroup() %>% 
   mutate(
-    total_adjust = predict(mod_total_correct_enet, newdata = .),
+    total_adjust = predict(mod_total_correct_enet_2024, newdata = .),
     total_game_adj = total_game + total_adjust,
-    spread_adjust = predict(mod_spread_correct_enet, newdata = .),
+    spread_adjust = predict(mod_spread_correct_enet_2024, newdata = .),
     spread_game_adj = spread_game + spread_adjust,
     spread_adj_label =
       case_when(
@@ -8848,317 +10611,380 @@ df_game_sims_2024 =
     spread_sim_adj = list(sim[[1]] - sim[[2]] + spread_adjust)
   )
 
-df_open_lines_2024 = 
-  tibble(
-    value = c(
-      "Thursday, September 5	8:20 p.m. ET	Ravens (+2.5) at Chiefs (-2.5)	46.5",
-      "Friday, September 6	8:20 p.m. ET	Packers (+1.5) at Eagles (-1.5) in Brazil
-      48.5",
-      "Sunday, September 8	1 p.m. ET	Cardinals (+7) at Bills (-7)	48",
-      "Sunday, September 8	1 p.m. ET	Patriots (+8.5) at Bengals (-8.5)	43",
-      "Sunday, September 8	1 p.m. ET	Texans (-1.5) at Colts (+1.5)	48",
-      "Sunday, September 8	1 p.m. ET	Titans (+4.5 ) at Bears (-4.5)	43.5",
-      "Sunday, September 8	1 p.m. ET	Jaguars (+3.5) at Dolphins (-3.5)	49.5",
-      "Sunday, September 8	1 p.m. ET	Vikings (+1) at Giants (-1)	41.5",
-      "Sunday, September 8	1 p.m. ET	Panthers (+4.5) at Saints (-4.5)	40.5",
-      "Sunday, September 8	1 p.m. ET	Steelers (+3) at Falcons (-3)	43.5",
-      "Sunday, September 8	4:05 p.m. ET	Raiders (+3) at Chargers (-3)	43.5",
-      "Sunday, September 8	4:05 p.m. ET	Broncos (+4.5) at Seahawks (-4.5)	42.5",
-      "Sunday, September 8	4:25 p.m. ET	Commanders (+3.5) at Buccaneers (-3.5)	41.5",
-      "Sunday, September 8	4:25 p.m. ET	Cowboys (-1.5) at Browns (+1.5)	43.5",
-      "Sunday, September 8	8:20 p.m. ET	Rams (+3) at Lions (-3)	51",
-      "Monday, September 9	8:20 p.m. ET	Jets (+6.5) at 49ers (-6.5)	45.5",
-      "Thursday, September 12	8:20 p.m. ET	Bills (+1.5) at Dolphins (-1.5)	51.5",
-      "Sunday, September 15	1 p.m. ET	Saints (+6) at Cowboys (-6)	44.5",
-      "Sunday, September 15	1 p.m. ET	Buccaneers (+6) at Lions (-6)	48.5",
-      "Sunday, September 15	1 p.m. ET	Colts (+4) at Packers (-4)	47",
-      "Sunday, September 15	1 p.m. ET	Jets (-4) at Titans (+4)	43.5",
-      "Sunday, September 15	1 p.m. ET	49ers (-6) at Vikings (+6)	46.5",
-      "Sunday, September 15	1 p.m. ET	Seahawks (-2.5) at Patriots (+2.5)	42.5",
-      "Sunday, September 15	1 p.m. ET	Giants (+3) at Commanders (-3)	42.5",
-      "Sunday, September 15	1 p.m. ET	Chargers (-5) at Panthers (+5)	43.5",
-      "Sunday, September 15	1 p.m. ET	Browns (+1) at Jaguars (-1)	45",
-      "Sunday, September 15	1 p.m. ET	Raiders (+7) at Ravens (-7)	44.5",
-      "Sunday, September 15	4:05 p.m. ET	Rams (-1) at Cardinals (+1)	46",
-      "Sunday, September 15	4:25 p.m. ET	Steelers (-3) at Broncos (+3)	41.5",
-      "Sunday, September 15	4:25 p.m. ET	Bengals (+4.5) at Chiefs (-4.5)	48.5",
-      "Sunday, September 15	8:20 p.m. ET	Bears (+3) at Texans (-3)	47",
-      "Monday, September 16	8:15 p.m. ET	Falcons (+3.5) at Eagles (-3.5)	48.5",
-      "Thursday, September 19	8:15 p.m. ET	Patriots (+7.5) at Jets (-7.5)	42",
-      "Sunday, September 22	1 p.m. ET	Giants (+6.5) at Browns (-6.5)	42.5",
-      "Sunday, September 22	1 p.m. ET	Packers (-3.5) at Titans (+3.5)	44",
-      "Sunday, September 22	1 p.m. ET	Bears (+2) at Colts (-2)	47",
-      "Sunday, September 22	1 p.m. ET	Texans (-3.5) at Vikings (+3.5)	46.5",
-      "Sunday, September 22	1 p.m. ET	Eagles (-3) at Saints (+3)	45",
-      "Sunday, September 22	1 p.m. ET	Chargers (+2) at Steelers (-2)	42.5",
-      "Sunday, September 22	1 p.m. ET	Broncos (+3.5) at Buccaneers (-3.5)	43",
-      "Sunday, September 22	4:05 p.m. ET	Panthers (+4) at Raiders (-4)	43",
-      "Sunday, September 22	4:05 p.m. ET	Dolphins (-2) at Seahawks (+2)	49",
-      "Sunday, September 22	4:25 p.m. ET	Ravens (+1) at Cowboys (-1)	48",
-      "Sunday, September 22	4:25 p.m. ET	49ers (-2.5) at Rams (+2.5)	49",
-      "Sunday, September 22	4:25 p.m. ET	Lions (-4) at Cardinals (+4)	50",
-      "Sunday, September 22	8:20 p.m. ET	Chiefs (-3) at Falcons (+3)	49",
-      "Monday, September 23	7:30 p.m. ET	Jaguars (+4.5) at Bills (-4.5)	49",
-      "Monday, September 23	8:15 p.m. ET	Commanders (+7) at Bengals (-7)	48",
-      "Thursday, September 26	8:15 p.m. ET	Cowboys (-4.5) at Giants (+4.5)	44.5",
-      "Sunday, September 29	1 p.m. ET	Saints (+4.5) at Falcons (-4.5)	44.5",
-      "Sunday, September 29	1 p.m. ET	Rams (+1.5) at Bears (-1.5)	47",
-      "Sunday, September 29	1 p.m. ET	Vikings (+4.5) at Packers (-4.5)	45",
-      "Sunday, September 29	1 p.m. ET	Steelers (+.5) at Colts (-0.5)	44.5",
-      "Sunday, September 29	1 p.m. ET	Jaguars (+3.5) at Texans (-3.5)	47.5",
-      "Sunday, September 29	1 p.m. ET	Broncos (+6) at Jets (-6)	42.5",
-      "Sunday, September 29	1 p.m. ET	Eagles (-1.5) at Buccaneers (+1.5)	47",
-      "Sunday, September 29	1 p.m. ET	Bengals (-5) at Panthers (+5)	46",
-      "Sunday, September 29	4:05 p.m. ET	Commanders (+2) at Cardinals (-2)	45",
-      "Sunday, September 29	4:05 p.m. ET	Patriots (+11.5) at 49ers (-11.5)	45",
-      "Sunday, September 29	4:25 p.m. ET	Browns (-1.5) at Raiders (+1.5)	43.5",
-      "Sunday, September 29	4:25 p.m. ET	Chiefs (-3) at Chargers (+3)	49",
-      "Sunday, September 29	8:20 p.m. ET	Bills (+3) at Ravens (-3)	47.5",
-      "Monday, September 30	7:30 p.m. ET	Titans (+6.5) at Dolphins (-6.5)	46",
-      "Monday, September 30	8:15 p.m. ET	Seahawks (+6) at Lions (-6)	49",
-      "Thursday, October 3	8:15 p.m. ET	Buccaneers (+3) at Falcons (-3)	44",
-      "Sunday, October 6	9:30 a.m. ET	Jets (-3.5) at Vikings (+3.5) in London	44.5",
-      "Sunday, October 6	1 p.m. ET	Panthers (+5.5) at Bears (-5.5)	42",
-      "Sunday, October 6	1 p.m. ET	Ravens (+1.5) at Bengals (-1.5)	46.5",
-      "Sunday, October 6	1 p.m. ET	Dolphins (-4) at Patriots (+4)	45",
-      "Sunday, October 6	1 p.m. ET	Browns (-3) at Commanders (+3)	43.5",
-      "Sunday, October 6	1 p.m. ET	Colts (+2.5) at Jaguars (-2.5)	47",
-      "Sunday, October 6	1 p.m. ET	Bills (+1.5) at Texans (-1.5)	48",
-      "Sunday, October 6	4:05 p.m. ET	Raiders (+1) at Broncos (-1)	41",
-      "Sunday, October 6	4:05 p.m. ET	Cardinals (+9.5) at 49ers (-9.5)	47",
-      "Sunday, October 6	4:25 p.m. ET	Packers (+1.5) at Rams (-1.5)	48.5",
-      "Sunday, October 6	4:25 p.m. ET	Giants (+3.5) at Seahawks (-3.5)	43",
-      "Sunday, October 6	8:20 p.m. ET	Cowboys (-1.5) at Steelers (+1.5)	43",
-      "Monday, October 7	8:15 p.m. ET	Saints (+8) at Chiefs (-8)	44.5",
-      "Thursday, October 10	8:15 p.m. ET	49ers (-4) at Seahawks (+4)	46.5",
-      "Sunday, October 13	9:30 a.m. ET	Jaguars (-1.5) at Bears (+1.5) in London	47.5",
-      "Sunday, October 13	1 p.m. ET	Cardinals (+5) at Packers (-5)	46.5",
-      "Sunday, October 13	1 p.m. ET	Colts (-1.5) at Titans (+1.5)	44.5",
-      "Sunday, October 13	1 p.m. ET	Texans (-4) at Patriots (+4)	44",
-      "Sunday, October 13	1 p.m. ET	Buccaneers (+1.5) at Saints (-1.5)	43",
-      "Sunday, October 13	1 p.m. ET	Browns (+3) at Eagles (-3)	45.5",
-      "Sunday, October 13	1 p.m. ET	Commanders (+8) at Ravens (-8)	46.5",
-      "Sunday, October 13	4:05 p.m. ET	Chargers (-1.5) at Broncos (+1.5)	44",
-      "Sunday, October13	4:05 p.m. ET	Steelers (-1) at Raiders (+1)	43",
-      "Sunday, October 13	4:25 p.m. ET	Lions (+0.5) at Cowboys (-0.5)	48.5",
-      "Sunday, October 13	4:25 p.m. ET	Falcons (-3.5) at Panthers (+3.5)	44",
-      "Sunday, October 13	8:20 p.m. ET	Bengals (-4.5) at Giants (+4.5)	45",
-      "Monday, October 14	8:15 p.m. ET	Bills (+1) at Jets (-1)	47.5",
-      "Thursday, October 17	8:15 p.m. ET	Broncos (+3.5) at Saints (-3.5)	42.5",
-      "Sunday, October 20	9:30 a.m. ET	Patriots (+6.5) at Jaguars (-6) in London	42.5",
-      "Sunday, October 20	1 p.m. ET	Seahawks (+3.5) at Falcons (-3.5)	48",
-      "Sunday, October 20	1 p.m. ET	Titans (+7) at Bills (-7)	47.5",
-      "Sunday, October 20	1 p.m. ET	Bengals (-1) at Browns (+1)	46.5",
-      "Sunday, October 20	1 p.m. ET	Texans (+2.5) at Packers (-2.5)	48.5",
-      "Sunday, October 20	1 p.m. ET	Dolphins (-1) at Colts (+1)	49",
-      "Sunday, October 20	1 p.m. ET	Lions (-3) at Vikings (+3)	47",
-      "Sunday, October 20	1 p.m. ET	Eagles (-3.5) at Giants (+3.5)	44",
-      "Sunday, October 20	4:05 p.m. ET	Raiders (+4) at Rams (-4)	46",
-      "Sunday, October 20	4:05 p.m. ET	Panthers (+3) at Commanders (-3)	42",
-      "Sunday, October 20	4:25 p.m. ET	Chiefs (+2) at 49ers (-2)	49",
-      "Sunday, October 20	8:20 p.m. ET	Jets (-1) at Steelers (+1)	43",
-      "Monday, October 21	8:15 p.m. ET	Ravens (-5) at Buccaneers (+5)	46",
-      "Monday, October 21	9 p.m. ET	Chargers (+1) at Cardinals (-1)	45",
-      "Thursday, October 24	8:15 p.m. ET	Vikings (+3.5) at Rams (-3.5)	45.5",
-      "Sunday, October 27	1 p.m. ET	Ravens (-1.5) at Browns (+1.5)	45.5",
-      "Sunday, October 27	1 p.m. ET	Titans (+7) at Lions (-7)	46.5",
-      "Sunday, October 27	1 p.m. ET	Cardinals (+6) at Dolphins (-6)	44",
-      "Sunday, October 27	1 p.m. ET	Jets (-3.5) at Patriots (+3.5)	42",
-      "Sunday, October 27	1 p.m. ET	Falcons (-1.5) at Buccaneers (+1.5)	46.5",
-      "Sunday, October 27	1 p.m. ET	Bears (-2) at Commanders (+2)	44.5",
-      "Sunday, October 27	1 p.m. ET	Packers (-1) at Jaguars (+1)	46",
-      "Sunday, October 27	1 p.m. ET	Colts (+4) at Texans (-4)	47.5",
-      "Sunday, October 27	4:05 p.m. ET	Saints (+3) at Chargers (-3)	44",
-      "Sunday, October 27	4:05 p.m. ET	Bills (-2) at Seahawks (+2)	46.5",
-      "Sunday, October 27	4:25 p.m. ET	Eagles (+3) at Bengals (-3)	47.5",
-      "Sunday, October 27	4:25 p.m. ET	Panthers (+2.5) at Broncos (-2.5)	42",
-      "Sunday October 27	4:25 p.m. ET	Chiefs (-4.5) at Raiders (+4.5)	47",
-      "Sunday October 27	8:20 p.m. ET	Cowboys (+4.5) at 49ers (-4.5)	46",
-      "Monday, October 28	8:15 p.m. ET	Giants (+4) at Steelers (-4)	42.5",
-      "Thursday, October 31	8:15 p.m. ET	Texans (+3) at Jets (-3)	45",
-      "Sunday, November 3	1 p.m. ET	Cowboys (-1) at Falcons (+1)	48",
-      "Sunday, November 3	1 p.m. ET	Dolphins (+3) at Bills (-3)	51",
-      "Sunday, November 3	1 p.m. ET	Raiders (+7) at Bengals (-7)	45",
-      "Sunday, November 3	1 p.m. ET	Chargers (+3) at Browns (-3)	43.5",
-      "Sunday, November 3	1 p.m. ET	Patriots (+2.5) at Titans (-2.5)	41",
-      "Sunday, November 3	1 p.m. ET	Colts (+1) at Vikings (-1)	46.5",
-      "Sunday, November 3	1 p.m. ET	Commanders (+1.5) at Giants (-1.5)	42",
-      "Sunday, November 3	1 p.m. ET	Saints (-1) at Panthers (+1)	40.5",
-      "Sunday, November 3	1 p.m. ET	Broncos (+10.5) at Ravens (-10.5)	43",
-      "Sunday, November 3	4:05 p.m. ET	Bears (-1) at Cardinals (+1)	46.5",
-      "Sunday, November 3	4:25 p.m. ET	Lions (+1.5) at Packers (-1.5)	49",
-      "Sunday, November 3	4:25 p.m. ET	Rams (-1.5) at Seahawks (+1.5)	47",
-      "Sunday, November 3	8:20 p.m. ET	Jaguars (+3.5) at Eagles (-3.5)	47",
-      "Sunday, November 4	8:15 p.m. ET	Buccaneers (+7) at Chiefs (-7)	47",
-      "Thursday, November 7	8:15 p.m. ET	Bengals (+3) at Ravens (-3)	47.5",
-      "Sunday, November 10	9:30 a.m. ET	Giants (-1.5) at Panthers (+1.5)	42.5",
-      "Sunday, November 10	1 p.m. ET	Patriots (+4.5) at Bears (-4.5)	43",
-      "Sunday, November 10	1 p.m. ET	Bills (-2) at Colts (+2)	46.5",
-      "Sunday, November 10	1 p.m. ET	Broncos (+9) at Chiefs (-9)	46",
-      "Sunday, November 10	1 p.m. ET	Falcons (-1.5) at Saints (+1.5)	44.5",
-      "Sunday, November 10	1 p.m. ET	49ers (-4) at Buccaneers (+4)	46.5",
-      "Sunday, November 10	1 p.m. ET	Steelers (-1.5) at Commanders (+1.5)	43.5",
-      "Sunday, November 10	1 p.m. ET	Vikings (+3) at Jaguars (-3)	44.5",
-      "Sunday, November 10	4:05 p.m. ET	Titans (+4) at Chargers (-4)	43.5",
-      "Sunday, November 10	4:25 p.m. ET	Eagles (+1.5) at Cowboys (-1.5)	47.5",
-      "Sunday, November 10	4:25 p.m. ET	Jets (-3) at Cardinals (+3)	46.5",
-      "Sunday, November 10	8:20 p.m. ET	Lions (+1) at Texans (-1)	48.5",
-      "Monday, November 11	8:15 p.m. ET	Dolphins (+1) at Rams (-1)	47.5",
-      "Thursday, November 14	8:15 p.m. ET	Commanders (+6) at Eagles (-6)	45.5",
-      "Sunday, November 17	1 p.m. ET	Packers (+1) at Bears (-1)	44",
-      "Sunday, November 17	1 p.m. ET	Jaguars (+4) at Lions (-4)	50",
-      "Sunday, November 17	1 p.m. ET	Vikings (-1) at Titans (+1)	43.5",
-      "Sunday, November 17	1 p.m. ET	Raiders (+6) at Dolphins (-6)	47",
-      "Sunday, November 17	1 p.m. ET	Rams (-4) at Patriots (+4)	44.5",
-      "Sunday, November 17	1 p.m. ET	Browns (-2) at Saints (+2)	42",
-      "Sunday, November 17	1 p.m. ET	Ravens (-3) at Steelers (+3 )	42",
-      "Sunday, November 17	4:05 p.m. ET	Falcons (-3) at Broncos (+3)	44.5",
-      "Sunday, November 17	4:05 p.m. ET	Seahawks (+9) at 49ers (-9)	47.5",
-      "Sunday, November 17	4:25 p.m. ET	Bengals (-2) at Chargers (+2)	45",
-      "Sunday, November 17	4:25 p.m. ET	Chiefs (-1) at Bills (+1)	49",
-      "Sunday, November 17	8:20 p.m. ET	Colts (+4) at Jets (-4)	46",
-      "Monday, November 18	8:15 p.m. ET	Texans (+3) at Cowboys (-3)	49",
-      "Thursday, November 21	8:15 p.m. ET	Steelers (+3) at Browns (-3)	43.5",
-      "Sunday, November 24	1 p.m. ET	Vikings (+3) at Bears (-3)	45",
-      "Sunday, November 24	1 p.m. ET	Lions (-2.5) at Colts (+2.5)	47.5",
-      "Sunday, November 24	1 p.m. ET	Patriots (+6.5) at Dolphins (-6.5)	45",
-      "Sunday, November 24	1 p.m. ET	Buccaneers (-1) at Giants (+1)	44",
-      "Sunday, November 24	1 p.m. ET	Cowboys (-2.5) at Commanders (+2.5)	46",
-      "Sunday, November 24	1 p.m. ET	Chiefs (-7) at Panthers (+7)	45.5",
-      "Sunday, November 24	1 p.m. ET	Titans (+5.5) at Texans (-5.5)	46.5",
-      "Sunday, November 24	4:05 p.m. ET	Broncos (+3) at Raiders (-3)	42",
-      "Sunday, November 24	4:25 p.m. ET	49ers (-2.5) at Packers (+2.5)	47",
-      "Sunday, November 24	4:25 p.m. ET	Cardinals (+3) at Seahawks (-3)	46",
-      "Sunday, November 24	8:20 p.m. ET	Eagles (+.5) at Rams (-.5)	47",
-      "Monday, November 25	8:15 p.m. ET	Ravens (-2) at Chargers (+2)	47",
-      "Thursday, November 28	12:30 p.m. ET	Bears (+3.5) at Lions (-3.5)	44.5",
-      "Thursday, November 28	4:30 p.m. ET	Giants (+8) at Cowboys (-8)	44.5",
-      "Thursday, November 28	8:20 p.m. ET	Dolphins (+3) at Packers (-3)	48.5",
-      "Friday, November 29	3 p.m. ET	Raiders (+7) at Chiefs (-7)	45.5",
-      "Sunday, December 1	1 p.m. ET	Chargers (+2.5) at Falcons (-2.5)	47.5",
-      "Sunday, December 1	1 p.m. ET	Steelers (+5) at Bengals (-5)	44.5",
-      "Sunday, December 1	1 p.m. ET	Cardinals (1.5) at Vikings (-1.5)	45.5",
-      "Sunday, December 1	1 p.m. ET	Colts (-2) at Patriots (+2)	44.0",
-      "Sunday, December 1	1 p.m. ET	Seahawks (+4.5) at Jets (-4.5)	46.5",
-      "Sunday, December 1	1 p.m. ET	Titans (+1.5) at Commanders (-1.5)	46.5",
-      "Sunday, December 1	1 p.m. ET	Texans (+1) at Jaguars (-1)	47.0",
-      "Sunday, December 1	4:05 p.m. ET	Rams (-1.5) at Saints (+1.5)	46.5",
-      "Sunday, December 1	4:05 p.m. ET	Buccaneers (-2) at Panthers (+2)	44",
-      "Sunday, December 1	4:25 p.m. ET	Eagles (+4) at Ravens (-4)	46.5",
-      "Sunday, December 1	8:20 p.m. ET	49ers (-2) at Bills (+2)	47",
-      "Monday, December 2	8:15 p.m. ET	Browns (-3.5) at Broncos (+3.5)	43",
-      "Thursday, December 5	8:20 p.m. ET	Packers (+2.5) at Lions (-2.5)	48",
-      "Sunday, December 8	1 p.m. ET	Browns (+1) at Steelers (-1)	43.5",
-      "Sunday, December 8	1 p.m. ET	Panthers (+7.5) at Eagles (-7.5)	45",
-      "Sunday, December 8	1 p.m. ET	Falcons (-1) at Vikings (+1)	45",
-      "Sunday, December 8	1 p.m. ET	Raiders (+1.5) at Buccaneers (-1.5)	44",
-      "Sunday, December 8	1 p.m. ET	Jaguars (-2) at Titans (+2)	45",
-      "Sunday, December 8	1 p.m. ET	Saints (-1) at Giants (+1)	41",
-      "Sunday, December 8	1 p.m. ET	Jets (+2) at Dolphins (-2)	47.5",
-      "Sunday, December 8	4:05 p.m. ET	Seahawks (+1) at Cardinals (-1)	45.5",
-      "Sunday, December 8	4:25 p.m. ET	Bears (+5.5) at 49ers (-5.5)	47.5",
-      "Sunday, December 8	4:25 p.m. ET	Bills (-1) at Rams (+1)	48",
-      "Sunday, December 8	8:20 p.m. ET	Chargers (+6.5) at Chiefs (-6.5)	44.5",
-      "Monday, December 9	8:15 p.m. ET	Bengals (+1) at Cowboys (-1)	48.5",
-      "Thursday, December 12	8:20 p.m. ET	Rams (+6.5) at 49ers (-6.5)	46.5",
-      "Sunday, December 15	1 p.m. ET	Bengals (-4.5) at Titans (+4.5)	46",
-      "Sunday, December 15	1 p.m. ET	Commanders (+3) at Saints (-3)	42",
-      "Sunday, December 15	1 p.m. ET	Ravens (-6.5) at Giants (+6.5)	44",
-      "Sunday, December 15	1 p.m. ET	Jets (-1) at Jaguars (+1)	46",
-      "Sunday, December 15	1 p.m. ET	Chiefs (-3) at Browns (+3)	46.5",
-      "Sunday, December 15	1 p.m. ET	Cowboys (-6.5) at Panthers (+6.5)	44",
-      "Sunday, December 15	1 p.m. ET	Dolphins (+2.5) at Texans (-2.5)	49.5",
-      "Sunday, December 15	4:25 p.m. ET	Patriots (+3.5) at Cardinals (-3.5)	44",
-      "Sunday, December 15	4:25 p.m. ET	Buccaneers (+3) at Chargers (-3)	42.5",
-      "Sunday, December 15	4:25 p.m. ET	Colts (-2.5) at Broncos (+2.5)	44.5",
-      "Sunday, December 15	4:25 p.m. ET	Bills (+2) at Lions (-2)	50.5",
-      "Sunday, December 15	4:25 p.m. ET	Steelers (+3) at Eagles (-3)	45",
-      "Sunday, December 15	8:20 p.m. ET	Packers (-1) at Seahawks (+1)	47",
-      "Monday, December 16	8 p.m. ET	Bears (-1) at Vikings (+1)	46",
-      "Monday, December 16	8:30 p.m. ET	Falcons (-1) at Raiders (+1)	45.5",
-      "Thursday, December 19	8:15 p.m. ET	Browns (+3.5) at Bengals (-3.5)	46.5",
-      "Saturday, December 21	1 p.m. ET	Texans (+4.5) at Chiefs (-4.5)	47",
-      "Saturday, December 21	4:30 p.m. ET	Steelers (+6) at Ravens (-6)	46",
-      "Sunday, December 22	1 p.m. ET	Giants (+4.5) at Falcons (-4.5)	44.5",
-      "Sunday, December 22	1 p.m. ET	Titans (+3.5) at Colts (-3.5)	44.5",
-      "Sunday, December 22	1 p.m. ET	Rams (+3) at Jets (-3)	47.5",
-      "Sunday, December 22	1 p.m. ET	Patriots (+7.5) at Bills (-7.5)	44.5",
-      "Sunday, December 22	1 p.m. ET	Eagles (-3) at Commanders (+3)	46.5",
-      "Sunday, December 22	1 p.m. ET	Cardinals (-1) at Panthers (+1)	45.5",
-      "Sunday, December 22	1 p.m. ET	Lions (-2) at Bears (+2)	48",
-      "Sunday, December 22	4:05 p.m. ET	Broncos (+3.5) at Chargers (-3.5)	45",
-      "Sunday, December 22	4:05 p.m. ET	Vikings (+2) at Seahawks (-2)	45.5",
-      "Sunday, December 22	4:25 p.m. ET	49ers (-1) at Dolphins (+1)	49",
-      "Sunday, December 22	4:25 p.m. ET	Jaguars (-1) at Raiders (+1)	45.5",
-      "Sunday, December 22	8:20 p.m. ET	Buccaneers (+4.5) at Cowboys (-4.5)	46.5",
-      "Monday, December 23	8:15 p.m. ET	Saints (+5) at Packers (-5)	45",
-      "Wednesday, December 25	1:05 p.m. ET	Chiefs (-4) at Steelers (+4)	43",
-      "Wednesday, December 25	4:30 p.m. ET	Ravens (-1.5) at Texans (+1.5)	46.5",
-      "Thursday, December 26	8:15 p.m. ET	Seahawks (+3.5) at Bears (-3.5)	45.5",
-      "Sunday, December 29	1 p.m. ET	Colts (-2) at Giants (+2)	43.5",
-      "Sunday, December 29	1 p.m. ET	Falcons (-2) at Commanders (+2)	46",
-      "Sunday, December 29	1 p.m. ET	Panthers (+4.5) at Buccaneers (-4.5)	43.5",
-      "Sunday, December 29	1 p.m. ET	Raiders (+2) at Saints (-2)	43",
-      "Sunday, December 29	1 p.m. ET	Packers (-2) at Vikings (+2)	45.5",
-      "Sunday, December 29	1 p.m. ET	Chargers (-2.5) at Patriots (+2.5)	41",
-      "Sunday, December 29	1 p.m. ET	Titans (+4) at Jaguars (-4)	46",
-      "Sunday, December 29	1 p.m. ET	Broncos (+7.5) at Bengals (-7.5)	45.5",
-      "Sunday, December 29	1 p.m. ET	Jets (+2.5) at Bills (-2.5)	45.5",
-      "Sunday, December 29	4:05 p.m. ET	Cardinals (+5) at Rams (-5)	48.5",
-      "Sunday, December 29	4:25 p.m. ET	Cowboys (+2) at Eagles (-2)	47",
-      "Sunday, December 29	8:20 p.m. ET	Dolphins (+2) at Browns (-2)	44.5",
-      "Monday, December 30	8:15 p.m. ET	Lions (+4.5) at 49ers (-4.5)	49.5"
-    )
-  ) %>% 
+df_open_lines_2024 =
+  read_xlsx("nfl_game_lines_aus.xlsx") %>% 
+  janitor::clean_names() %>% 
   mutate(
-    team_home = str_remove(str_extract(value, "at [A-Z][a-z]+"), "^at "),
-    team_home = replace_na(team_home, "SF"),
-    team_away = str_extract(str_trim(str_remove(value, "^.+ ET")), "^[A-Z][a-z]+"),
-    team_away = replace_na(team_away, "SF"),
     across(
-      c(team_home, team_away),
+      c(home_team, away_team),
       ~ case_match(
-        ., 
-        "Chiefs" ~ "KC", 
-        "Eagles" ~ "PHI", 
-        "Bills" ~ "BUF", 
-        "Bengals" ~ "CIN", 
-        "Colts" ~ "IND", 
-        "Bears" ~ "CHI", 
-        "Dolphins" ~ "MIA", 
-        "Giants" ~ "NYG", 
-        "Saints" ~ "NO", 
-        "Falcons" ~ "ATL", 
-        "Chargers" ~ "LAC", 
-        "Seahawks" ~ "SEA", 
-        "Buccaneers" ~ "TB", 
-        "Browns" ~ "CLE", 
-        "Lions" ~ "DET", 
-        "Cowboys" ~ "DAL", 
-        "Packers" ~ "GB", 
-        "Titans" ~ "TEN", 
-        "Vikings" ~ "MIN", 
-        "Patriots" ~ "NE", 
-        "Commanders" ~ "WAS", 
-        "Panthers" ~ "CAR", 
-        "Jaguars" ~ "JAX", 
-        "Ravens" ~ "BAL", 
-        "Cardinals" ~ "ARI", 
-        "Broncos" ~ "DEN", 
-        "Texans" ~ "HOU", 
-        "Jets" ~ "NYJ", 
-        "Steelers" ~ "PIT", 
-        "Raiders" ~ "LV", 
-        "Rams" ~ "LA",
-        .default = .
+        .,
+        "Arizona Cardinals" ~ "ARI", 
+        "Atlanta Falcons" ~ "ATL", 
+        "Baltimore Ravens" ~ "BAL", 
+        "Buffalo Bills" ~ "BUF", 
+        "Carolina Panthers" ~ "CAR", 
+        "Chicago Bears" ~ "CHI", 
+        "Cincinnati Bengals" ~ "CIN", 
+        "Cleveland Browns" ~ "CLE", 
+        "Dallas Cowboys" ~ "DAL", 
+        "Denver Broncos" ~ "DEN", 
+        "Detroit Lions" ~ "DET", 
+        "Green Bay Packers" ~ "GB", 
+        "Houston Texans" ~ "HOU", 
+        "Indianapolis Colts" ~ "IND", 
+        "Jacksonville Jaguars" ~ "JAX", 
+        "Kansas City Chiefs" ~ "KC", 
+        "Las Vegas Raiders" ~ "LV", 
+        "Los Angeles Chargers" ~ "LAC", 
+        "Los Angeles Rams" ~ "LA", 
+        "Miami Dolphins" ~ "MIA", 
+        "Minnesota Vikings" ~ "MIN", 
+        "New England Patriots" ~ "NE", 
+        "New Orleans Saints" ~ "NO", 
+        "New York Giants" ~ "NYG", 
+        "New York Jets" ~ "NYJ", 
+        "Oakland Raiders" ~ "LV", 
+        "Philadelphia Eagles" ~ "PHI", 
+        "Pittsburgh Steelers" ~ "PIT", 
+        "San Diego Chargers" ~ "LAC", 
+        "San Francisco 49ers" ~ "SF", 
+        "Seattle Seahawks" ~ "SEA", 
+        "St. Louis Rams" ~ "LA", 
+        "Tampa Bay Buccaneers" ~ "TB", 
+        "Tennessee Titans" ~ "TEN", 
+        "Washington Commanders" ~ "WAS", 
+        "Washington Football Team" ~ "WAS", 
+        "Washington Redskins" ~ "WAS",
+        .default = NA
       )
     ),
-    total_line = str_extract_all(value, "\\d+$|\\d+.\\d+$"),
-    # spread_line = str_remove(value, "\\d+$|\\d+.\\d+$"),
-    spread_line_raw = str_remove_all(str_extract(str_trim(str_remove(str_remove(value, "\\d+$|\\d+.\\d+$"), "in Brazil|in London"), ),  "\\([+-]\\d+\\)$|\\([+-]\\d+.\\d+\\)$"), "\\(|\\)"),
-    spread_line = -as.double(str_remove(spread_line_raw, "^\\+")),
-    team_game = str_c(team_away, "_", team_home)
-  )
+    team_game = str_c(away_team, "_", home_team)
+  ) %>% 
+  rename(
+    team_home = home_team, 
+    team_away = away_team,
+    total_line = total_score_open
+  ) %>% 
+  filter(between(as.Date(date), as.Date("2024-09-01"),  as.Date("2025-08-01"))) %>% 
+  mutate(
+    week = ceiling(as.integer(as.Date(date) - as.Date("2024-09-04")) / 7),
+    spread_line = -home_line_open
+  ) %>% 
+  select(week, team_home, team_away, spread_line, home_line_odds_open, away_line_odds_open, total_line, total_score_over_open, total_score_under_open) %>% 
+  filter(between(week, 2, 18))
+
+# df_open_lines_2024 = 
+#   tibble(
+#     value = c(
+#       "Thursday, September 5	8:20 p.m. ET	Ravens (+2.5) at Chiefs (-2.5)	46.5",
+#       "Friday, September 6	8:20 p.m. ET	Packers (+1.5) at Eagles (-1.5) in Brazil
+#       48.5",
+#       "Sunday, September 8	1 p.m. ET	Cardinals (+7) at Bills (-7)	48",
+#       "Sunday, September 8	1 p.m. ET	Patriots (+8.5) at Bengals (-8.5)	43",
+#       "Sunday, September 8	1 p.m. ET	Texans (-1.5) at Colts (+1.5)	48",
+#       "Sunday, September 8	1 p.m. ET	Titans (+4.5 ) at Bears (-4.5)	43.5",
+#       "Sunday, September 8	1 p.m. ET	Jaguars (+3.5) at Dolphins (-3.5)	49.5",
+#       "Sunday, September 8	1 p.m. ET	Vikings (+1) at Giants (-1)	41.5",
+#       "Sunday, September 8	1 p.m. ET	Panthers (+4.5) at Saints (-4.5)	40.5",
+#       "Sunday, September 8	1 p.m. ET	Steelers (+3) at Falcons (-3)	43.5",
+#       "Sunday, September 8	4:05 p.m. ET	Raiders (+3) at Chargers (-3)	43.5",
+#       "Sunday, September 8	4:05 p.m. ET	Broncos (+4.5) at Seahawks (-4.5)	42.5",
+#       "Sunday, September 8	4:25 p.m. ET	Commanders (+3.5) at Buccaneers (-3.5)	41.5",
+#       "Sunday, September 8	4:25 p.m. ET	Cowboys (-1.5) at Browns (+1.5)	43.5",
+#       "Sunday, September 8	8:20 p.m. ET	Rams (+3) at Lions (-3)	51",
+#       "Monday, September 9	8:20 p.m. ET	Jets (+6.5) at 49ers (-6.5)	45.5",
+#       "Thursday, September 12	8:20 p.m. ET	Bills (+1.5) at Dolphins (-1.5)	51.5",
+#       "Sunday, September 15	1 p.m. ET	Saints (+6) at Cowboys (-6)	44.5",
+#       "Sunday, September 15	1 p.m. ET	Buccaneers (+6) at Lions (-6)	48.5",
+#       "Sunday, September 15	1 p.m. ET	Colts (+4) at Packers (-4)	47",
+#       "Sunday, September 15	1 p.m. ET	Jets (-4) at Titans (+4)	43.5",
+#       "Sunday, September 15	1 p.m. ET	49ers (-6) at Vikings (+6)	46.5",
+#       "Sunday, September 15	1 p.m. ET	Seahawks (-2.5) at Patriots (+2.5)	42.5",
+#       "Sunday, September 15	1 p.m. ET	Giants (+3) at Commanders (-3)	42.5",
+#       "Sunday, September 15	1 p.m. ET	Chargers (-5) at Panthers (+5)	43.5",
+#       "Sunday, September 15	1 p.m. ET	Browns (+1) at Jaguars (-1)	45",
+#       "Sunday, September 15	1 p.m. ET	Raiders (+7) at Ravens (-7)	44.5",
+#       "Sunday, September 15	4:05 p.m. ET	Rams (-1) at Cardinals (+1)	46",
+#       "Sunday, September 15	4:25 p.m. ET	Steelers (-3) at Broncos (+3)	41.5",
+#       "Sunday, September 15	4:25 p.m. ET	Bengals (+4.5) at Chiefs (-4.5)	48.5",
+#       "Sunday, September 15	8:20 p.m. ET	Bears (+3) at Texans (-3)	47",
+#       "Monday, September 16	8:15 p.m. ET	Falcons (+3.5) at Eagles (-3.5)	48.5",
+#       "Thursday, September 19	8:15 p.m. ET	Patriots (+7.5) at Jets (-7.5)	42",
+#       "Sunday, September 22	1 p.m. ET	Giants (+6.5) at Browns (-6.5)	42.5",
+#       "Sunday, September 22	1 p.m. ET	Packers (-3.5) at Titans (+3.5)	44",
+#       "Sunday, September 22	1 p.m. ET	Bears (+2) at Colts (-2)	47",
+#       "Sunday, September 22	1 p.m. ET	Texans (-3.5) at Vikings (+3.5)	46.5",
+#       "Sunday, September 22	1 p.m. ET	Eagles (-3) at Saints (+3)	45",
+#       "Sunday, September 22	1 p.m. ET	Chargers (+2) at Steelers (-2)	42.5",
+#       "Sunday, September 22	1 p.m. ET	Broncos (+3.5) at Buccaneers (-3.5)	43",
+#       "Sunday, September 22	4:05 p.m. ET	Panthers (+4) at Raiders (-4)	43",
+#       "Sunday, September 22	4:05 p.m. ET	Dolphins (-2) at Seahawks (+2)	49",
+#       "Sunday, September 22	4:25 p.m. ET	Ravens (+1) at Cowboys (-1)	48",
+#       "Sunday, September 22	4:25 p.m. ET	49ers (-2.5) at Rams (+2.5)	49",
+#       "Sunday, September 22	4:25 p.m. ET	Lions (-4) at Cardinals (+4)	50",
+#       "Sunday, September 22	8:20 p.m. ET	Chiefs (-3) at Falcons (+3)	49",
+#       "Monday, September 23	7:30 p.m. ET	Jaguars (+4.5) at Bills (-4.5)	49",
+#       "Monday, September 23	8:15 p.m. ET	Commanders (+7) at Bengals (-7)	48",
+#       "Thursday, September 26	8:15 p.m. ET	Cowboys (-4.5) at Giants (+4.5)	44.5",
+#       "Sunday, September 29	1 p.m. ET	Saints (+4.5) at Falcons (-4.5)	44.5",
+#       "Sunday, September 29	1 p.m. ET	Rams (+1.5) at Bears (-1.5)	47",
+#       "Sunday, September 29	1 p.m. ET	Vikings (+4.5) at Packers (-4.5)	45",
+#       "Sunday, September 29	1 p.m. ET	Steelers (+.5) at Colts (-0.5)	44.5",
+#       "Sunday, September 29	1 p.m. ET	Jaguars (+3.5) at Texans (-3.5)	47.5",
+#       "Sunday, September 29	1 p.m. ET	Broncos (+6) at Jets (-6)	42.5",
+#       "Sunday, September 29	1 p.m. ET	Eagles (-1.5) at Buccaneers (+1.5)	47",
+#       "Sunday, September 29	1 p.m. ET	Bengals (-5) at Panthers (+5)	46",
+#       "Sunday, September 29	4:05 p.m. ET	Commanders (+2) at Cardinals (-2)	45",
+#       "Sunday, September 29	4:05 p.m. ET	Patriots (+11.5) at 49ers (-11.5)	45",
+#       "Sunday, September 29	4:25 p.m. ET	Browns (-1.5) at Raiders (+1.5)	43.5",
+#       "Sunday, September 29	4:25 p.m. ET	Chiefs (-3) at Chargers (+3)	49",
+#       "Sunday, September 29	8:20 p.m. ET	Bills (+3) at Ravens (-3)	47.5",
+#       "Monday, September 30	7:30 p.m. ET	Titans (+6.5) at Dolphins (-6.5)	46",
+#       "Monday, September 30	8:15 p.m. ET	Seahawks (+6) at Lions (-6)	49",
+#       "Thursday, October 3	8:15 p.m. ET	Buccaneers (+3) at Falcons (-3)	44",
+#       "Sunday, October 6	9:30 a.m. ET	Jets (-3.5) at Vikings (+3.5) in London	44.5",
+#       "Sunday, October 6	1 p.m. ET	Panthers (+5.5) at Bears (-5.5)	42",
+#       "Sunday, October 6	1 p.m. ET	Ravens (+1.5) at Bengals (-1.5)	46.5",
+#       "Sunday, October 6	1 p.m. ET	Dolphins (-4) at Patriots (+4)	45",
+#       "Sunday, October 6	1 p.m. ET	Browns (-3) at Commanders (+3)	43.5",
+#       "Sunday, October 6	1 p.m. ET	Colts (+2.5) at Jaguars (-2.5)	47",
+#       "Sunday, October 6	1 p.m. ET	Bills (+1.5) at Texans (-1.5)	48",
+#       "Sunday, October 6	4:05 p.m. ET	Raiders (+1) at Broncos (-1)	41",
+#       "Sunday, October 6	4:05 p.m. ET	Cardinals (+9.5) at 49ers (-9.5)	47",
+#       "Sunday, October 6	4:25 p.m. ET	Packers (+1.5) at Rams (-1.5)	48.5",
+#       "Sunday, October 6	4:25 p.m. ET	Giants (+3.5) at Seahawks (-3.5)	43",
+#       "Sunday, October 6	8:20 p.m. ET	Cowboys (-1.5) at Steelers (+1.5)	43",
+#       "Monday, October 7	8:15 p.m. ET	Saints (+8) at Chiefs (-8)	44.5",
+#       "Thursday, October 10	8:15 p.m. ET	49ers (-4) at Seahawks (+4)	46.5",
+#       "Sunday, October 13	9:30 a.m. ET	Jaguars (-1.5) at Bears (+1.5) in London	47.5",
+#       "Sunday, October 13	1 p.m. ET	Cardinals (+5) at Packers (-5)	46.5",
+#       "Sunday, October 13	1 p.m. ET	Colts (-1.5) at Titans (+1.5)	44.5",
+#       "Sunday, October 13	1 p.m. ET	Texans (-4) at Patriots (+4)	44",
+#       "Sunday, October 13	1 p.m. ET	Buccaneers (+1.5) at Saints (-1.5)	43",
+#       "Sunday, October 13	1 p.m. ET	Browns (+3) at Eagles (-3)	45.5",
+#       "Sunday, October 13	1 p.m. ET	Commanders (+8) at Ravens (-8)	46.5",
+#       "Sunday, October 13	4:05 p.m. ET	Chargers (-1.5) at Broncos (+1.5)	44",
+#       "Sunday, October13	4:05 p.m. ET	Steelers (-1) at Raiders (+1)	43",
+#       "Sunday, October 13	4:25 p.m. ET	Lions (+0.5) at Cowboys (-0.5)	48.5",
+#       "Sunday, October 13	4:25 p.m. ET	Falcons (-3.5) at Panthers (+3.5)	44",
+#       "Sunday, October 13	8:20 p.m. ET	Bengals (-4.5) at Giants (+4.5)	45",
+#       "Monday, October 14	8:15 p.m. ET	Bills (+1) at Jets (-1)	47.5",
+#       "Thursday, October 17	8:15 p.m. ET	Broncos (+3.5) at Saints (-3.5)	42.5",
+#       "Sunday, October 20	9:30 a.m. ET	Patriots (+6.5) at Jaguars (-6) in London	42.5",
+#       "Sunday, October 20	1 p.m. ET	Seahawks (+3.5) at Falcons (-3.5)	48",
+#       "Sunday, October 20	1 p.m. ET	Titans (+7) at Bills (-7)	47.5",
+#       "Sunday, October 20	1 p.m. ET	Bengals (-1) at Browns (+1)	46.5",
+#       "Sunday, October 20	1 p.m. ET	Texans (+2.5) at Packers (-2.5)	48.5",
+#       "Sunday, October 20	1 p.m. ET	Dolphins (-1) at Colts (+1)	49",
+#       "Sunday, October 20	1 p.m. ET	Lions (-3) at Vikings (+3)	47",
+#       "Sunday, October 20	1 p.m. ET	Eagles (-3.5) at Giants (+3.5)	44",
+#       "Sunday, October 20	4:05 p.m. ET	Raiders (+4) at Rams (-4)	46",
+#       "Sunday, October 20	4:05 p.m. ET	Panthers (+3) at Commanders (-3)	42",
+#       "Sunday, October 20	4:25 p.m. ET	Chiefs (+2) at 49ers (-2)	49",
+#       "Sunday, October 20	8:20 p.m. ET	Jets (-1) at Steelers (+1)	43",
+#       "Monday, October 21	8:15 p.m. ET	Ravens (-5) at Buccaneers (+5)	46",
+#       "Monday, October 21	9 p.m. ET	Chargers (+1) at Cardinals (-1)	45",
+#       "Thursday, October 24	8:15 p.m. ET	Vikings (+3.5) at Rams (-3.5)	45.5",
+#       "Sunday, October 27	1 p.m. ET	Ravens (-1.5) at Browns (+1.5)	45.5",
+#       "Sunday, October 27	1 p.m. ET	Titans (+7) at Lions (-7)	46.5",
+#       "Sunday, October 27	1 p.m. ET	Cardinals (+6) at Dolphins (-6)	44",
+#       "Sunday, October 27	1 p.m. ET	Jets (-3.5) at Patriots (+3.5)	42",
+#       "Sunday, October 27	1 p.m. ET	Falcons (-1.5) at Buccaneers (+1.5)	46.5",
+#       "Sunday, October 27	1 p.m. ET	Bears (-2) at Commanders (+2)	44.5",
+#       "Sunday, October 27	1 p.m. ET	Packers (-1) at Jaguars (+1)	46",
+#       "Sunday, October 27	1 p.m. ET	Colts (+4) at Texans (-4)	47.5",
+#       "Sunday, October 27	4:05 p.m. ET	Saints (+3) at Chargers (-3)	44",
+#       "Sunday, October 27	4:05 p.m. ET	Bills (-2) at Seahawks (+2)	46.5",
+#       "Sunday, October 27	4:25 p.m. ET	Eagles (+3) at Bengals (-3)	47.5",
+#       "Sunday, October 27	4:25 p.m. ET	Panthers (+2.5) at Broncos (-2.5)	42",
+#       "Sunday October 27	4:25 p.m. ET	Chiefs (-4.5) at Raiders (+4.5)	47",
+#       "Sunday October 27	8:20 p.m. ET	Cowboys (+4.5) at 49ers (-4.5)	46",
+#       "Monday, October 28	8:15 p.m. ET	Giants (+4) at Steelers (-4)	42.5",
+#       "Thursday, October 31	8:15 p.m. ET	Texans (+3) at Jets (-3)	45",
+#       "Sunday, November 3	1 p.m. ET	Cowboys (-1) at Falcons (+1)	48",
+#       "Sunday, November 3	1 p.m. ET	Dolphins (+3) at Bills (-3)	51",
+#       "Sunday, November 3	1 p.m. ET	Raiders (+7) at Bengals (-7)	45",
+#       "Sunday, November 3	1 p.m. ET	Chargers (+3) at Browns (-3)	43.5",
+#       "Sunday, November 3	1 p.m. ET	Patriots (+2.5) at Titans (-2.5)	41",
+#       "Sunday, November 3	1 p.m. ET	Colts (+1) at Vikings (-1)	46.5",
+#       "Sunday, November 3	1 p.m. ET	Commanders (+1.5) at Giants (-1.5)	42",
+#       "Sunday, November 3	1 p.m. ET	Saints (-1) at Panthers (+1)	40.5",
+#       "Sunday, November 3	1 p.m. ET	Broncos (+10.5) at Ravens (-10.5)	43",
+#       "Sunday, November 3	4:05 p.m. ET	Bears (-1) at Cardinals (+1)	46.5",
+#       "Sunday, November 3	4:25 p.m. ET	Lions (+1.5) at Packers (-1.5)	49",
+#       "Sunday, November 3	4:25 p.m. ET	Rams (-1.5) at Seahawks (+1.5)	47",
+#       "Sunday, November 3	8:20 p.m. ET	Jaguars (+3.5) at Eagles (-3.5)	47",
+#       "Sunday, November 4	8:15 p.m. ET	Buccaneers (+7) at Chiefs (-7)	47",
+#       "Thursday, November 7	8:15 p.m. ET	Bengals (+3) at Ravens (-3)	47.5",
+#       "Sunday, November 10	9:30 a.m. ET	Giants (-1.5) at Panthers (+1.5)	42.5",
+#       "Sunday, November 10	1 p.m. ET	Patriots (+4.5) at Bears (-4.5)	43",
+#       "Sunday, November 10	1 p.m. ET	Bills (-2) at Colts (+2)	46.5",
+#       "Sunday, November 10	1 p.m. ET	Broncos (+9) at Chiefs (-9)	46",
+#       "Sunday, November 10	1 p.m. ET	Falcons (-1.5) at Saints (+1.5)	44.5",
+#       "Sunday, November 10	1 p.m. ET	49ers (-4) at Buccaneers (+4)	46.5",
+#       "Sunday, November 10	1 p.m. ET	Steelers (-1.5) at Commanders (+1.5)	43.5",
+#       "Sunday, November 10	1 p.m. ET	Vikings (+3) at Jaguars (-3)	44.5",
+#       "Sunday, November 10	4:05 p.m. ET	Titans (+4) at Chargers (-4)	43.5",
+#       "Sunday, November 10	4:25 p.m. ET	Eagles (+1.5) at Cowboys (-1.5)	47.5",
+#       "Sunday, November 10	4:25 p.m. ET	Jets (-3) at Cardinals (+3)	46.5",
+#       "Sunday, November 10	8:20 p.m. ET	Lions (+1) at Texans (-1)	48.5",
+#       "Monday, November 11	8:15 p.m. ET	Dolphins (+1) at Rams (-1)	47.5",
+#       "Thursday, November 14	8:15 p.m. ET	Commanders (+6) at Eagles (-6)	45.5",
+#       "Sunday, November 17	1 p.m. ET	Packers (+1) at Bears (-1)	44",
+#       "Sunday, November 17	1 p.m. ET	Jaguars (+4) at Lions (-4)	50",
+#       "Sunday, November 17	1 p.m. ET	Vikings (-1) at Titans (+1)	43.5",
+#       "Sunday, November 17	1 p.m. ET	Raiders (+6) at Dolphins (-6)	47",
+#       "Sunday, November 17	1 p.m. ET	Rams (-4) at Patriots (+4)	44.5",
+#       "Sunday, November 17	1 p.m. ET	Browns (-2) at Saints (+2)	42",
+#       "Sunday, November 17	1 p.m. ET	Ravens (-3) at Steelers (+3 )	42",
+#       "Sunday, November 17	4:05 p.m. ET	Falcons (-3) at Broncos (+3)	44.5",
+#       "Sunday, November 17	4:05 p.m. ET	Seahawks (+9) at 49ers (-9)	47.5",
+#       "Sunday, November 17	4:25 p.m. ET	Bengals (-2) at Chargers (+2)	45",
+#       "Sunday, November 17	4:25 p.m. ET	Chiefs (-1) at Bills (+1)	49",
+#       "Sunday, November 17	8:20 p.m. ET	Colts (+4) at Jets (-4)	46",
+#       "Monday, November 18	8:15 p.m. ET	Texans (+3) at Cowboys (-3)	49",
+#       "Thursday, November 21	8:15 p.m. ET	Steelers (+3) at Browns (-3)	43.5",
+#       "Sunday, November 24	1 p.m. ET	Vikings (+3) at Bears (-3)	45",
+#       "Sunday, November 24	1 p.m. ET	Lions (-2.5) at Colts (+2.5)	47.5",
+#       "Sunday, November 24	1 p.m. ET	Patriots (+6.5) at Dolphins (-6.5)	45",
+#       "Sunday, November 24	1 p.m. ET	Buccaneers (-1) at Giants (+1)	44",
+#       "Sunday, November 24	1 p.m. ET	Cowboys (-2.5) at Commanders (+2.5)	46",
+#       "Sunday, November 24	1 p.m. ET	Chiefs (-7) at Panthers (+7)	45.5",
+#       "Sunday, November 24	1 p.m. ET	Titans (+5.5) at Texans (-5.5)	46.5",
+#       "Sunday, November 24	4:05 p.m. ET	Broncos (+3) at Raiders (-3)	42",
+#       "Sunday, November 24	4:25 p.m. ET	49ers (-2.5) at Packers (+2.5)	47",
+#       "Sunday, November 24	4:25 p.m. ET	Cardinals (+3) at Seahawks (-3)	46",
+#       "Sunday, November 24	8:20 p.m. ET	Eagles (+.5) at Rams (-.5)	47",
+#       "Monday, November 25	8:15 p.m. ET	Ravens (-2) at Chargers (+2)	47",
+#       "Thursday, November 28	12:30 p.m. ET	Bears (+3.5) at Lions (-3.5)	44.5",
+#       "Thursday, November 28	4:30 p.m. ET	Giants (+8) at Cowboys (-8)	44.5",
+#       "Thursday, November 28	8:20 p.m. ET	Dolphins (+3) at Packers (-3)	48.5",
+#       "Friday, November 29	3 p.m. ET	Raiders (+7) at Chiefs (-7)	45.5",
+#       "Sunday, December 1	1 p.m. ET	Chargers (+2.5) at Falcons (-2.5)	47.5",
+#       "Sunday, December 1	1 p.m. ET	Steelers (+5) at Bengals (-5)	44.5",
+#       "Sunday, December 1	1 p.m. ET	Cardinals (1.5) at Vikings (-1.5)	45.5",
+#       "Sunday, December 1	1 p.m. ET	Colts (-2) at Patriots (+2)	44.0",
+#       "Sunday, December 1	1 p.m. ET	Seahawks (+4.5) at Jets (-4.5)	46.5",
+#       "Sunday, December 1	1 p.m. ET	Titans (+1.5) at Commanders (-1.5)	46.5",
+#       "Sunday, December 1	1 p.m. ET	Texans (+1) at Jaguars (-1)	47.0",
+#       "Sunday, December 1	4:05 p.m. ET	Rams (-1.5) at Saints (+1.5)	46.5",
+#       "Sunday, December 1	4:05 p.m. ET	Buccaneers (-2) at Panthers (+2)	44",
+#       "Sunday, December 1	4:25 p.m. ET	Eagles (+4) at Ravens (-4)	46.5",
+#       "Sunday, December 1	8:20 p.m. ET	49ers (-2) at Bills (+2)	47",
+#       "Monday, December 2	8:15 p.m. ET	Browns (-3.5) at Broncos (+3.5)	43",
+#       "Thursday, December 5	8:20 p.m. ET	Packers (+2.5) at Lions (-2.5)	48",
+#       "Sunday, December 8	1 p.m. ET	Browns (+1) at Steelers (-1)	43.5",
+#       "Sunday, December 8	1 p.m. ET	Panthers (+7.5) at Eagles (-7.5)	45",
+#       "Sunday, December 8	1 p.m. ET	Falcons (-1) at Vikings (+1)	45",
+#       "Sunday, December 8	1 p.m. ET	Raiders (+1.5) at Buccaneers (-1.5)	44",
+#       "Sunday, December 8	1 p.m. ET	Jaguars (-2) at Titans (+2)	45",
+#       "Sunday, December 8	1 p.m. ET	Saints (-1) at Giants (+1)	41",
+#       "Sunday, December 8	1 p.m. ET	Jets (+2) at Dolphins (-2)	47.5",
+#       "Sunday, December 8	4:05 p.m. ET	Seahawks (+1) at Cardinals (-1)	45.5",
+#       "Sunday, December 8	4:25 p.m. ET	Bears (+5.5) at 49ers (-5.5)	47.5",
+#       "Sunday, December 8	4:25 p.m. ET	Bills (-1) at Rams (+1)	48",
+#       "Sunday, December 8	8:20 p.m. ET	Chargers (+6.5) at Chiefs (-6.5)	44.5",
+#       "Monday, December 9	8:15 p.m. ET	Bengals (+1) at Cowboys (-1)	48.5",
+#       "Thursday, December 12	8:20 p.m. ET	Rams (+6.5) at 49ers (-6.5)	46.5",
+#       "Sunday, December 15	1 p.m. ET	Bengals (-4.5) at Titans (+4.5)	46",
+#       "Sunday, December 15	1 p.m. ET	Commanders (+3) at Saints (-3)	42",
+#       "Sunday, December 15	1 p.m. ET	Ravens (-6.5) at Giants (+6.5)	44",
+#       "Sunday, December 15	1 p.m. ET	Jets (-1) at Jaguars (+1)	46",
+#       "Sunday, December 15	1 p.m. ET	Chiefs (-3) at Browns (+3)	46.5",
+#       "Sunday, December 15	1 p.m. ET	Cowboys (-6.5) at Panthers (+6.5)	44",
+#       "Sunday, December 15	1 p.m. ET	Dolphins (+2.5) at Texans (-2.5)	49.5",
+#       "Sunday, December 15	4:25 p.m. ET	Patriots (+3.5) at Cardinals (-3.5)	44",
+#       "Sunday, December 15	4:25 p.m. ET	Buccaneers (+3) at Chargers (-3)	42.5",
+#       "Sunday, December 15	4:25 p.m. ET	Colts (-2.5) at Broncos (+2.5)	44.5",
+#       "Sunday, December 15	4:25 p.m. ET	Bills (+2) at Lions (-2)	50.5",
+#       "Sunday, December 15	4:25 p.m. ET	Steelers (+3) at Eagles (-3)	45",
+#       "Sunday, December 15	8:20 p.m. ET	Packers (-1) at Seahawks (+1)	47",
+#       "Monday, December 16	8 p.m. ET	Bears (-1) at Vikings (+1)	46",
+#       "Monday, December 16	8:30 p.m. ET	Falcons (-1) at Raiders (+1)	45.5",
+#       "Thursday, December 19	8:15 p.m. ET	Browns (+3.5) at Bengals (-3.5)	46.5",
+#       "Saturday, December 21	1 p.m. ET	Texans (+4.5) at Chiefs (-4.5)	47",
+#       "Saturday, December 21	4:30 p.m. ET	Steelers (+6) at Ravens (-6)	46",
+#       "Sunday, December 22	1 p.m. ET	Giants (+4.5) at Falcons (-4.5)	44.5",
+#       "Sunday, December 22	1 p.m. ET	Titans (+3.5) at Colts (-3.5)	44.5",
+#       "Sunday, December 22	1 p.m. ET	Rams (+3) at Jets (-3)	47.5",
+#       "Sunday, December 22	1 p.m. ET	Patriots (+7.5) at Bills (-7.5)	44.5",
+#       "Sunday, December 22	1 p.m. ET	Eagles (-3) at Commanders (+3)	46.5",
+#       "Sunday, December 22	1 p.m. ET	Cardinals (-1) at Panthers (+1)	45.5",
+#       "Sunday, December 22	1 p.m. ET	Lions (-2) at Bears (+2)	48",
+#       "Sunday, December 22	4:05 p.m. ET	Broncos (+3.5) at Chargers (-3.5)	45",
+#       "Sunday, December 22	4:05 p.m. ET	Vikings (+2) at Seahawks (-2)	45.5",
+#       "Sunday, December 22	4:25 p.m. ET	49ers (-1) at Dolphins (+1)	49",
+#       "Sunday, December 22	4:25 p.m. ET	Jaguars (-1) at Raiders (+1)	45.5",
+#       "Sunday, December 22	8:20 p.m. ET	Buccaneers (+4.5) at Cowboys (-4.5)	46.5",
+#       "Monday, December 23	8:15 p.m. ET	Saints (+5) at Packers (-5)	45",
+#       "Wednesday, December 25	1:05 p.m. ET	Chiefs (-4) at Steelers (+4)	43",
+#       "Wednesday, December 25	4:30 p.m. ET	Ravens (-1.5) at Texans (+1.5)	46.5",
+#       "Thursday, December 26	8:15 p.m. ET	Seahawks (+3.5) at Bears (-3.5)	45.5",
+#       "Sunday, December 29	1 p.m. ET	Colts (-2) at Giants (+2)	43.5",
+#       "Sunday, December 29	1 p.m. ET	Falcons (-2) at Commanders (+2)	46",
+#       "Sunday, December 29	1 p.m. ET	Panthers (+4.5) at Buccaneers (-4.5)	43.5",
+#       "Sunday, December 29	1 p.m. ET	Raiders (+2) at Saints (-2)	43",
+#       "Sunday, December 29	1 p.m. ET	Packers (-2) at Vikings (+2)	45.5",
+#       "Sunday, December 29	1 p.m. ET	Chargers (-2.5) at Patriots (+2.5)	41",
+#       "Sunday, December 29	1 p.m. ET	Titans (+4) at Jaguars (-4)	46",
+#       "Sunday, December 29	1 p.m. ET	Broncos (+7.5) at Bengals (-7.5)	45.5",
+#       "Sunday, December 29	1 p.m. ET	Jets (+2.5) at Bills (-2.5)	45.5",
+#       "Sunday, December 29	4:05 p.m. ET	Cardinals (+5) at Rams (-5)	48.5",
+#       "Sunday, December 29	4:25 p.m. ET	Cowboys (+2) at Eagles (-2)	47",
+#       "Sunday, December 29	8:20 p.m. ET	Dolphins (+2) at Browns (-2)	44.5",
+#       "Monday, December 30	8:15 p.m. ET	Lions (+4.5) at 49ers (-4.5)	49.5"
+#     )
+#   ) %>% 
+#   mutate(
+#     team_home = str_remove(str_extract(value, "at [A-Z][a-z]+"), "^at "),
+#     team_home = replace_na(team_home, "SF"),
+#     team_away = str_extract(str_trim(str_remove(value, "^.+ ET")), "^[A-Z][a-z]+"),
+#     team_away = replace_na(team_away, "SF"),
+#     across(
+#       c(team_home, team_away),
+#       ~ case_match(
+#         ., 
+#         "Chiefs" ~ "KC", 
+#         "Eagles" ~ "PHI", 
+#         "Bills" ~ "BUF", 
+#         "Bengals" ~ "CIN", 
+#         "Colts" ~ "IND", 
+#         "Bears" ~ "CHI", 
+#         "Dolphins" ~ "MIA", 
+#         "Giants" ~ "NYG", 
+#         "Saints" ~ "NO", 
+#         "Falcons" ~ "ATL", 
+#         "Chargers" ~ "LAC", 
+#         "Seahawks" ~ "SEA", 
+#         "Buccaneers" ~ "TB", 
+#         "Browns" ~ "CLE", 
+#         "Lions" ~ "DET", 
+#         "Cowboys" ~ "DAL", 
+#         "Packers" ~ "GB", 
+#         "Titans" ~ "TEN", 
+#         "Vikings" ~ "MIN", 
+#         "Patriots" ~ "NE", 
+#         "Commanders" ~ "WAS", 
+#         "Panthers" ~ "CAR", 
+#         "Jaguars" ~ "JAX", 
+#         "Ravens" ~ "BAL", 
+#         "Cardinals" ~ "ARI", 
+#         "Broncos" ~ "DEN", 
+#         "Texans" ~ "HOU", 
+#         "Jets" ~ "NYJ", 
+#         "Steelers" ~ "PIT", 
+#         "Raiders" ~ "LV", 
+#         "Rams" ~ "LA",
+#         .default = .
+#       )
+#     ),
+#     total_line = str_extract_all(value, "\\d+$|\\d+.\\d+$"),
+#     # spread_line = str_remove(value, "\\d+$|\\d+.\\d+$"),
+#     spread_line_raw = str_remove_all(str_extract(str_trim(str_remove(str_remove(value, "\\d+$|\\d+.\\d+$"), "in Brazil|in London"), ),  "\\([+-]\\d+\\)$|\\([+-]\\d+.\\d+\\)$"), "\\(|\\)"),
+#     spread_line = -as.double(str_remove(spread_line_raw, "^\\+")),
+#     team_game = str_c(team_away, "_", team_home)
+#   )
 
 df_totals_profit_2024 =
   df_open_lines_2024 %>% 
@@ -9166,8 +10992,8 @@ df_totals_profit_2024 =
   left_join(df_game_sims_2024, by = "game_id") %>% 
   left_join(df_szn_all %>% distinct(game_id, total_line, spread_line) %>% rename(total_line_current = total_line), by = "game_id") %>% 
   mutate(
-    over_odds = -112, 
-    under_odds = -112,
+    # over_odds = -112, 
+    # under_odds = -112,
     over_odds_current = -112, 
     under_odds_current = -112,
     p_over = map_dbl(total_sim_adj, ~ mean(.x > total_line, na.rm = T)),
@@ -9186,18 +11012,18 @@ df_totals_profit_2024 =
         1 + 100 / abs(under_odds_current),
         1 + under_odds_current / 100
       ),
-    odds_over_dec =
-      if_else(
-        over_odds < 0,
-        1 + 100 / abs(over_odds),
-        1 + over_odds / 100
-      ),
-    odds_under_dec =
-      if_else(
-        under_odds < 0,
-        1 + 100 / abs(under_odds),
-        1 + under_odds / 100
-      ),
+    odds_over_dec = total_score_over_open,
+      # if_else(
+      #   over_odds < 0,
+      #   1 + 100 / abs(over_odds),
+      #   1 + over_odds / 100
+      # ),
+    odds_under_dec = total_score_under_open,
+      # if_else(
+      #   under_odds < 0,
+      #   1 + 100 / abs(under_odds),
+      #   1 + under_odds / 100
+      # ),
     ev_over_current  = p_over_current  * (odds_over_current_dec  - 1) - (1 - p_over_current),
     ev_under_current = p_under_current * (odds_under_current_dec - 1) - (1 - p_under_current),
     ev_over  = p_over  * (odds_over_dec - 1) - (1 - p_over),
@@ -9281,26 +11107,26 @@ df_spreads_profit_2024 =
   left_join(df_game_sims_2024, by = "game_id") %>% 
   left_join(df_szn_all %>% distinct(game_id, total_line, spread_line) %>% rename(spread_line_current = spread_line), by = "game_id") %>% 
   mutate(
-    home_odds = -112, 
-    away_odds = -112,
+    # home_odds = -112, 
+    # away_odds = -112,
     home_odds_current = -112, 
     away_odds_current = -112,
     p_home = map_dbl(spread_sim_adj, ~ mean(.x > spread_line, na.rm = T)),
     p_away = 1 - p_home,
     p_home_current = map_dbl(spread_sim_adj, ~ mean(.x > spread_line_current, na.rm = T)),
     p_away_current = 1 - p_home_current,
-    odds_home_dec =
-      if_else(
-        home_odds < 0,
-        1 + 100 / abs(home_odds),
-        1 + home_odds / 100
-      ),
-    odds_away_dec =
-      if_else(
-        away_odds < 0,
-        1 + 100 / abs(away_odds),
-        1 + away_odds / 100
-      ),
+    odds_home_dec = home_line_odds_open,
+      # if_else(
+      #   home_odds < 0,
+      #   1 + 100 / abs(home_odds),
+      #   1 + home_odds / 100
+      # ),
+    odds_away_dec = away_line_odds_open,
+      # if_else(
+      #   away_odds < 0,
+      #   1 + 100 / abs(away_odds),
+      #   1 + away_odds / 100
+      # ),
     odds_home_current_dec =
       if_else(
         home_odds_current < 0,
@@ -9395,7 +11221,8 @@ df_totals_profit_2024 %>%
   # filter(week != 18) %>% 
   group_by(week) %>% 
   summarise(
-    profit_tot = sum(profit)
+    profit_tot = sum(profit),
+    n_bets_tot = n()
   ) %>% 
   # rows_insert(
   #   tibble(
@@ -9412,28 +11239,32 @@ df_totals_profit_2024 %>%
       # filter(week != 18) %>%
       group_by(week) %>%
       summarise(
-        profit_spread = sum(profit)
+        profit_spread = sum(profit),
+        n_bets_spread = n()
       ),
     by = "week"
   ) %>%
   mutate(
     across(everything(), ~ replace_na(., 0)),
     week = as.character(week),
-    profit_ovr = profit_tot + profit_spread
+    profit_ovr = profit_tot + profit_spread,
+    n_bets = n_bets_tot + n_bets_spread
   ) %>% 
   rows_insert(
     tibble(
       week = "Season",
       profit_tot = sum(.$profit_tot, na.rm = T),
       profit_spread = sum(.$profit_spread, na.rm = T),
-      profit_ovr = sum(.$profit_ovr, na.rm = T)
+      profit_ovr = sum(.$profit_ovr, na.rm = T),
+      n_bets = sum(.$n_bets, na.rm = T)
     ),
     by = "week"
   ) %>% 
   mutate(across(starts_with("profit_"), ~ round(., 1))) %>% 
-  select(week, profit_tot, profit_spread, profit_ovr) %>% 
+  select(week, n_bets, profit_tot, profit_spread, profit_ovr) %>% 
   labelled::set_variable_labels(
     week = "Week",
+    n_bets = "Bets",
     profit_tot = "Totals",
     profit_spread = "Spreads",
     profit_ovr = "Overall"
@@ -9447,7 +11278,8 @@ df_totals_profit_2024 %>%
   # filter(week != 18) %>% 
   group_by(week) %>% 
   summarise(
-    profit_tot = sum(profit_current)
+    profit_tot = sum(profit_current),
+    n_bets = n()
   ) %>% 
   # rows_insert(
   #   tibble(
@@ -9478,14 +11310,16 @@ df_totals_profit_2024 %>%
       week = "Season",
       profit_tot = sum(.$profit_tot, na.rm = T),
       profit_spread = sum(.$profit_spread, na.rm = T),
-      profit_ovr = sum(.$profit_ovr, na.rm = T)
+      profit_ovr = sum(.$profit_ovr, na.rm = T),
+      n_bets = sum(.$n_bets, na.rm = T)
     ),
     by = "week"
   ) %>% 
   mutate(across(starts_with("profit_"), ~ round(., 1))) %>% 
-  select(week, profit_tot, profit_spread, profit_ovr) %>% 
+  select(week, n_bets, profit_tot, profit_spread, profit_ovr) %>% 
   labelled::set_variable_labels(
     week = "Week",
+    n_bets = "Bets",
     profit_tot = "Totals",
     profit_spread = "Spreads",
     profit_ovr = "Overall"
@@ -9532,6 +11366,119 @@ resid_sd_2025 =
 df_total_team_test_2025 = 
   df_total_team_train_id %>% 
   filter(as.integer(str_extract(game_id, "^\\d+")) == 2025)
+
+df_total_correct_train_2025 = 
+  df_team_total_spread_rolling %>% 
+  left_join(
+    df_team_total_spread_rolling %>% 
+      group_by(game_id) %>% 
+      mutate(
+        team_opp = 
+          case_when(
+            row_number() == 1 ~ lead(team),
+            row_number() == 2 ~ lag(team),
+            .default = NA
+          )
+      ) %>% 
+      relocate(team_opp, .after = team) %>% 
+      ungroup() %>% 
+      select(game_id, team_opp, starts_with("prior_"), qb_cont, rest_days, travel_km) %>% 
+      rename_with(~ str_c(., "_opp"), everything() & -c(game_id, team_opp)) %>% 
+      rename(team = team_opp),
+    by = c("game_id", "team")
+  ) %>% 
+  filter(season != 2025) %>%
+  # left_join(field_game_df, by = "game_id") %>%
+  filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
+  select(game_id, total_team, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
+  drop_na() %>% 
+  mutate(
+    pred_total_team = predict(mod_total_team_svm_2025, newdata = .)
+  ) %>% 
+  group_by(game_id) %>% 
+  summarise(
+    pred_total = sum(pred_total_team),
+    actual_total = sum(total_team)
+  ) %>% 
+  mutate(
+    resid_total = actual_total - pred_total
+  ) %>% 
+  left_join(df_field_game, by = "game_id") %>% 
+  ungroup() %>% 
+  select(resid_total, ends_with("_field"), division_game, international, wind, temp, time_start) %>% 
+  select(-c(time_start, international)) %>% 
+  drop_na()
+
+# ENET
+set.seed(37564)
+mod_total_correct_enet_2025 = train(resid_total ~ .,
+                 na.action = na.exclude, 
+                 data = df_total_correct_train_2025, 
+                 method = "glmnet", 
+                 tuneGrid = expand.grid(alpha = mod_total_correct_enet$bestTune[[1]],
+                                        lambda = mod_total_correct_enet$bestTune[[2]]),
+                 trControl = ctrl2)
+# mod_total_correct_enet$bestTune
+min(mod_total_correct_enet_2025$results$RMSE)
+
+# coef(mod_total_correct_enet_2023$finalModel, mod_total_correct_enet_2023$bestTune$lambda)
+
+df_spread_correct_train_2025 = 
+  df_team_total_spread_rolling %>% 
+  left_join(
+    df_team_total_spread_rolling %>% 
+      group_by(game_id) %>% 
+      mutate(
+        team_opp = 
+          case_when(
+            row_number() == 1 ~ lead(team),
+            row_number() == 2 ~ lag(team),
+            .default = NA
+          )
+      ) %>% 
+      relocate(team_opp, .after = team) %>% 
+      ungroup() %>% 
+      select(game_id, team_opp, starts_with("prior_"), qb_cont, rest_days, travel_km) %>% 
+      rename_with(~ str_c(., "_opp"), everything() & -c(game_id, team_opp)) %>% 
+      rename(team = team_opp),
+    by = c("game_id", "team")
+  ) %>% 
+  filter(season != 2025) %>%
+  # left_join(field_game_df, by = "game_id") %>%
+  filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
+  select(game_id, result, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
+  drop_na() %>% 
+  mutate(
+    pred_total_team = predict(mod_total_team_svm_2025, newdata = .),
+    rest_days_diff = rest_days - rest_days_opp
+  ) %>% 
+  group_by(game_id) %>% 
+  mutate(
+    pred_spread = pred_total_team - lead(pred_total_team)
+  ) %>% 
+  drop_na() %>% 
+  mutate(
+    resid_spread = result - pred_spread
+  ) %>% 
+  left_join(df_field_game, by = "game_id") %>% 
+  ungroup() %>% 
+  select(resid_spread, ends_with("_field"), division_game, international, wind, temp, time_start) %>% 
+  select(-c(time_start, international)) %>% 
+  drop_na()
+
+# ENET
+set.seed(37564)
+mod_spread_correct_enet_2025 = train(resid_spread ~ .,
+                 na.action = na.exclude, 
+                 data = df_spread_correct_train_2025, 
+                 method = "glmnet", 
+                 tuneGrid = expand.grid(alpha = mod_total_correct_enet$bestTune[[1]],
+                                        lambda = mod_total_correct_enet$bestTune[[2]]),
+                 trControl = ctrl2)
+mod_spread_correct_enet_2025$bestTune
+min(mod_spread_correct_enet_2025$results$RMSE)
+
+# coef(mod_spread_correct_enet_2022$finalModel, mod_spread_correct_enet_2022$bestTune$lambda)
 
 set.seed(37564)
 df_team_sims_2025 =
@@ -9592,9 +11539,9 @@ df_pred_total_spread_adj_2025 =
   drop_na() %>% 
   ungroup() %>% 
   mutate(
-    total_adjust = predict(mod_total_correct_enet, newdata = .),
+    total_adjust = predict(mod_total_correct_enet_2025, newdata = .),
     total_game_adj = total_game + total_adjust,
-    spread_adjust = predict(mod_spread_correct_enet, newdata = .),
+    spread_adjust = predict(mod_spread_correct_enet_2025, newdata = .),
     spread_game_adj = spread_game + spread_adjust,
     spread_adj_label =
       case_when(
@@ -9615,58 +11562,121 @@ df_game_sims_2025 =
     spread_sim_adj = list(sim[[1]] - sim[[2]] + spread_adjust)
   )
 
-df_open_lines_2025 = 
-  readxl::read_xlsx("betting_lines_open_2025.xlsx", sheet = "Sheet1") %>% 
+df_open_lines_2025 =
+  read_xlsx("nfl_game_lines_aus.xlsx") %>% 
+  janitor::clean_names() %>% 
   mutate(
-    game_id = 
-      case_when(
-        str_length(week) < 2 ~ str_c("2025_0", week, "_", game),
-        str_length(week) == 2 ~ str_c("2025_", week, "_", game),
+    across(
+      c(home_team, away_team),
+      ~ case_match(
+        .,
+        "Arizona Cardinals" ~ "ARI", 
+        "Atlanta Falcons" ~ "ATL", 
+        "Baltimore Ravens" ~ "BAL", 
+        "Buffalo Bills" ~ "BUF", 
+        "Carolina Panthers" ~ "CAR", 
+        "Chicago Bears" ~ "CHI", 
+        "Cincinnati Bengals" ~ "CIN", 
+        "Cleveland Browns" ~ "CLE", 
+        "Dallas Cowboys" ~ "DAL", 
+        "Denver Broncos" ~ "DEN", 
+        "Detroit Lions" ~ "DET", 
+        "Green Bay Packers" ~ "GB", 
+        "Houston Texans" ~ "HOU", 
+        "Indianapolis Colts" ~ "IND", 
+        "Jacksonville Jaguars" ~ "JAX", 
+        "Kansas City Chiefs" ~ "KC", 
+        "Las Vegas Raiders" ~ "LV", 
+        "Los Angeles Chargers" ~ "LAC", 
+        "Los Angeles Rams" ~ "LA", 
+        "Miami Dolphins" ~ "MIA", 
+        "Minnesota Vikings" ~ "MIN", 
+        "New England Patriots" ~ "NE", 
+        "New Orleans Saints" ~ "NO", 
+        "New York Giants" ~ "NYG", 
+        "New York Jets" ~ "NYJ", 
+        "Oakland Raiders" ~ "LV", 
+        "Philadelphia Eagles" ~ "PHI", 
+        "Pittsburgh Steelers" ~ "PIT", 
+        "San Diego Chargers" ~ "LAC", 
+        "San Francisco 49ers" ~ "SF", 
+        "Seattle Seahawks" ~ "SEA", 
+        "St. Louis Rams" ~ "LA", 
+        "Tampa Bay Buccaneers" ~ "TB", 
+        "Tennessee Titans" ~ "TEN", 
+        "Washington Commanders" ~ "WAS", 
+        "Washington Football Team" ~ "WAS", 
+        "Washington Redskins" ~ "WAS",
         .default = NA
       )
+    ),
+    team_game = str_c(away_team, "_", home_team)
   ) %>% 
-  relocate(game_id) %>% 
-  filter(week %in% c(2:18))
+  rename(
+    team_home = home_team, 
+    team_away = away_team,
+    total_line = total_score_open
+  ) %>% 
+  filter(between(as.Date(date), as.Date("2025-09-01"),  as.Date("2026-08-01"))) %>% 
+  mutate(
+    week = ceiling(as.integer(as.Date(date) - as.Date("2025-09-03")) / 7),
+    spread_line = -home_line_open
+  ) %>% 
+  select(week, team_home, team_away, spread_line, home_line_odds_open, away_line_odds_open, total_line, total_score_over_open, total_score_under_open) %>% 
+  filter(between(week, 2, 18))
+
+# df_open_lines_2025 = 
+#   readxl::read_xlsx("betting_lines_open_2025.xlsx", sheet = "Sheet1") %>% 
+#   mutate(
+#     game_id = 
+#       case_when(
+#         str_length(week) < 2 ~ str_c("2025_0", week, "_", game),
+#         str_length(week) == 2 ~ str_c("2025_", week, "_", game),
+#         .default = NA
+#       )
+#   ) %>% 
+#   relocate(game_id) %>% 
+#   filter(week %in% c(2:18))
 
 df_totals_profit_2025 =
   df_open_lines_2025 %>% 
   # left_join(df_pred_total_spread_adj, by = c("team_home", "team_away")) %>% 
-  left_join(df_pred_total_spread_adj_2025, by = c("game_id")) %>% 
+  left_join(df_pred_total_spread_adj_2025, by = c("team_home", "team_away")) %>% 
   left_join(df_game_sims_2025, by = "game_id") %>% 
   left_join(df_szn_all %>% distinct(game_id, total_line, spread_line) %>% rename(total_line_current = total_line), by = "game_id") %>% 
   mutate(
-    over_odds = -112, 
-    under_odds = -112,
+    # over_odds = -112, 
+    # under_odds = -112,
     over_odds_current = -112, 
     under_odds_current = -112,
     p_over = map_dbl(total_sim_adj, ~ mean(.x > total_line, na.rm = T)),
     p_under = 1 - p_over,
     p_over_current  = map_dbl(total_sim_adj, ~ mean(.x > total_line_current, na.rm = T)),
     p_under_current = 1 - p_over_current,
-    odds_over_current_dec =
+    odds_over_current_dec = 
       if_else(
         over_odds_current < 0,
         1 + 100 / abs(over_odds_current),
         1 + over_odds_current / 100
       ),
-    odds_under_current_dec =
+    odds_under_current_dec = total_score_under_open,
       if_else(
         under_odds_current < 0,
         1 + 100 / abs(under_odds_current),
         1 + under_odds_current / 100
       ),
-    odds_over_dec =
-      if_else(
-        over_odds < 0,
-        1 + 100 / abs(over_odds),
-        1 + over_odds / 100
-      ),
-    odds_under_dec =
-      if_else(
-        under_odds < 0,
-        1 + 100 / abs(under_odds),
-        1 + under_odds / 100
-      ),
+    odds_over_dec = total_score_over_open,
+      # if_else(
+      #   over_odds < 0,
+      #   1 + 100 / abs(over_odds),
+      #   1 + over_odds / 100
+      # ),
+    odds_under_dec = total_score_under_open,
+      # if_else(
+      #   under_odds < 0,
+      #   1 + 100 / abs(under_odds),
+      #   1 + under_odds / 100
+      # ),
     ev_over_current  = p_over_current  * (odds_over_current_dec  - 1) - (1 - p_over_current),
     ev_under_current = p_under_current * (odds_under_current_dec - 1) - (1 - p_under_current),
     ev_over  = p_over  * (odds_over_dec - 1) - (1 - p_over),
@@ -9747,30 +11757,30 @@ df_totals_profit_2025 =
 df_spreads_profit_2025 =
   df_open_lines_2025 %>% 
   # left_join(df_pred_total_spread_adj, by = c("team_home", "team_away")) %>% 
-  left_join(df_pred_total_spread_adj_2025, by = c("game_id")) %>% 
+  left_join(df_pred_total_spread_adj_2025, by = c("team_home", "team_away")) %>% 
   left_join(df_game_sims_2025, by = "game_id") %>% 
   left_join(df_szn_all %>% distinct(game_id, total_line, spread_line) %>% rename(spread_line_current = spread_line), by = "game_id") %>% 
   mutate(
-    home_odds = -112, 
-    away_odds = -112,
+    # home_odds = -112, 
+    # away_odds = -112,
     home_odds_current = -112, 
     away_odds_current = -112,
     p_home = map_dbl(spread_sim_adj, ~ mean(.x > spread_line, na.rm = T)),
     p_away = 1 - p_home,
     p_home_current = map_dbl(spread_sim_adj, ~ mean(.x > spread_line_current, na.rm = T)),
     p_away_current = 1 - p_home_current,
-    odds_home_dec =
-      if_else(
-        home_odds < 0,
-        1 + 100 / abs(home_odds),
-        1 + home_odds / 100
-      ),
-    odds_away_dec =
-      if_else(
-        away_odds < 0,
-        1 + 100 / abs(away_odds),
-        1 + away_odds / 100
-      ),
+    odds_home_dec = home_line_odds_open,
+      # if_else(
+      #   home_odds < 0,
+      #   1 + 100 / abs(home_odds),
+      #   1 + home_odds / 100
+      # ),
+    odds_away_dec = away_line_odds_open,
+      # if_else(
+      #   away_odds < 0,
+      #   1 + 100 / abs(away_odds),
+      #   1 + away_odds / 100
+      # ),
     odds_home_current_dec =
       if_else(
         home_odds_current < 0,
@@ -9865,7 +11875,8 @@ df_totals_profit_2025 %>%
   # filter(week != 18) %>% 
   group_by(week) %>% 
   summarise(
-    profit_tot = sum(profit)
+    profit_tot = sum(profit),
+    n_bets_tot = n()
   ) %>% 
   # rows_insert(
   #   tibble(
@@ -9882,28 +11893,32 @@ df_totals_profit_2025 %>%
       # filter(week != 18) %>%
       group_by(week) %>%
       summarise(
-        profit_spread = sum(profit)
+        profit_spread = sum(profit),
+        n_bets_spread = n()
       ),
     by = "week"
   ) %>%
   mutate(
     across(everything(), ~ replace_na(., 0)),
     week = as.character(week),
-    profit_ovr = profit_tot + profit_spread
+    profit_ovr = profit_tot + profit_spread,
+    n_bets = n_bets_tot + n_bets_spread
   ) %>% 
   rows_insert(
     tibble(
       week = "Season",
       profit_tot = sum(.$profit_tot, na.rm = T),
       profit_spread = sum(.$profit_spread, na.rm = T),
-      profit_ovr = sum(.$profit_ovr, na.rm = T)
+      profit_ovr = sum(.$profit_ovr, na.rm = T),
+      n_bets = sum(.$n_bets, na.rm = T)
     ),
     by = "week"
   ) %>% 
   mutate(across(starts_with("profit_"), ~ round(., 1))) %>% 
-  select(week, profit_tot, profit_spread, profit_ovr) %>% 
+  select(week, n_bets, profit_tot, profit_spread, profit_ovr) %>% 
   labelled::set_variable_labels(
     week = "Week",
+    n_bets = "Bets",
     profit_tot = "Totals",
     profit_spread = "Spreads",
     profit_ovr = "Overall"
@@ -9917,7 +11932,8 @@ df_totals_profit_2025 %>%
   # filter(week != 18) %>% 
   group_by(week) %>% 
   summarise(
-    profit_tot = sum(profit_current)
+    profit_tot = sum(profit_current),
+    n_bets = n()
   ) %>% 
   # rows_insert(
   #   tibble(
@@ -9948,14 +11964,16 @@ df_totals_profit_2025 %>%
       week = "Season",
       profit_tot = sum(.$profit_tot, na.rm = T),
       profit_spread = sum(.$profit_spread, na.rm = T),
-      profit_ovr = sum(.$profit_ovr, na.rm = T)
+      profit_ovr = sum(.$profit_ovr, na.rm = T),
+      n_bets = sum(.$n_bets, na.rm = T)
     ),
     by = "week"
   ) %>% 
   mutate(across(starts_with("profit_"), ~ round(., 1))) %>% 
-  select(week, profit_tot, profit_spread, profit_ovr) %>% 
+  select(week, n_bets, profit_tot, profit_spread, profit_ovr) %>% 
   labelled::set_variable_labels(
     week = "Week",
+    n_bets = "Bets",
     profit_tot = "Totals",
     profit_spread = "Spreads",
     profit_ovr = "Overall"
@@ -10381,6 +12399,1223 @@ df_edge_clv_totals %>%
   facet_wrap(~ season)
 
 ```
+
+# Props
+
+## WR
+
+```{r}
+# ------------------------------------------------------------------------------
+# 1. Load data
+# ------------------------------------------------------------------------------
+# load_player_stats() gives weekly, already-aggregated player stats (targets,
+# receptions, receiving_yards, receiving_air_yards, etc.) — no need to roll
+# your own from play-by-play for v1.
+ 
+seasons <- 2022:2024
+ 
+player_stats <- load_player_stats(seasons = seasons, stat_type = "offense") %>%
+  filter(position %in% c("WR")) %>%   # keep RB/TE in for team target-share denominator context if you want; filter down to WR only below if you'd rather keep it clean
+  select(
+    player_id, player_display_name, position, recent_team, season, week,
+    season_type, targets, receptions, receiving_yards, receiving_air_yards
+  ) %>%
+  filter(season_type == "REG")
+ 
+# Team-level weekly targets, to compute target share and a proxy for team
+# pass-attempt volume without needing a separate team model yet.
+team_week_targets <- player_stats %>%
+  group_by(recent_team, season, week) %>%
+  summarise(team_targets = sum(targets, na.rm = TRUE), .groups = "drop")
+ 
+wr_stats <- player_stats %>%
+  filter(position == "WR") %>%
+  left_join(team_week_targets, by = c("recent_team", "season", "week")) %>%
+  mutate(
+    target_share = if_else(team_targets > 0, targets / team_targets, NA_real_),
+    ypt = if_else(targets > 0, receiving_yards / targets, NA_real_),
+    aot = if_else(targets > 0, receiving_air_yards / targets, NA_real_)
+  ) %>%
+  arrange(player_id, season, week)
+ 
+# ------------------------------------------------------------------------------
+# 2. Role filter — exclude players with no meaningful offensive role
+# ------------------------------------------------------------------------------
+# Trailing 8-game average targets >= 3, computed WITHOUT leakage (i.e. based
+# on games up to and including the current one, then we lag it below for
+# actual prediction — this filter step itself doesn't need to be lagged,
+# it's just deciding which player-seasons are worth modeling at all).
+ 
+wr_stats <- wr_stats %>%
+  group_by(player_id) %>%
+  mutate(
+    trailing8_targets_incl_current = slide_dbl(
+      targets, mean, na.rm = TRUE, .before = 7, .complete = FALSE
+    )
+  ) %>%
+  ungroup() %>%
+  filter(trailing8_targets_incl_current >= 3) %>%
+  select(-trailing8_targets_incl_current)
+ 
+# ------------------------------------------------------------------------------
+# 3. Lagged trailing features (targets share, YPT, team pass volume proxy)
+# ------------------------------------------------------------------------------
+# IMPORTANT: every rolling window below is shifted by 1 game (lag(., 1) after
+# the slide) so that week N's predictors only use weeks < N. This is what
+# keeps the backtest honest.
+ 
+roll_lagged <- function(x, window) {
+  # rolling mean over `window` games, EXCLUDING the current row, via lag+slide
+  lag(slide_dbl(x, mean, na.rm = TRUE, .before = window - 1, .complete = FALSE), 1)
+}
+ 
+wr_stats <- wr_stats %>%
+  arrange(player_id, season, week) %>%
+  group_by(player_id) %>%
+  mutate(
+    target_share_l3  = roll_lagged(target_share, 3),
+    target_share_l8  = roll_lagged(target_share, 8),
+    ypt_l8           = roll_lagged(ypt, 8),
+    aot_l8           = roll_lagged(aot, 8),
+    n_games_prior    = row_number() - 1   # how many prior games this player has in-window
+  ) %>%
+  ungroup()
+ 
+# Team pass-attempt proxy: trailing 8-game average of team targets (NOT the
+# current game's actual team targets — using the actual would leak future
+# information about game script/volume you wouldn't have pre-game).
+team_week_targets <- team_week_targets %>%
+  arrange(recent_team, season, week) %>%
+  group_by(recent_team) %>%
+  mutate(team_targets_l8 = roll_lagged(team_targets, 8)) %>%
+  ungroup()
+ 
+wr_stats <- wr_stats %>%
+  left_join(
+    team_week_targets %>% select(recent_team, season, week, team_targets_l8),
+    by = c("recent_team", "season", "week")
+  )
+ 
+# ------------------------------------------------------------------------------
+# 4. Shrinkage for YPT
+# ------------------------------------------------------------------------------
+# Small-sample YPT is noisy (one 60-yard catch swings it hard). Shrink each
+# player's trailing YPT toward the position-average YPT for that season,
+# weighted by how many games of history they have.
+# shrunk_YPT = (n / (n + k)) * player_YPT + (k / (n + k)) * league_avg_YPT
+# k is a tunable shrinkage constant — start at 8 (i.e. "trust the player
+# number as much as league average once they have ~8 games").
+ 
+k_shrink <- 8
+ 
+league_ypt_by_season <- wr_stats %>%
+  group_by(season) %>%
+  summarise(league_ypt = mean(ypt, na.rm = TRUE), .groups = "drop")
+ 
+wr_stats <- wr_stats %>%
+  left_join(league_ypt_by_season, by = "season") %>%
+  mutate(
+    n_for_shrink = pmin(n_games_prior, 8),  # cap "n" at the trailing window size
+    shrunk_ypt = if_else(
+      !is.na(ypt_l8),
+      (n_for_shrink / (n_for_shrink + k_shrink)) * ypt_l8 +
+        (k_shrink / (n_for_shrink + k_shrink)) * league_ypt,
+      league_ypt  # if no prior YPT history at all, fall back fully to league avg
+    )
+  )
+ 
+# ------------------------------------------------------------------------------
+# 5. Projected targets and projected yards
+# ------------------------------------------------------------------------------
+# Projected target share: 60/40 blend of 3-game and 8-game trailing share.
+# Projected targets: blended share x trailing team pass-attempt proxy.
+ 
+wr_stats <- wr_stats %>%
+  mutate(
+    proj_target_share = 0.6 * target_share_l3 + 0.4 * target_share_l8,
+    proj_targets = proj_target_share * team_targets_l8,
+    proj_yards = proj_targets * shrunk_ypt
+  )
+ 
+# Drop rows where we don't have enough history to generate a real prediction
+model_data <- wr_stats %>%
+  filter(!is.na(proj_yards), !is.na(receiving_yards))
+ 
+# ------------------------------------------------------------------------------
+# 6. Baseline comparison model — dumb trailing-average yards
+# ------------------------------------------------------------------------------
+# If the decomposed model can't beat this, decomposition isn't earning its
+# complexity yet.
+ 
+model_data <- model_data %>%
+  group_by(player_id) %>%
+  mutate(
+    naive_proj_yards = roll_lagged(receiving_yards, 5)
+  ) %>%
+  ungroup() %>%
+  filter(!is.na(naive_proj_yards))
+ 
+# ------------------------------------------------------------------------------
+# 7. Time-based out-of-sample validation
+# ------------------------------------------------------------------------------
+# Train on seasons < test_season, evaluate on test_season. Since our
+# projections above are already purely lag-based (no fitted coefficients yet),
+# "training" here just means: compute error metrics only on held-out seasons,
+# so the exercise mirrors what a fitted model's walk-forward test would look
+# like once you add actual regression coefficients later.
+ 
+metrics_by_season <- function(df, pred_col, actual_col = "receiving_yards") {
+  df %>%
+    summarise(
+      n    = n(),
+      MAE  = mean(abs(.data[[actual_col]] - .data[[pred_col]])),
+      RMSE = sqrt(mean((.data[[actual_col]] - .data[[pred_col]])^2)),
+      R2   = 1 - sum((.data[[actual_col]] - .data[[pred_col]])^2) /
+                 sum((.data[[actual_col]] - mean(.data[[actual_col]]))^2)
+    )
+}
+ 
+test_seasons <- sort(unique(model_data$season))[-1]  # skip first season (no prior history to test against)
+ 
+oos_results <- map_dfr(test_seasons, function(s) {
+  test_df <- model_data %>% filter(season == s)
+ 
+  bind_rows(
+    metrics_by_season(test_df, "proj_yards")       %>% mutate(model = "decomposed", season = s),
+    metrics_by_season(test_df, "naive_proj_yards") %>% mutate(model = "naive_trailing5", season = s)
+  )
+})
+ 
+print(oos_results)
+ 
+# ------------------------------------------------------------------------------
+# 8. Calibration check: bucket by projected yards, compare avg projection to
+#    avg actual within each bucket (a crude calibration slope/intercept check)
+# ------------------------------------------------------------------------------
+ 
+calibration_check <- model_data %>%
+  mutate(proj_bucket = cut(proj_yards, breaks = seq(0, 160, by = 20))) %>%
+  group_by(proj_bucket) %>%
+  summarise(
+    n = n(),
+    avg_proj = mean(proj_yards),
+    avg_actual = mean(receiving_yards),
+    .groups = "drop"
+  )
+ 
+print(calibration_check)
+ 
+# ------------------------------------------------------------------------------
+# 9. Residual-based SD, bucketed by projection level
+# ------------------------------------------------------------------------------
+# Crude empirical SD per bucket, used to get a Normal-approximation P(Over)
+# for the betting layer below. (Flagged in the write-up: this understates
+# tail risk — fine for a v1 signal test, not for production sizing.)
+#
+# IMPORTANT: a bucket's SD estimate is only as good as its sample size. A
+# bucket with few observations can produce a noisy, sometimes too-SMALL SD by
+# chance — and a too-small SD is dangerous here, because it makes pnorm()
+# push probabilities toward 0/1, manufacturing large-looking "edges" out of
+# ordinary sampling noise rather than real predictive confidence. Shrink each
+# bucket's variance toward the OVERALL residual variance, weighted by that
+# bucket's sample size, the same way shrunk_ypt shrinks toward league_ypt
+# above. Small buckets end up close to the overall SD; buckets with plenty of
+# data keep close to their own empirical SD.
+ 
+overall_resid_sd <- model_data %>%
+  mutate(residual = receiving_yards - proj_yards) %>%
+  summarise(sd = sd(residual, na.rm = TRUE)) %>%
+  pull(sd)
+ 
+k_shrink_sd <- 30  # trust a bucket's own SD as much as the overall SD once it has ~30 obs
+ 
+sd_lookup <- model_data %>%
+  mutate(
+    residual = receiving_yards - proj_yards,
+    proj_bucket = cut(proj_yards, breaks = seq(0, 160, by = 20))
+  ) %>%
+  group_by(proj_bucket) %>%
+  summarise(
+    n = n(),
+    raw_resid_sd = sd(residual, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    resid_sd = sqrt(
+      (n / (n + k_shrink_sd)) * raw_resid_sd^2 +
+        (k_shrink_sd / (n + k_shrink_sd)) * overall_resid_sd^2
+    )
+  )
+ 
+print(sd_lookup)
+# Check this printout directly: any bucket where raw_resid_sd is much smaller
+# than resid_sd (the shrunk version) was likely running on a small n and
+# would otherwise have been producing overconfident, inflated "edges"
+# downstream. If most of your buckets have n well below ~30, consider
+# widening the bucket breaks (e.g. every 30-40 yards instead of 20) so each
+# bucket's own SD carries more real signal before shrinkage even kicks in.
+ 
+model_data <- model_data %>%
+  mutate(proj_bucket = cut(proj_yards, breaks = seq(0, 160, by = 20))) %>%
+  left_join(sd_lookup, by = "proj_bucket")
+ 
+# ------------------------------------------------------------------------------
+# 10. Betting layer — devig and edge calculation
+# ------------------------------------------------------------------------------
+# You'll need to supply your own sportsbook lines (this isn't in nflreadr).
+# Expected format: one row per player-game-week with the book's line and the
+# American odds on both sides, e.g.:
+#
+#   player_display_name | season | week | book_line | over_odds | under_odds
+#
+# Plug that in as `lines_df` below and join it to model_data.
+ 
+devig_two_way <- function(over_odds, under_odds) {
+  american_to_prob <- function(odds) {
+    if_else(odds > 0, 100 / (odds + 100), -odds / (-odds + 100))
+  }
+  p_over_raw  <- american_to_prob(over_odds)
+  p_under_raw <- american_to_prob(under_odds)
+  overround   <- p_over_raw + p_under_raw
+  tibble(
+    market_p_over  = p_over_raw / overround,
+    market_p_under = p_under_raw / overround,
+    vig            = overround - 1
+  )
+}
+ 
+# Example of how you'd wire it up once you have lines_df:
+#
+# betting_df <- model_data %>%
+#   inner_join(lines_df, by = c("player_display_name", "season", "week")) %>%
+#   mutate(
+#     devig = pmap(list(over_odds, under_odds), devig_two_way)
+#   ) %>%
+#   unnest(devig) %>%
+#   mutate(
+#     model_p_over = 1 - pnorm(book_line, mean = proj_yards, sd = resid_sd),
+#     edge = model_p_over - market_p_over
+#   )
+#
+# betting_df %>%
+#   mutate(edge_bucket = cut(edge, breaks = seq(-0.3, 0.3, by = 0.05))) %>%
+#   group_by(edge_bucket) %>%
+#   summarise(
+#     n = n(),
+#     # once you have actual results, compute hit rate here:
+#     # hit_rate = mean(actual_over_result),
+#     avg_edge = mean(edge)
+#   )
+
+
+
+
+
+
+
+
+# ==============================================================================
+# WR Receiving Yards — v1 Baseline Model
+# ==============================================================================
+# Goal: NOT accuracy. Goal: a fast, honest read on whether a dead-simple
+# targets x yards-per-target decomposition shows any edge against closing
+# lines, before investing in the full opportunity/efficiency/ML pipeline.
+#
+# Core model:
+#   Projected Yards = Projected Targets x Shrunk YPT
+#
+# Everything predictor-side is lagged (uses only data known before kickoff).
+# ==============================================================================
+
+library(nflreadr)
+library(dplyr)
+library(tidyr)
+library(slider)
+library(purrr)
+
+# ------------------------------------------------------------------------------
+# 1. Load data
+# ------------------------------------------------------------------------------
+# load_player_stats() gives weekly, already-aggregated player stats (targets,
+# receptions, receiving_yards, receiving_air_yards, etc.) — no need to roll
+# your own from play-by-play for v1.
+
+seasons <- 2022:2026  # must be contiguous — trailing windows span season boundaries,
+                       # so skipping a season (e.g. 2022:2024 + 2026) would silently
+                       # treat the last game of 2024 as immediately prior to 2026 Wk 1
+
+player_stats <- load_player_stats(seasons = seasons, stat_type = "offense") %>%
+  filter(position %in% c("WR", "TE", "RB")) %>%   # keep RB/TE in for team target-share denominator context if you want; filter down to WR only below if you'd rather keep it clean
+  select(
+    player_id, player_display_name, position, team, season, week,
+    season_type, targets, receptions, receiving_yards, receiving_air_yards
+  ) %>%
+  filter(season_type == "REG")
+
+# Team-level weekly targets, to compute target share and a proxy for team
+# pass-attempt volume without needing a separate team model yet.
+team_week_targets <- player_stats %>%
+  group_by(team, season, week) %>%
+  summarise(team_targets = sum(targets, na.rm = TRUE), .groups = "drop")
+
+wr_stats <- player_stats %>%
+  filter(position == "WR") %>%
+  left_join(team_week_targets, by = c("team", "season", "week")) %>%
+  mutate(
+    target_share = if_else(team_targets > 0, targets / team_targets, NA_real_),
+    ypt = if_else(targets > 0, receiving_yards / targets, NA_real_),
+    aot = if_else(targets > 0, receiving_air_yards / targets, NA_real_)
+  ) %>%
+  arrange(player_id, season, week)
+
+# ------------------------------------------------------------------------------
+# 2. Role filter — exclude players with no meaningful offensive role
+# ------------------------------------------------------------------------------
+# Trailing 8-game average targets >= 3, computed WITHOUT leakage (i.e. based
+# on games up to and including the current one, then we lag it below for
+# actual prediction — this filter step itself doesn't need to be lagged,
+# it's just deciding which player-seasons are worth modeling at all).
+
+wr_stats <- wr_stats %>%
+  group_by(player_id) %>%
+  mutate(
+    trailing8_targets_incl_current = slide_dbl(
+      targets, mean, na.rm = TRUE, .before = 7, .complete = FALSE
+    )
+  ) %>%
+  ungroup() %>%
+  filter(trailing8_targets_incl_current >= 3) %>%
+  select(-trailing8_targets_incl_current)
+
+# ------------------------------------------------------------------------------
+# 3. Lagged trailing features (targets share, YPT, team pass volume proxy)
+# ------------------------------------------------------------------------------
+# IMPORTANT: every rolling window below is shifted by 1 game (lag(., 1) after
+# the slide) so that week N's predictors only use weeks < N. This is what
+# keeps the backtest honest.
+
+roll_lagged <- function(x, window) {
+  # rolling mean over `window` games, EXCLUDING the current row, via lag+slide
+  lag(slide_dbl(x, mean, na.rm = TRUE, .before = window - 1, .complete = FALSE), 1)
+}
+
+wr_stats <- wr_stats %>%
+  arrange(player_id, season, week) %>%
+  group_by(player_id) %>%
+  mutate(
+    target_share_l3  = roll_lagged(target_share, 3),
+    target_share_l8  = roll_lagged(target_share, 8),
+    ypt_l8           = roll_lagged(ypt, 8),
+    aot_l8           = roll_lagged(aot, 8),
+    n_games_prior    = row_number() - 1   # how many prior games this player has in-window
+  ) %>%
+  ungroup()
+
+# Team pass-attempt proxy: trailing 8-game average of team targets (NOT the
+# current game's actual team targets — using the actual would leak future
+# information about game script/volume you wouldn't have pre-game).
+team_week_targets <- team_week_targets %>%
+  arrange(team, season, week) %>%
+  group_by(team) %>%
+  mutate(team_targets_l8 = roll_lagged(team_targets, 8)) %>%
+  ungroup()
+
+wr_stats <- wr_stats %>%
+  left_join(
+    team_week_targets %>% select(team, season, week, team_targets_l8),
+    by = c("team", "season", "week")
+  )
+
+# ------------------------------------------------------------------------------
+# 4. Shrinkage for YPT
+# ------------------------------------------------------------------------------
+# Small-sample YPT is noisy (one 60-yard catch swings it hard). Shrink each
+# player's trailing YPT toward the position-average YPT for that season,
+# weighted by how many games of history they have.
+# shrunk_YPT = (n / (n + k)) * player_YPT + (k / (n + k)) * league_avg_YPT
+# k is a tunable shrinkage constant — start at 8 (i.e. "trust the player
+# number as much as league average once they have ~8 games").
+
+k_shrink <- 8
+
+league_ypt_by_season <- wr_stats %>%
+  group_by(season) %>%
+  summarise(league_ypt = mean(ypt, na.rm = TRUE), .groups = "drop")
+
+wr_stats <- wr_stats %>%
+  left_join(league_ypt_by_season, by = "season") %>%
+  mutate(
+    n_for_shrink = pmin(n_games_prior, 8),  # cap "n" at the trailing window size
+    shrunk_ypt = if_else(
+      !is.na(ypt_l8),
+      (n_for_shrink / (n_for_shrink + k_shrink)) * ypt_l8 +
+        (k_shrink / (n_for_shrink + k_shrink)) * league_ypt,
+      league_ypt  # if no prior YPT history at all, fall back fully to league avg
+    )
+  )
+
+# ------------------------------------------------------------------------------
+# 5. Projected targets and projected yards
+# ------------------------------------------------------------------------------
+# Projected target share: 60/40 blend of 3-game and 8-game trailing share.
+# Projected targets: blended share x trailing team pass-attempt proxy.
+
+wr_stats <- wr_stats %>%
+  mutate(
+    proj_target_share = 0.6 * target_share_l3 + 0.4 * target_share_l8,
+    proj_targets = proj_target_share * team_targets_l8,
+    proj_yards = proj_targets * shrunk_ypt
+  )
+
+# Drop rows where we don't have enough history to generate a real prediction
+model_data <- wr_stats %>%
+  filter(!is.na(proj_yards), !is.na(receiving_yards))
+
+# ------------------------------------------------------------------------------
+# 6. Baseline comparison model — dumb trailing-average yards
+# ------------------------------------------------------------------------------
+# If the decomposed model can't beat this, decomposition isn't earning its
+# complexity yet.
+
+model_data <- model_data %>%
+  group_by(player_id) %>%
+  mutate(
+    naive_proj_yards = roll_lagged(receiving_yards, 5)
+  ) %>%
+  ungroup() %>%
+  filter(!is.na(naive_proj_yards))
+
+# ------------------------------------------------------------------------------
+# 7. Time-based out-of-sample validation
+# ------------------------------------------------------------------------------
+# Train on seasons < test_season, evaluate on test_season. Since our
+# projections above are already purely lag-based (no fitted coefficients yet),
+# "training" here just means: compute error metrics only on held-out seasons,
+# so the exercise mirrors what a fitted model's walk-forward test would look
+# like once you add actual regression coefficients later.
+
+metrics_by_season <- function(df, pred_col, actual_col = "receiving_yards") {
+  df %>%
+    summarise(
+      n    = n(),
+      MAE  = mean(abs(.data[[actual_col]] - .data[[pred_col]])),
+      RMSE = sqrt(mean((.data[[actual_col]] - .data[[pred_col]])^2)),
+      R2   = 1 - sum((.data[[actual_col]] - .data[[pred_col]])^2) /
+                 sum((.data[[actual_col]] - mean(.data[[actual_col]]))^2)
+    )
+}
+
+test_seasons <- sort(unique(model_data$season))[-1]  # skip first season (no prior history to test against)
+
+oos_results <- map_dfr(test_seasons, function(s) {
+  test_df <- model_data %>% filter(season == s)
+
+  bind_rows(
+    metrics_by_season(test_df, "proj_yards")       %>% mutate(model = "decomposed", season = s),
+    metrics_by_season(test_df, "naive_proj_yards") %>% mutate(model = "naive_trailing5", season = s)
+  )
+})
+
+print(oos_results)
+
+# ------------------------------------------------------------------------------
+# 8. Calibration check: bucket by projected yards, compare avg projection to
+#    avg actual within each bucket (a crude calibration slope/intercept check)
+# ------------------------------------------------------------------------------
+
+calibration_check <- model_data %>%
+  mutate(proj_bucket = cut(proj_yards, breaks = seq(0, 160, by = 20))) %>%
+  group_by(proj_bucket) %>%
+  summarise(
+    n = n(),
+    avg_proj = mean(proj_yards),
+    avg_actual = mean(receiving_yards),
+    .groups = "drop"
+  )
+
+print(calibration_check)
+
+# ------------------------------------------------------------------------------
+# 9. Residual-based SD, bucketed by projection level
+# ------------------------------------------------------------------------------
+# Crude empirical SD per bucket, used to get a Normal-approximation P(Over)
+# for the betting layer below. (Flagged in the write-up: this understates
+# tail risk — fine for a v1 signal test, not for production sizing.)
+#
+# IMPORTANT: a bucket's SD estimate is only as good as its sample size. A
+# bucket with few observations can produce a noisy, sometimes too-SMALL SD by
+# chance — and a too-small SD is dangerous here, because it makes pnorm()
+# push probabilities toward 0/1, manufacturing large-looking "edges" out of
+# ordinary sampling noise rather than real predictive confidence. Shrink each
+# bucket's variance toward the OVERALL residual variance, weighted by that
+# bucket's sample size, the same way shrunk_ypt shrinks toward league_ypt
+# above. Small buckets end up close to the overall SD; buckets with plenty of
+# data keep close to their own empirical SD.
+ 
+overall_resid_sd <- model_data %>%
+  mutate(residual = receiving_yards - proj_yards) %>%
+  summarise(sd = sd(residual, na.rm = TRUE)) %>%
+  pull(sd)
+ 
+k_shrink_sd <- 30  # trust a bucket's own SD as much as the overall SD once it has ~30 obs
+ 
+sd_lookup <- model_data %>%
+  mutate(
+    residual = receiving_yards - proj_yards,
+    proj_bucket = cut(proj_yards, breaks = seq(0, 160, by = 20))
+  ) %>%
+  group_by(proj_bucket) %>%
+  summarise(
+    n = n(),
+    raw_resid_sd = sd(residual, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    resid_sd = sqrt(
+      (n / (n + k_shrink_sd)) * raw_resid_sd^2 +
+        (k_shrink_sd / (n + k_shrink_sd)) * overall_resid_sd^2
+    )
+  )
+ 
+print(sd_lookup)
+# Check this printout directly: any bucket where raw_resid_sd is much smaller
+# than resid_sd (the shrunk version) was likely running on a small n and
+# would otherwise have been producing overconfident, inflated "edges"
+# downstream. If most of your buckets have n well below ~30, consider
+# widening the bucket breaks (e.g. every 30-40 yards instead of 20) so each
+# bucket's own SD carries more real signal before shrinkage even kicks in.
+ 
+model_data <- model_data %>%
+  mutate(proj_bucket = cut(proj_yards, breaks = seq(0, 160, by = 20))) %>%
+  left_join(sd_lookup, by = "proj_bucket")
+ 
+# ------------------------------------------------------------------------------
+# 10. Betting layer — devig and edge calculation
+# ------------------------------------------------------------------------------
+# You'll need to supply your own sportsbook lines (this isn't in nflreadr).
+# Expected format: one row per player-game-week with the book's line and the
+# American odds on both sides, e.g.:
+#
+#   player_display_name | season | week | book_line | over_odds | under_odds
+#
+# Plug that in as `lines_df` below and join it to model_data.
+
+devig_two_way <- function(over_odds, under_odds) {
+  american_to_prob <- function(odds) {
+    if_else(odds > 0, 100 / (odds + 100), -odds / (-odds + 100))
+  }
+  p_over_raw  <- american_to_prob(over_odds)
+  p_under_raw <- american_to_prob(under_odds)
+  overround   <- p_over_raw + p_under_raw
+  tibble(
+    market_p_over  = p_over_raw / overround,
+    market_p_under = p_under_raw / overround,
+    vig            = overround - 1
+  )
+}
+
+# Example of how you'd wire it up once you have lines_df:
+#
+# betting_df <- model_data %>%
+#   inner_join(lines_df, by = c("player_display_name", "season", "week")) %>%
+#   mutate(
+#     devig = pmap(list(over_odds, under_odds), devig_two_way)
+#   ) %>%
+#   unnest(devig) %>%
+#   mutate(
+#     model_p_over = 1 - pnorm(book_line, mean = proj_yards, sd = resid_sd),
+#     edge = model_p_over - market_p_over
+#   )
+#
+# betting_df %>%
+#   mutate(edge_bucket = cut(edge, breaks = seq(-0.3, 0.3, by = 0.05))) %>%
+#   group_by(edge_bucket) %>%
+#   summarise(
+#     n = n(),
+#     # once you have actual results, compute hit rate here:
+#     # hit_rate = mean(actual_over_result),
+#     avg_edge = mean(edge)
+#   )
+
+
+api_key <- Sys.getenv("ODDS_API_KEY")
+if (api_key == "") stop("Set ODDS_API_KEY as an environment variable before running.")
+ 
+sport_key <- "americanfootball_nfl"
+markets   <- c("player_reception_yds")   # add "player_receptions" etc. later if you want them
+region    <- "us"
+log_path  <- "prop_lines_log.csv"        # append-only log; move this to a stable location
+ 
+# ------------------------------------------------------------------------------
+# 1. Get the current event list (this endpoint is typically free / not counted
+#    against your quota the way market requests are — check your plan's docs,
+#    but it's the standard cheap way to get event IDs before pulling odds).
+# ------------------------------------------------------------------------------
+get_events <- function() {
+  req <- request(sprintf(
+    "https://api.the-odds-api.com/v4/sports/%s/events", sport_key
+  )) %>%
+    req_url_query(apiKey = api_key)
+ 
+  resp <- req_perform(req)
+  fromJSON(resp_body_string(resp), flatten = TRUE) %>% as_tibble()
+}
+ 
+# ------------------------------------------------------------------------------
+# 2. Get player-prop odds for one event
+# ------------------------------------------------------------------------------
+get_event_player_props <- function(event_id, commence_time, home_team, away_team) {
+  req <- request(sprintf(
+    "https://api.the-odds-api.com/v4/sports/%s/events/%s/odds",
+    sport_key, event_id
+  )) %>%
+    req_url_query(
+      apiKey    = api_key,
+      regions   = region,
+      markets   = paste(markets, collapse = ","),
+      oddsFormat = "american"
+    )
+ 
+  resp <- tryCatch(req_perform(req), error = function(e) NULL)
+  if (is.null(resp)) return(NULL)
+ 
+  parsed <- fromJSON(resp_body_string(resp), flatten = TRUE)
+  if (length(parsed$bookmakers) == 0 || is.null(parsed$bookmakers)) return(NULL)
+ 
+  # bookmakers -> markets -> outcomes, all nested list-columns; unnest fully
+  bookmakers_df <- as_tibble(parsed$bookmakers)
+ 
+  bookmakers_df %>%
+    unnest(markets, names_sep = "_") %>%
+    unnest(markets_outcomes, names_sep = "_") %>%
+    transmute(
+      event_id       = event_id,
+      commence_time  = commence_time,
+      home_team      = home_team,
+      away_team      = away_team,
+      book           = key,
+      market         = markets_key,
+      player         = markets_outcomes_description,   # player name lives here for props
+      side           = markets_outcomes_name,          # "Over" / "Under"
+      line           = markets_outcomes_point,
+      price_american = markets_outcomes_price,
+      book_last_update = markets_last_update,
+      snapshot_time  = as.character(Sys.time())
+    )
+}
+ 
+# ------------------------------------------------------------------------------
+# 3. Pull everything for the current week and append to the log
+# ------------------------------------------------------------------------------
+capture_current_week <- function() {
+  events <- get_events()
+ 
+  if (nrow(events) == 0) {
+    message("No events returned — check date/season, or that games are posted yet.")
+    return(invisible(NULL))
+  }
+ 
+  all_props <- pmap_dfr(
+    list(events$id, events$commence_time, events$home_team, events$away_team),
+    function(id, ct, home, away) {
+      out <- get_event_player_props(id, ct, home, away)
+      Sys.sleep(0.5)  # be polite to the API / stay under rate limits
+      out
+    }
+  )
+ 
+  if (nrow(all_props) == 0) {
+    message("No player prop data returned this run.")
+    return(invisible(NULL))
+  }
+ 
+  write_csv(all_props, log_path, append = file.exists(log_path))
+  message(sprintf("Logged %d prop rows at %s", nrow(all_props), Sys.time()))
+  invisible(all_props)
+}
+ 
+capture_current_week()
+ 
+api_key   <- Sys.getenv("ODDS_API_KEY")
+if (api_key == "") stop("Set ODDS_API_KEY as an environment variable before running.")
+ 
+sport_key <- "americanfootball_nfl"
+markets   <- c("player_reception_yds")
+region    <- "us"
+log_path  <- "prop_lines_log.csv"   # appends to the SAME log your live capture writes to
+ 
+# ------------------------------------------------------------------------------
+# 1. Historical events at a given snapshot time
+#    Cheap relative to odds requests — this just lists which games existed
+#    as of that timestamp, without pulling any odds yet.
+# ------------------------------------------------------------------------------
+get_historical_events <- function(snapshot_date) {
+  req <- request(sprintf(
+    "https://api.the-odds-api.com/v4/historical/sports/%s/events", sport_key
+  )) %>%
+    req_url_query(apiKey = api_key, date = snapshot_date)
+ 
+  resp <- req_perform(req)
+  parsed <- fromJSON(resp_body_string(resp), flatten = TRUE)
+  # parsed$timestamp = the ACTUAL snapshot time returned (closest available
+  # at-or-before your requested date) — use this, not your input, downstream
+  list(snapshot_timestamp = parsed$timestamp, events = as_tibble(parsed$data))
+}
+ 
+# ------------------------------------------------------------------------------
+# 2. Historical player-prop odds for one event at that snapshot
+# ------------------------------------------------------------------------------
+get_historical_event_props <- function(event_id, snapshot_date, commence_time, home_team, away_team) {
+  req <- request(sprintf(
+    "https://api.the-odds-api.com/v4/historical/sports/%s/events/%s/odds",
+    sport_key, event_id
+  )) %>%
+    req_url_query(
+      apiKey     = api_key,
+      regions    = region,
+      markets    = paste(markets, collapse = ","),
+      oddsFormat = "american",
+      date       = snapshot_date
+    )
+ 
+  resp <- tryCatch(req_perform(req), error = function(e) NULL)
+  if (is.null(resp)) return(NULL)
+ 
+  parsed <- fromJSON(resp_body_string(resp), flatten = TRUE)
+  bookmakers <- parsed$data$bookmakers
+  if (is.null(bookmakers) || length(bookmakers) == 0) return(NULL)
+ 
+  as_tibble(bookmakers) %>%
+    unnest(markets, names_sep = "_") %>%
+    unnest(markets_outcomes, names_sep = "_") %>%
+    transmute(
+      event_id         = event_id,
+      commence_time    = commence_time,
+      home_team        = home_team,
+      away_team        = away_team,
+      book             = key,
+      market           = markets_key,
+      player           = markets_outcomes_description,
+      side             = markets_outcomes_name,
+      line             = markets_outcomes_point,
+      price_american   = markets_outcomes_price,
+      book_last_update = markets_last_update,
+      snapshot_time    = parsed$timestamp   # the real snapshot time, not the requested one
+    )
+}
+ 
+# ------------------------------------------------------------------------------
+# 3. Backfill one missed week from a target snapshot timestamp
+# ------------------------------------------------------------------------------
+backfill_week <- function(snapshot_date) {
+  ev <- get_historical_events(snapshot_date)
+ 
+  if (nrow(ev$events) == 0) {
+    message(sprintf("No events found for snapshot %s", snapshot_date))
+    return(invisible(NULL))
+  }
+ 
+  all_props <- pmap_dfr(
+    list(ev$events$id, ev$events$commence_time, ev$events$home_team, ev$events$away_team),
+    function(id, ct, home, away) {
+      out <- get_historical_event_props(id, snapshot_date, ct, home, away)
+      Sys.sleep(0.5)  # stay well under rate limits
+      out
+    }
+  )
+ 
+  if (nrow(all_props) == 0) {
+    message(sprintf("No player prop odds returned for snapshot %s", snapshot_date))
+    return(invisible(NULL))
+  }
+ 
+  write_csv(all_props, log_path, append = file.exists(log_path))
+  message(sprintf("Backfilled %d rows for snapshot %s", nrow(all_props), snapshot_date))
+  invisible(all_props)
+}
+ 
+# ------------------------------------------------------------------------------
+# 4. Run it for each week you missed
+# ------------------------------------------------------------------------------
+# Match the timing convention you're using for live capture (e.g. Saturday
+# night before the Sunday slate) so weeks 1-2 are comparable to week 3 onward.
+# Replace these with the actual dates for weeks 1 and 2 of your season.
+missed_week_snapshots <- c(
+  "2026-09-12T23:00:00Z",  # target: Week 1 closing-ish snapshot
+  "2026-09-19T23:00:00Z"   # target: Week 2 closing-ish snapshot
+)
+ 
+# Test with just the first one before running both, to confirm output shape
+# and quota cost look right:
+# backfill_week(missed_week_snapshots[1])
+ 
+walk(missed_week_snapshots, backfill_week)
+
+
+# ==============================================================================
+# Scheduling this
+# ==============================================================================
+# Running this manually every week works but is easy to forget. Two low-effort
+# options:
+#
+# 1. cron (if you're on Mac/Linux or a server), e.g. every Saturday at 8pm:
+#      0 20 * * 6  Rscript /path/to/capture_weekly_lines.R
+#
+# 2. GitHub Actions (free, runs in the cloud, no reliance on your own machine
+#    being on). Rough shape of the workflow file
+#    (.github/workflows/capture_lines.yml):
+#
+#    on:
+#      schedule:
+#        - cron: '0 0 * * 0'   # Sundays 00:00 UTC — adjust for your timing
+#      workflow_dispatch: {}   # lets you trigger it manually too
+#    jobs:
+#      capture:
+#        runs-on: ubuntu-latest
+#        steps:
+#          - uses: actions/checkout@v4
+#          - uses: r-lib/actions/setup-r@v2
+#          - run: Rscript -e 'install.packages(c("httr2","jsonlite","dplyr","purrr","readr","tibble"))'
+#          - run: Rscript capture_weekly_lines.R
+#            env:
+#              ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+#          - run: git add prop_lines_log.csv && git commit -m "weekly line snapshot" && git push
+#
+#    Store your key in the repo's Settings > Secrets, never in the script.
+#    This gives you a growing, version-controlled log with zero manual effort.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. Load captured lines, keep receiving yards, reshape Over/Under to one row
+#    per player-game with both sides' prices together
+# ------------------------------------------------------------------------------
+lines_raw <- read_csv("prop_lines_log.csv", show_col_types = FALSE) %>%
+  filter(market == "player_reception_yds")
+ 
+# If you captured multiple books, decide here how you want to collapse them.
+# Simplest v1 approach: pick one reference book consistently (e.g. the one
+# with the most stable/sharp lines you trust) rather than averaging across
+# books of very different quality.
+reference_book <- "draftkings"   # adjust to whatever `book` key you're using
+ 
+lines_wide <- lines_raw %>%
+  filter(book == reference_book) %>%
+  select(event_id, player, side, line, price_american, commence_time) %>%
+  pivot_wider(
+    names_from = side,
+    values_from = price_american,
+    names_prefix = "price_"
+  ) %>%
+  rename(over_odds = price_Over, under_odds = price_Under) %>%
+  filter(!is.na(over_odds), !is.na(under_odds))
+ 
+# ------------------------------------------------------------------------------
+# 2. Name matching — the single most common source of silent join failures
+# ------------------------------------------------------------------------------
+# Sportsbook player names and nflreadr player_display_name don't always match
+# exactly (suffixes, accents, "Gabe Davis" vs "Gabriel Davis", etc.). Do a
+# light cleaning pass and CHECK how many rows fail to match before trusting
+# any downstream numbers.
+ 
+clean_name <- function(x) {
+  x %>%
+    str_to_lower() %>%
+    str_remove_all("[.']") %>%
+    str_remove_all("\\s+(jr|sr|ii|iii|iv)$") %>%
+    str_squish()
+}
+ 
+lines_wide <- lines_wide %>% mutate(name_key = clean_name(player))
+ 
+# ------------------------------------------------------------------------------
+# 3. Pull actual results for the relevant week(s) once games are final
+# ------------------------------------------------------------------------------
+current_season <- 2026  # adjust as needed
+results <- load_player_stats(seasons = current_season, stat_type = "offense") %>%
+  filter(season_type == "REG") %>%
+  mutate(name_key = clean_name(player_display_name)) %>%
+  select(name_key, player_display_name, season, week, receiving_yards)
+ 
+# ------------------------------------------------------------------------------
+# 4. Bring in your model's projections
+# ------------------------------------------------------------------------------
+# Assumes `model_data` from wr_v1_baseline_model.R (proj_yards, resid_sd,
+# name matched to player_display_name) is available — re-run that script or
+# load a saved version of it here.
+#
+# model_data <- readRDS("model_data.rds")
+ 
+model_projections <- model_data %>%
+  mutate(name_key = clean_name(player_display_name)) %>%
+  select(name_key, season, week, proj_yards, resid_sd)
+ 
+# ------------------------------------------------------------------------------
+# 5. Join lines + projections + actual results
+# ------------------------------------------------------------------------------
+# Vectorized directly (no rowwise/list needed — american_to_prob already
+# operates elementwise via if_else, so this runs on the whole column at once).
+american_to_prob <- function(odds) {
+  if_else(odds > 0, 100 / (odds + 100), -odds / (-odds + 100))
+}
+ 
+validation_df <- lines_wide %>%
+  inner_join(model_projections, by = "name_key") %>%
+  inner_join(results, by = c("name_key", "season", "week")) %>%
+  mutate(
+    p_over_raw    = american_to_prob(over_odds),
+    p_under_raw   = american_to_prob(under_odds),
+    overround     = p_over_raw + p_under_raw,
+    market_p_over = p_over_raw / overround,
+    vig           = overround - 1,
+    model_p_over  = 1 - pnorm(line, mean = proj_yards, sd = resid_sd),
+    edge          = model_p_over - market_p_over,
+    actual_over   = receiving_yards > line
+  ) %>%
+  select(-p_over_raw, -p_under_raw, -overround)
+ 
+# ------------------------------------------------------------------------------
+# 6. Match-rate sanity check — do this BEFORE trusting any hit-rate numbers
+# ------------------------------------------------------------------------------
+match_rate <- nrow(validation_df) / nrow(lines_wide)
+message(sprintf(
+  "%.0f%% of captured lines matched to both a projection and a result (%d of %d).",
+  match_rate * 100, nrow(validation_df), nrow(lines_wide)
+))
+# If this is well below ~90%, fix name matching before looking at results —
+# a low match rate usually means you're silently dropping a non-random subset
+# of players (e.g. hyphenated or accented names), which can bias everything
+# downstream.
+ 
+# ------------------------------------------------------------------------------
+# 7. The actual question: does edge size predict hit rate?
+# ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# First: compute which side the model actually recommended, and whether THAT
+# side won — this is the number that matters for betting performance, not the
+# raw frequency of Over.
+validation_df <- validation_df %>%
+  mutate(
+    recommended_side = if_else(edge > 0, "Over", "Under"),
+    bet_won = if_else(recommended_side == "Over", actual_over, !actual_over)
+  )
+ 
+# Bucket by SIGNED edge (to sanity-check direction) — Inf bounds so no row
+# silently falls into NA the way the previous version did.
+edge_summary <- validation_df %>%
+  mutate(edge_bucket = cut(edge, breaks = c(-Inf, seq(-0.3, 0.3, by = 0.05), Inf))) %>%
+  group_by(edge_bucket) %>%
+  summarise(
+    n = n(),
+    avg_edge = mean(edge),
+    win_rate = mean(bet_won),
+    .groups = "drop"
+  )
+ 
+print(edge_summary)
+ 
+# Bucket by ABSOLUTE edge (magnitude only) — this is usually the more useful
+# read at small sample sizes: does BIGGER edge (either direction) win more
+# often than smaller edge, regardless of which side it favored?
+abs_edge_summary <- validation_df %>%
+  mutate(abs_edge_bucket = cut(abs(edge), breaks = c(seq(0, 0.3, by = 0.05), Inf))) %>%
+  group_by(abs_edge_bucket) %>%
+  summarise(
+    n = n(),
+    avg_abs_edge = mean(abs(edge)),
+    win_rate = mean(bet_won),
+    .groups = "drop"
+  )
+ 
+print(abs_edge_summary)
+ 
+# A single logistic regression across ALL bets (not binned) uses your full
+# n rather than splitting it across 13 sparse buckets — with a small sample
+# this is a more honest read than any bucketed table. You're checking sign
+# and rough magnitude of the coefficient, not expecting statistical
+# significance yet.
+edge_model <- glm(bet_won ~ abs(edge), data = validation_df, family = binomial)
+print(summary(edge_model))
+ 
+# ------------------------------------------------------------------------------
+# Reading this at n ~ 100-150: don't trust individual bucket win rates yet.
+# With as few as 3-19 observations per bucket, a bucket's win rate has only a
+# handful of possible values (n=3 can only show 0%, 33%, 67%, or 100%) — that
+# is pure binomial noise, not a signal about that edge level specifically.
+# What to look for instead:
+#   - Does the logistic regression coefficient on abs(edge) have a sensible
+#     (positive) sign, even if its p-value isn't significant yet?
+#   - Does the ABSOLUTE-edge summary show even a rough upward drift in
+#     win_rate as magnitude increases, rather than a flat or inverted line?
+# If the signed-edge table looks like it's pointing backwards in the extreme
+# buckets (as a first pass with ~100 bets easily can), that is not yet
+# evidence the model is broken — it's evidence you don't have enough bets
+# per bucket to say anything. Keep capturing weekly and re-run this in a
+# month with several times the sample before treating any of it as
+# conclusive either way.
+
+etr_picks <- read_csv("etr_wr_picks_2022.csv", show_col_types = FALSE) %>% distinct()
+ 
+clean_name <- function(x) {
+  x %>%
+    str_to_lower() %>%
+    str_remove_all("[.']") %>%
+    str_remove_all("\\s+(jr|sr|ii|iii|iv)$") %>%
+    str_squish()
+}
+ 
+etr_picks <- etr_picks %>% mutate(name_key = clean_name(player))
+ 
+# ------------------------------------------------------------------------------
+# Actual results for these specific player-weeks
+# ------------------------------------------------------------------------------
+results_2022 <- load_player_stats(seasons = 2022) %>%
+  filter(season_type == "REG") %>%
+  mutate(name_key = clean_name(player_display_name)) %>%
+  select(name_key, season, week, receiving_yards)
+ 
+# ------------------------------------------------------------------------------
+# Bring in YOUR model's projection for the same player-weeks (from model_data
+# in wr_v1_baseline_model.R — re-run that with 2022 included in `seasons` if
+# it isn't already, since this data predates your live capture entirely)
+# ------------------------------------------------------------------------------
+model_projections_2022 <- model_data %>%
+  mutate(name_key = clean_name(player_display_name)) %>%
+  select(name_key, season, week, proj_yards, resid_sd)
+ 
+comparison_df <- etr_picks %>%
+  inner_join(results_2022, by = c("name_key", "season", "week")) %>%
+  inner_join(model_projections_2022, by = c("name_key", "season", "week")) %>%
+  mutate(
+    your_side       = if_else(proj_yards > line, "Over", "Under"),
+    agree_with_etr  = your_side == etr_side,
+    etr_won         = if_else(etr_side == "Over", receiving_yards > line, receiving_yards < line),
+    you_won         = if_else(your_side == "Over", receiving_yards > line, receiving_yards < line)
+  )
+ 
+print(comparison_df %>% select(player, week, line, etr_side, your_side, agree_with_etr, etr_won, you_won))
+ 
+message(sprintf(
+  "Matched %d of %d ETR picks to both a result and your model's projection.",
+  nrow(comparison_df), nrow(etr_picks)
+))
+message(sprintf("Agreement rate with ETR's side: %.0f%%", 100 * mean(comparison_df$agree_with_etr)))
+message(sprintf("ETR's own win rate on these picks: %.0f%%", 100 * mean(comparison_df$etr_won)))
+message(sprintf("Your model's win rate on these picks: %.0f%%", 100 * mean(comparison_df$you_won)))
+ 
+# Read all of this as directional/plausibility signal only, at n likely under
+# 10 after matching — not as an estimate of either party's true win rate.
+ 
+# 8. Apply a minimum edge threshold — don't bet everything, only real edges
+# ------------------------------------------------------------------------------
+# A raw yards gap (proj_yards vs line) is the wrong unit to threshold on,
+# since the same yard gap means different things depending on the player's
+# variance. Threshold on EDGE (probability space) instead, and require it to
+# clear break-even (52.38% at standard -110 pricing) by a real margin — not
+# just barely cross it, since your own SD estimate carries uncertainty too.
+#
+# min_edge_threshold is in probability terms: 0.03 means the model's implied
+# win probability must beat the market's by at least 3 percentage points net
+# of vig. Tune this and re-run to see how the filtered hit rate responds.
+
+comparison_df <- etr_picks %>%
+  inner_join(results_2022, by = c("name_key", "season", "week")) %>%
+  inner_join(model_projections_2022, by = c("name_key", "season", "week")) %>%
+  mutate(
+    your_side       = if_else(proj_yards > line, "Over", "Under"),
+    agree_with_etr  = your_side == etr_side,
+    etr_won         = if_else(etr_side == "Over", receiving_yards > line, receiving_yards < line),
+    you_won         = if_else(your_side == "Over", receiving_yards > line, receiving_yards < line)
+  )
+
+american_to_prob <- function(odds) {
+  if_else(odds > 0, 100 / (odds + 100), -odds / (-odds + 100))
+}
+ 
+comparison_df <- comparison_df %>%
+  mutate(
+    p_over_raw    = american_to_prob(price_american),
+    p_under_raw   = american_to_prob(price_american),
+    overround     = p_over_raw + p_under_raw,
+    market_p_over = p_over_raw / overround,
+    vig           = overround - 1,
+    model_p_over  = 1 - pnorm(line, mean = proj_yards, sd = resid_sd),
+    edge          = model_p_over - market_p_over,
+    actual_over   = receiving_yards > line
+  ) %>%
+  select(-p_over_raw, -p_under_raw, -overround)
+
+min_edge_threshold <- 0.03
+ 
+comparison_df = 
+  comparison_df %>% 
+  mutate(
+    recommended_side = if_else(edge > 0, "Over", "Under"),
+    bet_won = if_else(recommended_side == "Over", actual_over, !actual_over)
+  )
+
+bets_to_place <- comparison_df %>%
+  filter(abs(edge) >= min_edge_threshold)
+ 
+message(sprintf(
+  "%d of %d captured props clear a %.0f%%-point edge threshold (%.0f%% of matched sample).",
+  nrow(bets_to_place), nrow(comparison_df),
+  min_edge_threshold * 100,
+  100 * nrow(bets_to_place) / nrow(comparison_df)
+))
+ 
+# Unfiltered vs filtered win rate, side by side — this is the direct answer
+# to "does skipping the thin-edge bets actually help."
+message(sprintf("Unfiltered win rate (all %d matched props): %.1f%%",
+                 nrow(comparison_df), 100 * mean(comparison_df$bet_won)))
+message(sprintf("Filtered win rate (%d props clearing threshold): %.1f%%",
+                 nrow(bets_to_place), 100 * mean(bets_to_place$bet_won)))
+ 
+# ------------------------------------------------------------------------------
+# 9. The actual question: does edge size predict hit rate? (on FILTERED bets)
+# ------------------------------------------------------------------------------
+# Bucket by SIGNED edge (to sanity-check direction) — Inf bounds so no row
+# silently falls into NA the way an earlier version did.
+edge_summary <- bets_to_place %>%
+  mutate(edge_bucket = cut(edge, breaks = c(-Inf, seq(-0.3, 0.3, by = 0.1), Inf))) %>%
+  group_by(edge_bucket) %>%
+  summarise(
+    n = n(),
+    avg_edge = mean(edge),
+    win_rate = mean(bet_won),
+    .groups = "drop"
+  )
+ 
+print(edge_summary)
+ 
+# Bucket by ABSOLUTE edge (magnitude only) — this is usually the more useful
+# read at small sample sizes: does BIGGER edge (either direction) win more
+# often than smaller edge, regardless of which side it favored?
+abs_edge_summary <- bets_to_place %>%
+  mutate(abs_edge_bucket = cut(abs(edge), breaks = c(seq(0, 0.3, by = 0.1), Inf))) %>%
+  group_by(abs_edge_bucket) %>%
+  summarise(
+    n = n(),
+    avg_abs_edge = mean(abs(edge)),
+    win_rate = mean(bet_won),
+    .groups = "drop"
+  )
+ 
+print(abs_edge_summary)
+ 
+# A single logistic regression across ALL filtered bets (not binned) uses
+# your full n rather than splitting it across sparse buckets — with a small
+# sample this is a more honest read than any bucketed table. You're checking
+# sign and rough magnitude of the coefficient, not expecting statistical
+# significance yet. NOTE: filtering changes the range of abs(edge) the
+# regression sees (everything below min_edge_threshold is now excluded),
+# so don't directly compare this coefficient's size to a run on the
+# unfiltered data — compare win rates (above) for that.
+edge_model <- glm(bet_won ~ abs(edge), data = bets_to_place, family = binomial)
+print(summary(edge_model))
+ 
+
+```
+
 
 # Fantasy Mods
 

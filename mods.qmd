@@ -5924,7 +5924,7 @@ df_record =
 
 df_team_ranks_prior =
   readRDS(glue::glue("df_team_ranks_{week_n-1}.rds")) %>%
-  # select(-prior_rank) %>%
+  select(-c(prior_rank, record)) %>%
   rename(prior_rank = week_rank)
 
 df_team_ranks =
