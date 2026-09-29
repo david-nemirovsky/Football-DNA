@@ -2310,14 +2310,15 @@ df_team_sims =
   mutate(
     game = 
       case_when(
-        team < team_opp ~ str_c(team, "vs", team_opp),
-        team > team_opp ~ str_c(team_opp, "vs", team),
+        team < team_opp ~ str_c(team, " vs", team_opp),
+        team > team_opp ~ str_c(team_opp, " vs", team),
         .default = NA
       )
   ) %>% 
   arrange(game) %>% 
   rowid_to_column("game_id") %>% 
   mutate(
+    game = str_remove(game, " "),
     # game_id = rep(seq(1:c(nrow(.) / 2)), each = 2),
     game_id =
       case_when(
