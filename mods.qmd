@@ -3441,6 +3441,7 @@ df_team_points_delta_szn =
   # ) %>%
   select(week, game_id, total_team, starts_with("prior_"), qb_cont, qb_cont_opp, rest_days, rest_days_opp, travel_km, travel_km_opp) %>%
   drop_na() %>%
+  filter(qb_cont == 1 & qb_cont_opp == 1) %>%
   mutate(
     pred_total_team = predict(mod_total_team_svm, newdata = .)
   ) %>%
@@ -3458,8 +3459,8 @@ df_team_points_delta_szn =
     pred_total_adj = predict(mod_total_correct_enet, newdata = .),
     total_game_adj = pred_total + pred_total_adj
   ) %>%
-  left_join(df_lines_open %>% select(game_id, total_line), by = "game_id") %>%
-  # left_join(df_szn_pbp %>% distinct(game_id, total_line), by = "game_id") %>%
+  # left_join(df_lines_open %>% select(game_id, total_line), by = "game_id") %>%
+  left_join(df_szn_pbp %>% distinct(game_id, total_line), by = "game_id") %>%
   select(game_id, total_game_adj, total_line) %>%
   left_join(
     df_total_team_test_solo_boot_prior %>%
@@ -3489,6 +3490,7 @@ df_team_points_delta_szn =
       # ) %>%
       select(week, game_id, total_team, starts_with("prior_"), qb_cont, qb_cont_opp, rest_days, rest_days_opp, travel_km, travel_km_opp) %>%
       drop_na() %>%
+      filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
       mutate(
         pred_total_team = predict(mod_total_team_svm, newdata = .)
       ) %>%
@@ -3507,8 +3509,8 @@ df_team_points_delta_szn =
         pred_spread_adj = predict(mod_spread_correct_enet, newdata = .),
         spread_game_adj = pred_spread + pred_spread_adj
       ) %>%
-      left_join(df_lines_open %>% select(game_id, spread_line), by = "game_id") %>%
-      # left_join(df_szn_pbp %>% distinct(game_id, spread_line), by = "game_id") %>%
+      # left_join(df_lines_open %>% select(game_id, spread_line), by = "game_id") %>%
+      left_join(df_szn_pbp %>% distinct(game_id, spread_line), by = "game_id") %>%
       select(game_id, spread_game_adj, spread_line),
     by = "game_id"
   ) %>%
@@ -3597,7 +3599,7 @@ df_team_points_delta_szn %>%
   scale_x_continuous(breaks = seq(-12, 12, by = 1)) +
   scale_fill_identity() +
   scale_color_identity() +
-  coord_cartesian(xlim = c(-7.5, 10.5)) +
+  coord_cartesian(xlim = c(-7, 7)) +
   labs(
     title = "Season-Long Model vs Vegas Projected Team Totals",
     x = "Mean \U0394 Team Points",
@@ -3646,7 +3648,11 @@ df_team_points_delta_szn %>%
 
 ### **Hit Rates**
 
-```{r hit rates ev}
+::: panel-tabset
+
+#### **Opening Lines**
+
+```{r hit rates ev open}
 
 # Hit Rates:
 
@@ -3806,7 +3812,7 @@ df_totals_profit =
   filter(sum(qb_cont) == 2) %>%
   ungroup() %>%
   distinct() %>%
-  filter(stake_total >= 0.5) %>%
+  # filter(stake_total >= 0.5 | stake_current_total >= 0.5) %>%
   # filter(stake_current_total >= 0.5) %>%
   # filter(ind_total_hit != "No Bet") %>%
   mutate(
@@ -3949,7 +3955,7 @@ df_spreads_profit =
   filter(sum(qb_cont) == 2) %>%
   ungroup() %>%
   distinct() %>%
-  filter(stake_spread >= 0.5) %>%
+  # filter(stake_spread >= 0.5 | stake_current_spread >= 0.5) %>%
   # filter(stake_current_spread >= 0.5) %>%
   mutate(
     ind_bet_hit =
@@ -4007,37 +4013,44 @@ df_spreads_profit =
 # #   ) %>%
 # #   gtsummary::tbl_summary(include = stake_bucket)
 # 
-df_totals_profit %>%
+df_totals_profit %>% 
+  filter(stake_total >= 0.5) %>% 
   group_by(week) %>%
   summarise(
-    profit_tot = sum(profit)
+    profit_tot = sum(profit),
+    n_bets_tot = n()
   ) %>%
   left_join(
-    df_spreads_profit %>%
+    df_spreads_profit %>% 
+      filter(stake_spread >= 0.5) %>% 
       group_by(week) %>%
       summarise(
-        profit_spread = sum(profit)
+        profit_spread = sum(profit),
+        n_bets_spread = n()
       ),
     by = "week"
   ) %>%
   mutate(
     across(everything(), ~ replace_na(., 0)),
     week = as.character(week),
-    profit_ovr = profit_tot + profit_spread
+    profit_ovr = profit_tot + profit_spread,
+    n_bets = n_bets_tot + n_bets_spread
   ) %>%
   rows_insert(
     tibble(
       week = "Season",
       profit_tot = sum(.$profit_tot, na.rm = T),
       profit_spread = sum(.$profit_spread, na.rm = T),
-      profit_ovr = sum(.$profit_ovr, na.rm = T)
+      profit_ovr = sum(.$profit_ovr, na.rm = T),
+      n_bets = sum(.$n_bets, na.rm = T)
     ),
     by = "week"
   ) %>%
   mutate(across(starts_with("profit_"), ~ round(., 1))) %>%
-  select(week, profit_tot, profit_spread, profit_ovr) %>%
+  select(week, n_bets, profit_tot, profit_spread, profit_ovr) %>%
   labelled::set_variable_labels(
     week = "Week",
+    n_bets = "Bets",
     profit_tot = "Totals",
     profit_spread = "Spreads",
     profit_ovr = "Overall"
@@ -4045,180 +4058,211 @@ df_totals_profit %>%
   gtreg::tbl_listing() %>%
   gtsummary::modify_caption("**Betting Profit by Week (Units)**")
 
-df_totals_profit %>%
+df_totals_profit %>% 
+  filter(stake_total >= 0.5) %>% 
   group_by(week, side_total) %>%
   summarise(
-    profit_part = sum(profit)
+    profit_part = sum(profit),
+    n_tot = n()
   ) %>%
   pivot_wider(
     id_cols = week,
     names_from = side_total,
-    values_from = c(profit_part)
-  ) %>%
-  janitor::clean_names() %>%
+    values_from = c(profit_part, n_tot)
+  ) %>% 
+  janitor::clean_names() %>% 
   mutate(
     week = as.character(week),
     across(everything(), ~ round(replace_na(., 0), 1)),
-    total = over + under
+    total = profit_part_over + profit_part_under,
+    n_tot = n_tot_over + n_tot_under
   ) %>%
   rows_insert(
     tibble(
       week = "Season",
-      under = sum(.$under, na.rm = T),
-      over = sum(.$over, na.rm = T),
-      total = sum(.$total, na.rm = T)
+      profit_part_under = sum(.$profit_part_under, na.rm = T),
+      profit_part_over = sum(.$profit_part_over, na.rm = T),
+      total = sum(.$total, na.rm = T),
+      n_tot = sum(.$n_tot, na.rm = T)
     )
   ) %>%
-  select(week, under, over, total) %>%
+  select(week, n_tot, profit_part_under, profit_part_over, total) %>%
   labelled::set_variable_labels(
     week = "Week",
+    n_tot = "Bets",
     total = "Total",
-    under = "Unders",
-    over = "Overs"
+    profit_part_under = "Unders",
+    profit_part_over = "Overs"
   ) %>%
   gtreg::tbl_listing() %>%
   gtsummary::modify_caption("**Profit of Betting Totals by Week (Units)**")
 
-df_spreads_profit %>%
+df_spreads_profit %>% 
+  filter(stake_spread >= 0.5) %>% 
   group_by(week, side_spread) %>%
   summarise(
-    profit_part = sum(profit)
+    profit_part = sum(profit),
+    n_spread = n()
   ) %>%
   pivot_wider(
     id_cols = week,
     names_from = side_spread,
-    values_from = c(profit_part)
+    values_from = c(profit_part, n_spread)
   ) %>%
   janitor::clean_names() %>%
   mutate(
     week = as.character(week),
     across(everything(), ~ round(replace_na(., 0), 1)),
-    total = home + away
+    total = profit_part_home + profit_part_away,
+    n_spread = n_spread_home + n_spread_away
   ) %>%
   rows_insert(
     tibble(
       week = "Season",
-      away = sum(.$away, na.rm = T),
-      home = sum(.$home, na.rm = T),
-      total = sum(.$total, na.rm = T)
+      profit_part_away = sum(.$profit_part_away, na.rm = T),
+      profit_part_home = sum(.$profit_part_home, na.rm = T),
+      total = sum(.$total, na.rm = T),
+      n_spread = sum(.$n_spread, na.rm = T)
     )
   ) %>%
-  select(week, away, home, total) %>%
+  select(week, n_spread, profit_part_away, profit_part_home, total) %>%
   labelled::set_variable_labels(
     week = "Week",
+    n_spread = "Bets",
     total = "Total",
-    away = "Away",
-    home = "Home"
+    profit_part_away = "Away",
+    profit_part_home = "Home"
+  ) %>%
+  gtreg::tbl_listing() %>%
+  gtsummary::modify_caption("**Profit of Betting Spreads by Week (Units)**")
+```
+
+#### **Closing Lines**
+
+```{r hit rates ev close}
+df_totals_profit %>% 
+  filter(stake_current_total >= 0.5) %>% 
+  group_by(week) %>%
+  summarise(
+    profit_tot = sum(profit_current),
+    n_tot = n()
+  ) %>%
+  left_join(
+    df_spreads_profit %>% 
+      filter(stake_current_spread >= 0.5) %>% 
+      group_by(week) %>%
+      summarise(
+        profit_spread = sum(profit_current),
+        n_spread = n()
+      ),
+    by = "week"
+  ) %>%
+  mutate(
+    across(everything(), ~ replace_na(., 0)),
+    week = as.character(week),
+    profit_ovr = profit_tot + profit_spread,
+    n_bets = n_tot + n_spread
+  ) %>%
+  rows_insert(
+    tibble(
+      week = "Season",
+      profit_tot = sum(.$profit_tot, na.rm = T),
+      profit_spread = sum(.$profit_spread, na.rm = T),
+      profit_ovr = sum(.$profit_ovr, na.rm = T),
+      n_bets = sum(.$n_bets, na.rm = T)
+    ),
+    by = "week"
+  ) %>%
+  mutate(across(starts_with("profit_"), ~ round(., 1))) %>%
+  select(week, n_bets, profit_tot, profit_spread, profit_ovr) %>%
+  labelled::set_variable_labels(
+    week = "Week",
+    n_bets = "Bets",
+    profit_tot = "Totals",
+    profit_spread = "Spreads",
+    profit_ovr = "Overall"
+  ) %>%
+  gtreg::tbl_listing() %>%
+  gtsummary::modify_caption("**Betting Profit by Week (Units)**")
+
+df_totals_profit %>% 
+  filter(stake_current_total >= 0.5) %>% 
+  group_by(week, side_current_total) %>%
+  summarise(
+    profit_part = sum(profit_current),
+    n_tot = n()
+  ) %>%
+  pivot_wider(
+    id_cols = week,
+    names_from = side_current_total,
+    values_from = c(profit_part, n_tot)
+  ) %>%
+  janitor::clean_names() %>%
+  mutate(
+    week = as.character(week),
+    across(everything(), ~ round(replace_na(., 0), 1)),
+    total = profit_part_over + profit_part_under,
+    n_tot = n_tot_over + n_tot_under
+  ) %>%
+  rows_insert(
+    tibble(
+      week = "Season",
+      profit_part_under = sum(.$profit_part_under, na.rm = T),
+      profit_part_over = sum(.$profit_part_over, na.rm = T),
+      total = sum(.$total, na.rm = T),
+      n_tot = sum(.$n_tot, na.rm = T)
+    )
+  ) %>%
+  select(week, n_tot, profit_part_under, profit_part_over, total) %>%
+  labelled::set_variable_labels(
+    week = "Week",
+    n_tot = "Bets",
+    total = "Total",
+    profit_part_under = "Unders",
+    profit_part_over = "Overs"
+  ) %>%
+  gtreg::tbl_listing() %>%
+  gtsummary::modify_caption("**Profit of Betting Totals by Week (Units)**")
+
+df_spreads_profit %>% 
+  filter(stake_current_spread >= 0.5) %>% 
+  group_by(week, side_current_spread) %>%
+  summarise(
+    profit_part = sum(profit_current),
+    n_spread = n()
+  ) %>%
+  pivot_wider(
+    id_cols = week,
+    names_from = side_current_spread,
+    values_from = c(profit_part, n_spread)
+  ) %>%
+  janitor::clean_names() %>%
+  mutate(
+    week = as.character(week),
+    across(everything(), ~ round(replace_na(., 0), 1)),
+    total = profit_part_home + profit_part_away,
+    n_spread = n_spread_home + n_spread_away
+  ) %>%
+  rows_insert(
+    tibble(
+      week = "Season",
+      profit_part_away = sum(.$profit_part_away, na.rm = T),
+      profit_part_home = sum(.$profit_part_home, na.rm = T),
+      total = sum(.$total, na.rm = T),
+      n_spread = sum(.$n_spread, na.rm = T)
+    )
+  ) %>%
+  select(week, n_spread, profit_part_away, profit_part_home, total) %>%
+  labelled::set_variable_labels(
+    week = "Week",
+    n_spread = "Bets",
+    total = "Total",
+    profit_part_away = "Away",
+    profit_part_home = "Home"
   ) %>%
   gtreg::tbl_listing() %>%
   gtsummary::modify_caption("**Profit of Betting Spreads by Week (Units)**")
 
-# # df_totals_profit %>%
-# #   group_by(week) %>%
-# #   summarise(
-# #     profit_tot = sum(profit_current)
-# #   ) %>%
-# #   left_join(
-# #     df_spreads_profit %>%
-# #       group_by(week) %>%
-# #       summarise(
-# #         profit_spread = sum(profit_current)
-# #       ),
-# #     by = "week"
-# #   ) %>%
-# #   mutate(
-# #     across(everything(), ~ replace_na(., 0)),
-# #     week = as.character(week),
-# #     profit_ovr = profit_tot + profit_spread
-# #   ) %>%
-# #   rows_insert(
-# #     tibble(
-# #       week = "Season",
-# #       profit_tot = sum(.$profit_tot, na.rm = T),
-# #       profit_spread = sum(.$profit_spread, na.rm = T),
-# #       profit_ovr = sum(.$profit_ovr, na.rm = T)
-# #     ),
-# #     by = "week"
-# #   ) %>%
-# #   mutate(across(starts_with("profit_"), ~ round(., 1))) %>%
-# #   select(week, profit_tot, profit_spread, profit_ovr) %>%
-# #   labelled::set_variable_labels(
-# #     week = "Week",
-# #     profit_tot = "Totals",
-# #     profit_spread = "Spreads",
-# #     profit_ovr = "Overall"
-# #   ) %>%
-# #   gtreg::tbl_listing() %>%
-# #   gtsummary::modify_caption("**Betting Profit by Week (Units)**")
-# # 
-# # df_totals_profit %>%
-# #   group_by(week, side_current_total) %>%
-# #   summarise(
-# #     profit_part = sum(profit_current)
-# #   ) %>%
-# #   pivot_wider(
-# #     id_cols = week,
-# #     names_from = side_current_total,
-# #     values_from = c(profit_part)
-# #   ) %>%
-# #   janitor::clean_names() %>%
-# #   mutate(
-# #     week = as.character(week),
-# #     across(everything(), ~ round(replace_na(., 0), 1)),
-# #     total = over + under
-# #   ) %>%
-# #   rows_insert(
-# #     tibble(
-# #       week = "Season",
-# #       under = sum(.$under, na.rm = T),
-# #       over = sum(.$over, na.rm = T),
-# #       total = sum(.$total, na.rm = T)
-# #     )
-# #   ) %>%
-# #   select(week, under, over, total) %>%
-# #   labelled::set_variable_labels(
-# #     week = "Week",
-# #     total = "Total",
-# #     under = "Unders",
-# #     over = "Overs"
-# #   ) %>%
-# #   gtreg::tbl_listing() %>%
-# #   gtsummary::modify_caption("**Profit of Betting Totals by Week (Units)**")
-# # 
-# # df_spreads_profit %>%
-# #   group_by(week, side_current_spread) %>%
-# #   summarise(
-# #     profit_part = sum(profit_current)
-# #   ) %>%
-# #   pivot_wider(
-# #     id_cols = week,
-# #     names_from = side_current_spread,
-# #     values_from = c(profit_part)
-# #   ) %>%
-# #   janitor::clean_names() %>%
-# #   mutate(
-# #     week = as.character(week),
-# #     across(everything(), ~ round(replace_na(., 0), 1)),
-# #     total = home + away
-# #   ) %>%
-# #   rows_insert(
-# #     tibble(
-# #       week = "Season",
-# #       away = sum(.$away, na.rm = T),
-# #       home = sum(.$home, na.rm = T),
-# #       total = sum(.$total, na.rm = T)
-# #     )
-# #   ) %>%
-# #   select(week, away, home, total) %>%
-# #   labelled::set_variable_labels(
-# #     week = "Week",
-# #     total = "Total",
-# #     away = "Away",
-# #     home = "Home"
-# #   ) %>%
-# #   gtreg::tbl_listing() %>%
-# #   gtsummary::modify_caption("**Profit of Betting Spreads by Week (Units)**")
-# # 
 # # df_totals_profit %>%
 # #   mutate(
 # #     clv_total =
@@ -5632,6 +5676,8 @@ df_spreads_hit_rate_playoffs =
 #   gtreg::tbl_listing() %>% 
 #   gtsummary::modify_caption("**Betting Spreads by Week**")
 ```
+
+:::
 
 :::
 
