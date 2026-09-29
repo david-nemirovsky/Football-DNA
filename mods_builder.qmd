@@ -12295,108 +12295,292 @@ rmse_total_line_df %>%
 ## Model Edge and CLV
 
 ```{r edge clv}
-df_edge_clv_spreads = 
-  df_spreads_profit_2024 %>% 
-  rename(
-    spread_line_open = spread_line,
-    spread_line_close = spread_line_current
-  ) %>% 
-  select(game_id, stake_spread, spread_line_open, spread_line_close, spread_game_adj, actual_spread, profit) %>% 
-  mutate(season = 2024) %>% 
-  rbind(
-    df_spreads_profit_2025 %>% 
-      rename(
-        spread_line_open = spread_line,
-        spread_line_close = spread_line_current
-      ) %>% 
-      select(game_id, stake_spread, spread_line_open, spread_line_close, spread_game_adj, actual_spread, profit) %>% 
-      mutate(season = 2025)
-  ) %>% 
+df_edge_clv_spreads =
+  df_totals_profit_2022 %>% 
+  bind_rows(df_totals_profit_2023) %>% 
+  bind_rows(df_totals_profit_2024) %>% 
+  bind_rows(df_totals_profit_2025) %>% 
   mutate(
-    spread_game_adj = round(spread_game_adj, 2),
-    edge_open = spread_game_adj - spread_line_open,
-    edge_open_bucket = 
+    clv_raw = total_line_current - total_line,
+    clv = 
       case_when(
-        abs(edge_open) < 1 ~ "0 - 1",
-        between(abs(edge_open), 1, 1.999) ~ "1 - 2",
-        between(abs(edge_open), 2, 2.999) ~ "2 - 3",
-        between(abs(edge_open), 3, 3.999) ~ "3 - 4",
-        abs(edge_open) >= 4 ~ "4+",
-       .default = NA
+        stake_total < 0.5 ~ NA,
+        side_total == "Over" ~ clv_raw,
+        side_total == "Under" ~ -clv_raw,
+        .default = NA
       ),
-    edge_close = spread_game_adj - spread_line_close,
-    clv = sign(edge_open) * (spread_line_close - spread_line_open),
-    residual = spread_game_adj - actual_spread
+    mod_edge = abs(total_game_adj - total_line),
+    bet_type = "Total"
   ) %>% 
-  drop_na()
+  mutate() %>% 
+  rename(
+    bet_side = side_total,
+    bet_stake = stake_total
+  ) %>% 
+  select(bet_type, bet_side, bet_stake, mod_edge, clv_raw, clv, profit) %>% 
+  rbind(
+    df_spreads_profit_2022 %>% 
+      bind_rows(df_spreads_profit_2023) %>% 
+      bind_rows(df_spreads_profit_2024) %>% 
+      bind_rows(df_spreads_profit_2025) %>% 
+      mutate(
+        clv_raw = spread_line_current - spread_line,
+        clv = 
+          case_when(
+            stake_spread < 0.5 ~ NA,
+            side_spread == "Home" ~ clv_raw,
+            side_spread == "Away" ~ -clv_raw,
+            .default = NA
+          ),
+        mod_edge = abs(spread_game_adj - spread_line),
+        bet_type = "Spread"
+      ) %>% 
+      rename(
+        bet_side = side_spread,
+        bet_stake = stake_spread
+      ) %>% 
+      select(bet_type, bet_side, bet_stake, mod_edge, clv_raw, clv, profit)
+  ) %>% 
+  mutate(profit = replace_na(profit, 0)) %>% 
+  drop_na(clv)
 
-df_edge_clv_spreads %>% 
-  filter(stake_spread >= 0.5) %>% 
-  group_by(season, edge_open_bucket) %>% 
+view(df_edge_clv_spreads)
+
+df_edge_clv_summary = 
+  df_edge_clv_spreads %>%
+  group_by(bet_type) %>%
+  mutate(clv_decile = ntile(clv, 10)) %>%
+  group_by(bet_type, clv_decile) %>%
+  summarise(
+    n_bets      = n(),
+    total_profit = sum(profit),
+    roi_per_bet  = mean(profit),
+    win_rate     = mean(profit > 0),
+    mean_clv     = mean(clv),
+    .groups = "drop"
+  ) %>%
+  arrange(bet_type, clv_decile)
+ 
+df_edge_clv_summary %>% 
+  ggplot(aes(x = factor(clv_decile), y = total_profit, fill = bet_type)) +
+  geom_col(position = "dodge") +
+  labs(
+    title = "Profit by CLV Decile (1 = worst line movement, 10 = best)",
+    x = "CLV Decile", y = "Total Profit (units)"
+  ) +
+  theme_minimal()
+
+df_isolate_edge = 
+  df_edge_clv_spreads %>%
+  group_by(bet_type) %>%
+  filter(clv <= 0) %>% 
   summarise(
     n_bets = n(),
-    mean_clv = mean(clv),
-    roi = sum(profit)
+    total_profit = sum(profit),
+    roi_per_bet = mean(profit)
   )
 
-# Calibration plot:
+boot_roi <- function(df, n_boot = 5000) {
+  replicate(n_boot, mean(sample(df$profit, nrow(df), replace = TRUE)))
+}
+ 
+set.seed(37564)
+for (m in unique(df_edge_clv_spreads$bet_type)) {
+  sub <- df_edge_clv_spreads  %>% filter(bet_type == m, clv <= 0)
+  boots <- boot_roi(sub)
+  ci <- quantile(boots, c(0.025, 0.975))
+  cat(sprintf(
+    "%s | below-0-CLV bets: n=%d, mean ROI/bet=%.3f, 95%% CI [%.3f, %.3f]\n",
+    m, nrow(sub), mean(sub$profit), ci[1], ci[2]
+  ))
+}
 
-df_edge_clv_spreads %>% 
-  ggplot(aes(x = spread_game_adj, y = residual)) + 
-  geom_point() + 
-  facet_wrap(~ season)
-
-df_edge_clv_totals = 
-  df_totals_profit_2024 %>% 
-  rename(
-    total_line_open = total_line,
-    total_line_close = total_line_current
-  ) %>% 
-  select(game_id, stake_total, total_line_open, total_line_close, total_game_adj, actual_total, profit) %>% 
-  mutate(season = 2024) %>% 
-  mutate(total_line_open = as.double(total_line_open)) %>% 
-  rbind(
-    df_totals_profit_2025 %>% 
-      rename(
-        total_line_open = total_line,
-        total_line_close = total_line_current
-      ) %>% 
-      select(game_id, stake_total, total_line_open, total_line_close, total_game_adj, actual_total, profit) %>% 
-      mutate(season = 2025)
-  ) %>% 
+df_edge_calibration = 
+  df_edge_clv_spreads %>%
+  group_by(bet_type) %>%
   mutate(
-    total_game_adj = round(total_game_adj, 2),
-    edge_open = total_game_adj - total_line_open,
-    edge_open_bucket = 
-      case_when(
-        abs(edge_open) < 1 ~ "0 - 1",
-        between(abs(edge_open), 1, 1.999) ~ "1 - 2",
-        between(abs(edge_open), 2, 2.999) ~ "2 - 3",
-        between(abs(edge_open), 3, 3.999) ~ "3 - 4",
-        abs(edge_open) >= 4 ~ "4+",
-       .default = NA
-      ),
-    edge_close = total_game_adj - total_line_close,
-    clv = sign(edge_open) * (total_line_close - total_line_open),
-    residual = total_game_adj - actual_total
-  ) %>% 
-  drop_na()
-
-df_edge_clv_totals %>% 
-  filter(stake_total >= 0.5) %>% 
-  group_by(season, edge_open_bucket) %>% 
+    edge_bin = cut(
+      mod_edge,
+      breaks = c(-Inf, 1, 2, 3, Inf),
+      labels = c("<1pt", "1-2pt", "2-3pt", "3pt+")
+    )
+  ) %>%
+  group_by(bet_type, edge_bin) %>%
   summarise(
     n_bets = n(),
-    mean_clv = mean(clv),
-    roi = sum(profit)
-  )
+    total_profit = sum(profit),
+    roi_per_bet = mean(profit),
+    win_rate = mean(profit > 0),
+    mean_clv = mean(clv),   # useful: does bigger predicted edge also correlate with bigger CLV?
+    .groups = "drop"
+  ) %>%
+  arrange(bet_type, edge_bin)
+ 
+view(df_edge_calibration)
+ 
+df_edge_calibration %>% 
+  ggplot(aes(x = edge_bin, y = roi_per_bet, group = bet_type, color = bet_type)) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  labs(
+    title = "ROI per Bet by Model-Predicted Edge Size",
+    x = "Predicted Edge (|model line - open line|)", y = "Mean Profit per Bet"
+  ) +
+  theme_minimal()
 
-# Calibration plot:
+for (m in unique(df_edge_clv_spreads$bet_type)) {
+  sub <- df_edge_clv_spreads %>% filter(bet_type == m)
+ 
+  cat("\n===", m, "===\n")
+ 
+  # Model A: CLV alone
+  fit_clv <- lm(profit ~ clv, data = sub)
+  cat("-- CLV only --\n")
+  print(broom::tidy(fit_clv))
+ 
+  # Model B: predicted edge alone
+  fit_edge <- lm(profit ~ mod_edge, data = sub)
+  cat("-- mod_edge only --\n")
+  print(broom::tidy(fit_edge))
+ 
+  # Model C: both together -- the key test
+  fit_both <- lm(profit ~ clv + mod_edge, data = sub)
+  cat("-- CLV + mod_edge together --\n")
+  print(broom::tidy(fit_both))
+  cat(sprintf("R^2: CLV only=%.4f | edge only=%.4f | both=%.4f\n",
+              summary(fit_clv)$r.squared,
+              summary(fit_edge)$r.squared,
+              summary(fit_both)$r.squared))
+}
+ 
+# How to read this:
+# - If model_edge's coefficient in Model C is small and non-significant
+#   (p > 0.05) while clv's coefficient stays significant, that's the
+#   formal confirmation: your predicted edge size has no independent
+#   value once CLV is accounted for -- it was riding on CLV the whole time.
+# - If model_edge stays significant (even if smaller) in Model C, some
+#   independent signal survives -- worth quantifying its magnitude
+#   (coefficient * typical edge size) to see if it's economically
+#   meaningful or just statistically present.
+# - Compare R^2 of "both" vs "CLV only" -- if they're nearly identical,
+#   model_edge is adding ~nothing.
+ 
+# ============================================================
+# Optional: check whether the spread decile-10 result is driven by
+# a small number of extreme bets rather than a broad pattern
+# ============================================================
+decile10_detail <- bets %>%
+  filter(market == "spread") %>%
+  mutate(clv_decile = ntile(clv, 10)) %>%
+  filter(clv_decile == 10) %>%
+  arrange(desc(abs(profit))) %>%
+  select(season, week, bet_side, open_line, close_line, clv, profit)
+ 
+print(decile10_detail, n = 40)
 
-df_edge_clv_totals %>% 
-  ggplot(aes(x = total_game_adj, y = residual)) + 
-  geom_point() + 
-  facet_wrap(~ season)
+
+# df_edge_clv_spreads = 
+#   df_spreads_profit_2024 %>% 
+#   rename(
+#     spread_line_open = spread_line,
+#     spread_line_close = spread_line_current
+#   ) %>% 
+#   select(game_id, stake_spread, spread_line_open, spread_line_close, spread_game_adj, actual_spread, profit) %>% 
+#   mutate(season = 2024) %>% 
+#   rbind(
+#     df_spreads_profit_2025 %>% 
+#       rename(
+#         spread_line_open = spread_line,
+#         spread_line_close = spread_line_current
+#       ) %>% 
+#       select(game_id, stake_spread, spread_line_open, spread_line_close, spread_game_adj, actual_spread, profit) %>% 
+#       mutate(season = 2025)
+#   ) %>% 
+#   mutate(
+#     spread_game_adj = round(spread_game_adj, 2),
+#     edge_open = spread_game_adj - spread_line_open,
+#     edge_open_bucket = 
+#       case_when(
+#         abs(edge_open) < 1 ~ "0 - 1",
+#         between(abs(edge_open), 1, 1.999) ~ "1 - 2",
+#         between(abs(edge_open), 2, 2.999) ~ "2 - 3",
+#         between(abs(edge_open), 3, 3.999) ~ "3 - 4",
+#         abs(edge_open) >= 4 ~ "4+",
+#        .default = NA
+#       ),
+#     edge_close = spread_game_adj - spread_line_close,
+#     clv = sign(edge_open) * (spread_line_close - spread_line_open),
+#     residual = spread_game_adj - actual_spread
+#   ) %>% 
+#   drop_na()
+# 
+# df_edge_clv_spreads %>% 
+#   filter(stake_spread >= 0.5) %>% 
+#   group_by(season, edge_open_bucket) %>% 
+#   summarise(
+#     n_bets = n(),
+#     mean_clv = mean(clv),
+#     roi = sum(profit)
+#   )
+# 
+# # Calibration plot:
+# 
+# df_edge_clv_spreads %>% 
+#   ggplot(aes(x = spread_game_adj, y = residual)) + 
+#   geom_point() + 
+#   facet_wrap(~ season)
+# 
+# df_edge_clv_totals = 
+#   df_totals_profit_2024 %>% 
+#   rename(
+#     total_line_open = total_line,
+#     total_line_close = total_line_current
+#   ) %>% 
+#   select(game_id, stake_total, total_line_open, total_line_close, total_game_adj, actual_total, profit) %>% 
+#   mutate(season = 2024) %>% 
+#   mutate(total_line_open = as.double(total_line_open)) %>% 
+#   rbind(
+#     df_totals_profit_2025 %>% 
+#       rename(
+#         total_line_open = total_line,
+#         total_line_close = total_line_current
+#       ) %>% 
+#       select(game_id, stake_total, total_line_open, total_line_close, total_game_adj, actual_total, profit) %>% 
+#       mutate(season = 2025)
+#   ) %>% 
+#   mutate(
+#     total_game_adj = round(total_game_adj, 2),
+#     edge_open = total_game_adj - total_line_open,
+#     edge_open_bucket = 
+#       case_when(
+#         abs(edge_open) < 1 ~ "0 - 1",
+#         between(abs(edge_open), 1, 1.999) ~ "1 - 2",
+#         between(abs(edge_open), 2, 2.999) ~ "2 - 3",
+#         between(abs(edge_open), 3, 3.999) ~ "3 - 4",
+#         abs(edge_open) >= 4 ~ "4+",
+#        .default = NA
+#       ),
+#     edge_close = total_game_adj - total_line_close,
+#     clv = sign(edge_open) * (total_line_close - total_line_open),
+#     residual = total_game_adj - actual_total
+#   ) %>% 
+#   drop_na()
+# 
+# df_edge_clv_totals %>% 
+#   filter(stake_total >= 0.5) %>% 
+#   group_by(season, edge_open_bucket) %>% 
+#   summarise(
+#     n_bets = n(),
+#     mean_clv = mean(clv),
+#     roi = sum(profit)
+#   )
+# 
+# # Calibration plot:
+# 
+# df_edge_clv_totals %>% 
+#   ggplot(aes(x = total_game_adj, y = residual)) + 
+#   geom_point() + 
+#   facet_wrap(~ season)
 
 ```
 

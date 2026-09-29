@@ -158,7 +158,7 @@ teams_exclude =
   mutate(
     date_time = as.POSIXct(str_c(gameday, " ", gametime), format = "%Y-%m-%d %H:%M", tz = "America/New_York")
   ) %>% 
-  filter(date_time > (format(Sys.time() - 5 * 3600, "%Y-%m-%d %H:%M"))) %>% 
+  filter(date_time > (format(Sys.time() - 4.5 * 3600, "%Y-%m-%d %H:%M"))) %>% 
   select(home_team, away_team) %>% 
   pivot_longer(
     ends_with("_team"),
@@ -1599,7 +1599,7 @@ df_qb_cont =
   ) %>% 
   rows_update(
     tibble(
-      team = c("MIN", "ATL", "CHI", "NYG", "WAS"),
+      team = c("CHI", "NYG", "WAS"),
       qb_cont = 0
     ),
     by = "team"
