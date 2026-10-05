@@ -1599,7 +1599,7 @@ df_qb_cont =
   ) %>% 
   rows_update(
     tibble(
-      team = c("CHI", "NYG", "WAS"),
+      team = c("CHI", "WAS", "TB"),
       qb_cont = 0
     ),
     by = "team"
@@ -1871,7 +1871,7 @@ df_pred_total_spread_adj =
   mutate(
     enclosed_field = 
       case_when(
-        team_home %in% c("DAL", "HOU", "IND") ~ 1,
+        team_home %in% c("DAL", "HOU", "IND", "ARI") ~ 1,
         .default = enclosed_field
       ),
     wind = 

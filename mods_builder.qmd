@@ -8304,7 +8304,7 @@ df_total_team_train_id =
   # left_join(field_game_df, by = "game_id") %>%
   filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
   select(season, team, game_id, total_team, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>%
-  # select(season, team, game_id, total_team, prior_rolling_success_off_rate, prior_rolling_off_pass_epa, prior_rolling_team_total_off, prior_rolling_team_total_def_opp, travel_km_opp, travel_km, prior_rolling_to_off_rate, prior_rolling_off_pass_epa_opp, prior_rolling_team_total_def, prior_rolling_success_def_rate_opp, prior_rolling_def_pass_epa_opp, prior_rolling_exp_def_rate_opp, prior_rolling_exp_off_rate) %>%
+  select(-c(starts_with("prior_rolling_def_rush_epa"), prior_rolling_exp_off_rate_opp, prior_rolling_def_pass_epa, prior_rolling_team_total_off_opp, prior_rolling_exp_def_rate, prior_rolling_pen_yards_off_opp, prior_rolling_pen_yards_off, prior_rolling_pen_yards_def_opp, starts_with("rest_days"), prior_rolling_rz_eff, prior_rolling_rz_eff_opp, prior_rolling_success_off_rate_opp, prior_rolling_off_rush_epa_opp, prior_rolling_to_off_rate_opp, prior_rolling_off_rush_epa, starts_with("prior_rolling_sack_rate"), prior_rolling_qb_hit_rate_def, prior_rolling_qb_hit_rate_def_opp, prior_rolling_qb_hit_rate_off_opp, prior_rolling_pressure_rate_off, prior_rolling_pressure_rate_def_opp, prior_rolling_pressure_rate_off_opp, prior_rolling_to_def_rate_opp, prior_rolling_to_def_rate)) %>%
   drop_na()
 
 # saveRDS(df_total_team_train_id, "df_total_team_train_2009_2026_id.rds")
@@ -8511,6 +8511,386 @@ bwplot(res, metric = "Rsquared", main = "RMSE for Repeated 5-Fold CV Using Vario
 
 # saveRDS(mod_total_team_svm, glue::glue("mod_total_team_svm_{format(Sys.Date(), '%Y_%m_%d')}.rds"))
 mod_total_team_svm = readRDS("mod_total_team_svm.rds")
+
+df_total_correct_oof_resid = 
+  df_team_total_spread_rolling %>% 
+  left_join(
+    df_team_total_spread_rolling %>% 
+      group_by(game_id) %>% 
+      mutate(
+        team_opp = 
+          case_when(
+            row_number() == 1 ~ lead(team),
+            row_number() == 2 ~ lag(team),
+            .default = NA
+          )
+      ) %>% 
+      relocate(team_opp, .after = team) %>% 
+      ungroup() %>% 
+      select(game_id, team_opp, starts_with("prior_"), qb_cont, rest_days, travel_km) %>% 
+      rename_with(~ str_c(., "_opp"), everything() & -c(game_id, team_opp)) %>% 
+      rename(team = team_opp),
+    by = c("game_id", "team")
+  ) %>% 
+  # filter(season != 2025) %>% 
+  # left_join(field_game_df, by = "game_id") %>%
+  filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
+  select(game_id, total_team, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
+  drop_na() %>% 
+  mutate(
+    pred_total_team = predict(mod_total_team_svm, newdata = .)
+  ) %>% 
+  group_by(game_id) %>% 
+  summarise(
+    pred_total = sum(pred_total_team),
+    actual_total = sum(total_team)
+  ) %>% 
+  mutate(
+    resid_total = actual_total - pred_total
+  ) %>% 
+  left_join(df_field_game, by = "game_id") %>% 
+  ungroup() %>% 
+  select(game_id, actual_total, pred_total, resid_total, ends_with("_field"), division_game, international, wind, temp, time_start) %>% 
+  select(-c(time_start, international))
+
+df_spread_correct_oof_resid = 
+  df_team_total_spread_rolling %>% 
+  left_join(
+    df_team_total_spread_rolling %>% 
+      group_by(game_id) %>% 
+      mutate(
+        team_opp = 
+          case_when(
+            row_number() == 1 ~ lead(team),
+            row_number() == 2 ~ lag(team),
+            .default = NA
+          )
+      ) %>% 
+      relocate(team_opp, .after = team) %>% 
+      ungroup() %>% 
+      select(game_id, team_opp, starts_with("prior_"), qb_cont, rest_days, travel_km) %>% 
+      rename_with(~ str_c(., "_opp"), everything() & -c(game_id, team_opp)) %>% 
+      rename(team = team_opp),
+    by = c("game_id", "team")
+  ) %>% 
+  # filter(season != 2025) %>% 
+  # left_join(field_game_df, by = "game_id") %>%
+  filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
+  select(game_id, result, total_team, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
+  drop_na() %>% 
+  mutate(
+    pred_total_team = predict(mod_total_team_svm, newdata = .),
+    rest_days_diff = rest_days - rest_days_opp
+  ) %>% 
+  group_by(game_id) %>% 
+  mutate(
+    pred_spread = pred_total_team - lead(pred_total_team)
+  ) %>% 
+  drop_na() %>% 
+  mutate(
+    resid_spread = result - pred_spread
+  ) %>% 
+  left_join(df_field_game, by = "game_id") %>% 
+  ungroup() %>% 
+  select(resid_spread, ends_with("_field"), division_game, international, wind, temp, time_start) %>% 
+  select(-c(time_start, international)) %>% 
+  drop_na()
+
+df_oof_pred_total_team =
+  mod_total_team_svm$pred %>% 
+  tibble() %>% 
+  select(rowIndex, pred, obs) %>% 
+  mutate(model = "svm") %>% 
+  # mod_glm_wr$pred %>% 
+  # tibble() %>% 
+  # select(rowIndex, pred, obs) %>% 
+  # mutate(model = "glm") %>% 
+  # rbind(
+  #   mod_enet_wr$pred %>% 
+  #     tibble() %>% 
+  #     select(rowIndex, pred, obs) %>% 
+  #     mutate(model = "enet")
+  # ) %>% 
+  # rbind(
+  #   mod_knn_wr$pred %>% 
+  #     tibble() %>% 
+  #     select(rowIndex, pred, obs) %>% 
+  #     mutate(model = "knn")
+  # ) %>% 
+  # rbind(
+  #   mod_mars_wr$pred %>% 
+  #     tibble() %>% 
+  #     select(rowIndex, pred, obs) %>% 
+  #     mutate(model = "mars")
+  # ) %>% 
+  # rbind(
+  #   mod_boost_wr$pred %>% 
+  #     tibble() %>% 
+  #     select(rowIndex, pred, obs) %>% 
+  #     mutate(model = "boost")
+  # ) %>% 
+  group_by(model, rowIndex) %>%
+  summarise(
+    actual = first(obs),
+    pred_oof = mean(pred)
+  ) %>% 
+  ungroup() %>% 
+  left_join(
+    mod_total_team_svm$trainingData %>% 
+      rowid_to_column("rowIndex"),
+    by = "rowIndex"
+  ) %>% 
+  left_join(df_total_team_train_id) %>% 
+  relocate(game_id) %>% 
+  # mutate(
+  #   game_id = (rowIndex + 1) %/% 2
+  # ) %>% 
+  group_by(game_id) %>% 
+  summarise(
+    pred_total = sum(pred_oof),
+    actual_total = sum(actual),
+    resid_total = actual_total - pred_total,
+    pred_spread = 
+      case_when(
+        row_number() == 1 ~ pred_oof - lead(pred_oof),
+        .default = NA
+      ),
+    actual_home = 
+      case_when(
+        row_number() == 1 ~ actual,
+        .default = NA
+      ),
+    actual_away = 
+      case_when(
+        row_number() == 2 ~ actual,
+        .default = NA
+      )
+  ) %>% 
+  fill(c(actual_home, actual_away), .direction = "downup") %>% 
+  drop_na(pred_spread) %>% 
+  left_join(
+    df_total_correct_oof_resid %>% 
+      select(-c(actual_total, pred_total, resid_total)), 
+    by = c("game_id")
+  ) %>% 
+  # left_join(
+  #   df_spread_correct_oof_resid %>% 
+  #     select(-c(actual_total, pred_total, resid_total)), 
+  #   by = c("game_id")
+  # ) %>% 
+  ungroup() %>% 
+  drop_na() %>% 
+  mutate(
+    pred_tot_adj = predict(mod_total_correct_enet, newdata = .),
+    pred_spread_adj = predict(mod_spread_correct_enet, newdata = .),
+    pred_tot_oof_adj = pred_total + pred_tot_adj,
+    pred_spread_oof_adj = pred_spread + pred_spread_adj
+    # mod_var = log(squared_residual + 1),
+  ) %>% 
+  mutate(
+    team_home = str_extract(game_id, "[A-Z]+$"),
+    team_away = str_extract(str_remove_all(str_remove(game_id, "[A-Z]+$"), "\\_"), "[A-Z]+$")
+  ) %>% 
+  pivot_longer(
+    starts_with("team_"),
+    names_to = "home_away",
+    names_prefix = "team_",
+    values_to = "team"
+  ) %>% 
+  mutate(
+    pred_total_team_adj = 
+      case_when(
+        home_away == "home" ~ pred_tot_oof_adj / 2 + 0.5 * pred_spread_oof_adj,
+        home_away == "away" ~ pred_tot_oof_adj / 2 - 0.5 * pred_spread_oof_adj,
+        .default = NA
+      ),
+    actual = 
+      case_when(
+        home_away == "home" ~ actual_home,
+        home_away == "away" ~ actual_away,
+        .default = NA
+      ),
+    residual = actual - pred_total_team_adj
+  )
+
+df_oof_pred_total_team %>% 
+  pull(residual) %>% sd()
+
+df_oof_cor_resid = 
+  df_oof_pred_total_team %>% 
+  group_by(game_id) %>% 
+  summarise(
+    resid_A = first(residual),
+    resid_B = last(residual),
+    .groups = "drop"
+  )
+
+rho <- cor(df_oof_cor_resid$resid_A, df_oof_cor_resid$resid_B, use = "complete.obs")
+cat("Residual correlation between the two teams' scores in the same game:", rho, "\n")
+
+df_oof_cor_resid_high_tot =
+  df_oof_pred_total_team %>% 
+  filter(actual > median(actual)) %>%
+  group_by(game_id) %>% 
+  filter(n() == 2) %>% 
+  summarise(
+    resid_A = first(residual),
+    resid_B = last(residual),
+    .groups = "drop"
+  )
+
+cor(df_oof_cor_resid_high_tot$resid_A, df_oof_cor_resid_high_tot$resid_B, use = "complete.obs")
+
+df_oof_cor_resid_low_tot =
+  df_oof_pred_total_team %>% 
+  filter(actual <= median(actual)) %>% 
+  group_by(game_id) %>% 
+  filter(n() == 2) %>% 
+  summarise(
+    resid_A = first(residual),
+    resid_B = last(residual),
+    .groups = "drop"
+  )
+
+cor(df_oof_cor_resid_low_tot$resid_A, df_oof_cor_resid_low_tot$resid_B, use = "complete.obs")
+
+# Reliability / calibration check on your simulated cover probabilities
+# Requires: historical sim_prob (your simulation's implied win/cover
+# probability for the side you'd bet) and actual outcome (covered Y/N),
+# generated the same way you would have generated them live each week
+# (i.e., using only information available at bet time)
+
+df_calibration = 
+  df_edge_clv_spreads %>% 
+  drop_na(clv) %>% 
+  mutate(
+    prob_bucket = ntile(p_bet_hit, 10),
+    profit = na_if(profit, 0),
+    covered = ifelse(profit > 0, 1, 0)
+  ) %>% 
+  drop_na(prob_bucket) %>%
+  group_by(prob_bucket) %>%
+  summarise(
+    n = n(),
+    mean_predicted_prob = mean(p_bet_hit),
+    actual_cover_rate = mean(covered, na.rm = T),
+    .groups = "drop"
+  )
+
+view(df_calibration)
+
+df_calibration %>% 
+  ggplot(aes(x = mean_predicted_prob, y = actual_cover_rate)) +
+  geom_point() +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  labs(title = "Calibration: predicted vs. actual cover rate",
+       x = "Mean predicted probability", y = "Actual cover rate") +
+  theme_minimal()
+
+# ============================================================
+# FIX 1 (immediate, pragmatic): Platt-scale your probabilities
+# ============================================================
+# Fit a logistic regression of actual outcome on the LOGIT of your
+# simulated probability. This learns a correction curve directly from
+# the miscalibration you've already observed, without needing to
+# diagnose the exact mechanism.
+#
+# IMPORTANT: fit this on a holdout/earlier period and apply it to later
+# bets (time-based split), or you'll just be fitting noise in this
+# specific 470-bet sample. With only ~470 rows, keep the calibration
+# model itself as simple as possible (a single logistic term) --
+# do NOT fit isotonic regression or anything flexible here, you don't
+# have the sample size to support it without overfitting the fix itself.
+
+library(dplyr)
+
+# bet_history: one row per bet already taken, with sim_prob and covered (0/1)
+df_edge_clv_spreads_platt =
+  df_edge_clv_spreads %>%
+  mutate(
+    logit_sim_prob = log(p_bet_hit / (1 - p_bet_hit)),
+    profit = na_if(profit, 0),
+    covered = ifelse(profit > 0, 1, 0)
+  )
+
+# Time-based split -- train calibration on earlier bets, check on later ones
+train_cal <- df_edge_clv_spreads_platt %>% filter(season < max(season))
+test_cal  <- df_edge_clv_spreads_platt %>% filter(season == max(season))
+
+platt_model <- glm(covered ~ logit_sim_prob, data = train_cal, family = binomial)
+summary(platt_model)
+
+# Apply calibration going forward
+test_cal$calibrated_prob <- predict(platt_model, newdata = test_cal, type = "response")
+
+# Check: does the calibrated probability track actual cover rate better
+# than the raw sim_prob did, on this held-out slice?
+test_cal %>%
+  mutate(cal_bucket = ntile(calibrated_prob, 5)) %>%
+  group_by(cal_bucket) %>%
+  summarise(n = n(),
+            mean_calibrated = mean(calibrated_prob),
+            mean_raw_sim = mean(p_bet_hit),
+            actual_cover_rate = mean(covered, na.rm = T))
+
+# From here on: use `calibrated_prob` (not sim_prob) for EV and Kelly
+# calculations. Your EV>0.3 and Kelly>0.5 thresholds were calibrated
+# against inflated probabilities -- recheck whether they even make sense
+# once probabilities are corrected (you may need lower thresholds, since
+# true edges are smaller than you thought).
+
+# ============================================================
+# FIX 2 (structural, addresses root cause): shrink predicted MARGINS
+# toward zero before simulating, proportional to estimation reliability
+# ============================================================
+# This is the more durable fix -- rather than patching probabilities
+# after the fact, correct the actual input (predicted margin) that's
+# driving the overconfidence, so EV/Kelly math is right from the start.
+#
+# Reliability ("signal-to-noise ratio") = how much of the variance in
+# your predicted margins reflects real predictive signal vs. estimation
+# noise. Estimate this empirically:
+
+# 1. Get out-of-sample predicted margins and actual margins for ALL
+#    games your model scored (not just ones you bet -- using only bets
+#    passing your filter here would reintroduce the same selection bias
+#    you're trying to fix).
+all_scored_games <- all_scored_games %>%   # replace with your full scored set
+  mutate(pred_margin = pred_team - pred_opp,   # or however margin is derived
+         actual_margin = actual_team - actual_opp)
+
+signal_var <- var(all_scored_games$pred_margin)      # variance of your estimates
+noise_var  <- var(all_scored_games$actual_margin - all_scored_games$pred_margin)^1  # residual var
+
+# A simple empirical-Bayes-style reliability ratio:
+# (this is a rough heuristic, not a rigorous derivation -- treat the
+# resulting shrinkage factor as a starting point to validate via
+# calibration, not a precise formula)
+reliability <- signal_var / (signal_var + noise_var)
+cat("Estimated reliability (shrinkage factor to apply):", reliability, "\n")
+
+# Apply before simulating:
+# shrunk_pred_margin <- reliability * raw_pred_margin
+# (raw_pred_margin here only, so that bets selected on this reduced,
+#  deflated margin are not systematically inflated by noise)
+
+# Validate: rerun the calibration table (predicted vs actual cover rate)
+# using shrunk margins -> re-simulated probabilities -> re-filtered bets,
+# on a holdout period. The gap between mean predicted prob and actual
+# cover rate should shrink substantially if this is addressing the right
+# mechanism.
+
+
+
+
+
+
+
+
+
+
+
+
 
 ## Total Correction Mods:
   
@@ -9407,25 +9787,25 @@ df_totals_profit_2022 =
     p_over_current  = map_dbl(total_sim_adj, ~ mean(.x > total_line_current, na.rm = T)),
     p_under_current = 1 - p_over_current,
     odds_over_current_dec =
-      if_else(
+      ifelse(
         over_odds_current < 0,
         1 + 100 / abs(over_odds_current),
         1 + over_odds_current / 100
       ),
     odds_under_current_dec =
-      if_else(
+      ifelse(
         under_odds_current < 0,
         1 + 100 / abs(under_odds_current),
         1 + under_odds_current / 100
       ),
     odds_over_dec = total_score_over_open,
-      # if_else(
+      # ifelse(
       #   over_odds < 0,
       #   1 + 100 / abs(over_odds),
       #   1 + over_odds / 100
       # ),
     odds_under_dec = total_score_under_open,
-      # if_else(
+      # ifelse(
       #   under_odds < 0,
       #   1 + 100 / abs(under_odds),
       #   1 + under_odds / 100
@@ -9458,10 +9838,10 @@ df_totals_profit_2022 =
       p_under_current * odds_under_current_dec > p_over_current  * odds_over_current_dec  ~ "Under",
       .default = NA
     ),
-    p_total = if_else(side_total == "Over",  p_over,  p_under),
-    p_current_total = if_else(side_current_total == "Over",  p_over_current,  p_under_current),
-    dec_odds_total = if_else(side_total == "Over", odds_over_dec, odds_under_dec),
-    dec_odds_current_total = if_else(side_current_total == "Over", odds_over_current_dec, odds_under_current_dec),
+    p_total = ifelse(side_total == "Over",  p_over,  p_under),
+    p_current_total = ifelse(side_current_total == "Over",  p_over_current,  p_under_current),
+    dec_odds_total = ifelse(side_total == "Over", odds_over_dec, odds_under_dec),
+    dec_odds_current_total = ifelse(side_current_total == "Over", odds_over_current_dec, odds_under_current_dec),
     kelly_total = (p_total * dec_odds_total - 1) / (dec_odds_total - 1),
     kelly_current_total = (p_current_total * dec_odds_current_total - 1) / (dec_odds_current_total - 1),
     stake_frac_total = pmin(0.03, 0.05 * pmax(kelly_total, 0)),
@@ -9504,7 +9884,8 @@ df_totals_profit_2022 =
       case_when(
         ind_bet_hit_current == 1 ~ stake_current_total * (dec_odds_current_total - 1),
         ind_bet_hit_current == 0 ~ -stake_current_total
-      )
+      ),
+    season = 2022
   ) 
   
 df_spreads_profit_2022 =
@@ -9522,25 +9903,25 @@ df_spreads_profit_2022 =
     p_home_current = map_dbl(spread_sim_adj, ~ mean(.x > spread_line_current, na.rm = T)),
     p_away_current = 1 - p_home_current,
     odds_home_dec = home_line_odds_open,
-      # if_else(
+      # ifelse(
       #   home_odds < 0,
       #   1 + 100 / abs(home_odds),
       #   1 + home_odds / 100
       # ),
     odds_away_dec = away_line_odds_open,
-      # if_else(
+      # ifelse(
       #   away_odds < 0,
       #   1 + 100 / abs(away_odds),
       #   1 + away_odds / 100
       # ),
     odds_home_current_dec =
-      if_else(
+      ifelse(
         home_odds_current < 0,
         1 + 100 / abs(home_odds_current),
         1 + home_odds_current / 100
       ),
     odds_away_current_dec =
-      if_else(
+      ifelse(
         away_odds_current < 0,
         1 + 100 / abs(away_odds_current),
         1 + away_odds_current / 100
@@ -9573,10 +9954,10 @@ df_spreads_profit_2022 =
       p_away_current * odds_away_current_dec > p_home_current  * odds_home_current_dec  ~ "Away",
       .default = NA
     ),
-    p_spread = if_else(side_spread == "Home",  p_home,  p_away),
-    p_current_spread = if_else(side_current_spread == "Home",  p_home_current,  p_away_current),
-    dec_odds_spread = if_else(side_spread == "Home", odds_home_dec, odds_away_dec),
-    dec_odds_current_spread = if_else(side_current_spread == "Home", odds_home_current_dec, odds_away_current_dec),
+    p_spread = ifelse(side_spread == "Home",  p_home,  p_away),
+    p_current_spread = ifelse(side_current_spread == "Home",  p_home_current,  p_away_current),
+    dec_odds_spread = ifelse(side_spread == "Home", odds_home_dec, odds_away_dec),
+    dec_odds_current_spread = ifelse(side_current_spread == "Home", odds_home_current_dec, odds_away_current_dec),
     kelly_spread = (p_spread * dec_odds_spread - 1) / (dec_odds_spread - 1),
     kelly_current_spread = (p_current_spread * dec_odds_current_spread - 1) / (dec_odds_current_spread - 1),
     stake_frac_spread = pmin(0.03, 0.05 * pmax(kelly_spread, 0)),
@@ -9618,7 +9999,8 @@ df_spreads_profit_2022 =
       case_when(
         ind_bet_hit_current == 1 ~ stake_current_spread * (dec_odds_current_spread - 1),
         ind_bet_hit_current == 0 ~ -stake_current_spread
-      )
+      ),
+    season = 2022
   )
 
 df_totals_profit_2022 %>%
@@ -10048,25 +10430,25 @@ df_totals_profit_2023 =
     p_over_current  = map_dbl(total_sim_adj, ~ mean(.x > total_line_current, na.rm = T)),
     p_under_current = 1 - p_over_current,
     odds_over_current_dec =
-      if_else(
+      ifelse(
         over_odds_current < 0,
         1 + 100 / abs(over_odds_current),
         1 + over_odds_current / 100
       ),
     odds_under_current_dec =
-      if_else(
+      ifelse(
         under_odds_current < 0,
         1 + 100 / abs(under_odds_current),
         1 + under_odds_current / 100
       ),
     odds_over_dec = total_score_over_open,
-      # if_else(
+      # ifelse(
       #   over_odds < 0,
       #   1 + 100 / abs(over_odds),
       #   1 + over_odds / 100
       # ),
     odds_under_dec = total_score_under_open,
-      # if_else(
+      # ifelse(
       #   under_odds < 0,
       #   1 + 100 / abs(under_odds),
       #   1 + under_odds / 100
@@ -10099,10 +10481,10 @@ df_totals_profit_2023 =
       p_under_current * odds_under_current_dec > p_over_current  * odds_over_current_dec  ~ "Under",
       .default = NA
     ),
-    p_total = if_else(side_total == "Over",  p_over,  p_under),
-    p_current_total = if_else(side_current_total == "Over",  p_over_current,  p_under_current),
-    dec_odds_total = if_else(side_total == "Over", odds_over_dec, odds_under_dec),
-    dec_odds_current_total = if_else(side_current_total == "Over", odds_over_current_dec, odds_under_current_dec),
+    p_total = ifelse(side_total == "Over",  p_over,  p_under),
+    p_current_total = ifelse(side_current_total == "Over",  p_over_current,  p_under_current),
+    dec_odds_total = ifelse(side_total == "Over", odds_over_dec, odds_under_dec),
+    dec_odds_current_total = ifelse(side_current_total == "Over", odds_over_current_dec, odds_under_current_dec),
     kelly_total = (p_total * dec_odds_total - 1) / (dec_odds_total - 1),
     kelly_current_total = (p_current_total * dec_odds_current_total - 1) / (dec_odds_current_total - 1),
     stake_frac_total = pmin(0.03, 0.05 * pmax(kelly_total, 0)),
@@ -10145,7 +10527,8 @@ df_totals_profit_2023 =
       case_when(
         ind_bet_hit_current == 1 ~ stake_current_total * (dec_odds_current_total - 1),
         ind_bet_hit_current == 0 ~ -stake_current_total
-      )
+      ),
+    season = 2023
   ) 
   
 df_spreads_profit_2023 =
@@ -10163,25 +10546,25 @@ df_spreads_profit_2023 =
     p_home_current = map_dbl(spread_sim_adj, ~ mean(.x > spread_line_current, na.rm = T)),
     p_away_current = 1 - p_home_current,
     odds_home_dec = home_line_odds_open,
-      # if_else(
+      # ifelse(
       #   home_odds < 0,
       #   1 + 100 / abs(home_odds),
       #   1 + home_odds / 100
       # ),
     odds_away_dec = away_line_odds_open,
-      # if_else(
+      # ifelse(
       #   away_odds < 0,
       #   1 + 100 / abs(away_odds),
       #   1 + away_odds / 100
       # ),
     odds_home_current_dec =
-      if_else(
+      ifelse(
         home_odds_current < 0,
         1 + 100 / abs(home_odds_current),
         1 + home_odds_current / 100
       ),
     odds_away_current_dec =
-      if_else(
+      ifelse(
         away_odds_current < 0,
         1 + 100 / abs(away_odds_current),
         1 + away_odds_current / 100
@@ -10214,10 +10597,10 @@ df_spreads_profit_2023 =
       p_away_current * odds_away_current_dec > p_home_current  * odds_home_current_dec  ~ "Away",
       .default = NA
     ),
-    p_spread = if_else(side_spread == "Home",  p_home,  p_away),
-    p_current_spread = if_else(side_current_spread == "Home",  p_home_current,  p_away_current),
-    dec_odds_spread = if_else(side_spread == "Home", odds_home_dec, odds_away_dec),
-    dec_odds_current_spread = if_else(side_current_spread == "Home", odds_home_current_dec, odds_away_current_dec),
+    p_spread = ifelse(side_spread == "Home",  p_home,  p_away),
+    p_current_spread = ifelse(side_current_spread == "Home",  p_home_current,  p_away_current),
+    dec_odds_spread = ifelse(side_spread == "Home", odds_home_dec, odds_away_dec),
+    dec_odds_current_spread = ifelse(side_current_spread == "Home", odds_home_current_dec, odds_away_current_dec),
     kelly_spread = (p_spread * dec_odds_spread - 1) / (dec_odds_spread - 1),
     kelly_current_spread = (p_current_spread * dec_odds_current_spread - 1) / (dec_odds_current_spread - 1),
     stake_frac_spread = pmin(0.03, 0.05 * pmax(kelly_spread, 0)),
@@ -10259,7 +10642,8 @@ df_spreads_profit_2023 =
       case_when(
         ind_bet_hit_current == 1 ~ stake_current_spread * (dec_odds_current_spread - 1),
         ind_bet_hit_current == 0 ~ -stake_current_spread
-      )
+      ),
+    season = 2023
   )
 
 df_totals_profit_2023 %>%
@@ -11001,25 +11385,25 @@ df_totals_profit_2024 =
     p_over_current  = map_dbl(total_sim_adj, ~ mean(.x > total_line_current, na.rm = T)),
     p_under_current = 1 - p_over_current,
     odds_over_current_dec =
-      if_else(
+      ifelse(
         over_odds_current < 0,
         1 + 100 / abs(over_odds_current),
         1 + over_odds_current / 100
       ),
     odds_under_current_dec =
-      if_else(
+      ifelse(
         under_odds_current < 0,
         1 + 100 / abs(under_odds_current),
         1 + under_odds_current / 100
       ),
     odds_over_dec = total_score_over_open,
-      # if_else(
+      # ifelse(
       #   over_odds < 0,
       #   1 + 100 / abs(over_odds),
       #   1 + over_odds / 100
       # ),
     odds_under_dec = total_score_under_open,
-      # if_else(
+      # ifelse(
       #   under_odds < 0,
       #   1 + 100 / abs(under_odds),
       #   1 + under_odds / 100
@@ -11052,10 +11436,10 @@ df_totals_profit_2024 =
       p_under_current * odds_under_current_dec > p_over_current  * odds_over_current_dec  ~ "Under",
       .default = NA
     ),
-    p_total = if_else(side_total == "Over",  p_over,  p_under),
-    p_current_total = if_else(side_current_total == "Over",  p_over_current,  p_under_current),
-    dec_odds_total = if_else(side_total == "Over", odds_over_dec, odds_under_dec),
-    dec_odds_current_total = if_else(side_current_total == "Over", odds_over_current_dec, odds_under_current_dec),
+    p_total = ifelse(side_total == "Over",  p_over,  p_under),
+    p_current_total = ifelse(side_current_total == "Over",  p_over_current,  p_under_current),
+    dec_odds_total = ifelse(side_total == "Over", odds_over_dec, odds_under_dec),
+    dec_odds_current_total = ifelse(side_current_total == "Over", odds_over_current_dec, odds_under_current_dec),
     kelly_total = (p_total * dec_odds_total - 1) / (dec_odds_total - 1),
     kelly_current_total = (p_current_total * dec_odds_current_total - 1) / (dec_odds_current_total - 1),
     stake_frac_total = pmin(0.03, 0.05 * pmax(kelly_total, 0)),
@@ -11098,7 +11482,8 @@ df_totals_profit_2024 =
       case_when(
         ind_bet_hit_current == 1 ~ stake_current_total * (dec_odds_current_total - 1),
         ind_bet_hit_current == 0 ~ -stake_current_total
-      )
+      ),
+    season = 2024
   ) 
   
 df_spreads_profit_2024 =
@@ -11116,25 +11501,25 @@ df_spreads_profit_2024 =
     p_home_current = map_dbl(spread_sim_adj, ~ mean(.x > spread_line_current, na.rm = T)),
     p_away_current = 1 - p_home_current,
     odds_home_dec = home_line_odds_open,
-      # if_else(
+      # ifelse(
       #   home_odds < 0,
       #   1 + 100 / abs(home_odds),
       #   1 + home_odds / 100
       # ),
     odds_away_dec = away_line_odds_open,
-      # if_else(
+      # ifelse(
       #   away_odds < 0,
       #   1 + 100 / abs(away_odds),
       #   1 + away_odds / 100
       # ),
     odds_home_current_dec =
-      if_else(
+      ifelse(
         home_odds_current < 0,
         1 + 100 / abs(home_odds_current),
         1 + home_odds_current / 100
       ),
     odds_away_current_dec =
-      if_else(
+      ifelse(
         away_odds_current < 0,
         1 + 100 / abs(away_odds_current),
         1 + away_odds_current / 100
@@ -11167,10 +11552,10 @@ df_spreads_profit_2024 =
       p_away_current * odds_away_current_dec > p_home_current  * odds_home_current_dec  ~ "Away",
       .default = NA
     ),
-    p_spread = if_else(side_spread == "Home",  p_home,  p_away),
-    p_current_spread = if_else(side_current_spread == "Home",  p_home_current,  p_away_current),
-    dec_odds_spread = if_else(side_spread == "Home", odds_home_dec, odds_away_dec),
-    dec_odds_current_spread = if_else(side_current_spread == "Home", odds_home_current_dec, odds_away_current_dec),
+    p_spread = ifelse(side_spread == "Home",  p_home,  p_away),
+    p_current_spread = ifelse(side_current_spread == "Home",  p_home_current,  p_away_current),
+    dec_odds_spread = ifelse(side_spread == "Home", odds_home_dec, odds_away_dec),
+    dec_odds_current_spread = ifelse(side_current_spread == "Home", odds_home_current_dec, odds_away_current_dec),
     kelly_spread = (p_spread * dec_odds_spread - 1) / (dec_odds_spread - 1),
     kelly_current_spread = (p_current_spread * dec_odds_current_spread - 1) / (dec_odds_current_spread - 1),
     stake_frac_spread = pmin(0.03, 0.05 * pmax(kelly_spread, 0)),
@@ -11212,7 +11597,8 @@ df_spreads_profit_2024 =
       case_when(
         ind_bet_hit_current == 1 ~ stake_current_spread * (dec_odds_current_spread - 1),
         ind_bet_hit_current == 0 ~ -stake_current_spread
-      )
+      ),
+    season = 2024
   )
 
 df_totals_profit_2024 %>%
@@ -11654,25 +12040,25 @@ df_totals_profit_2025 =
     p_over_current  = map_dbl(total_sim_adj, ~ mean(.x > total_line_current, na.rm = T)),
     p_under_current = 1 - p_over_current,
     odds_over_current_dec = 
-      if_else(
+      ifelse(
         over_odds_current < 0,
         1 + 100 / abs(over_odds_current),
         1 + over_odds_current / 100
       ),
     odds_under_current_dec = total_score_under_open,
-      if_else(
-        under_odds_current < 0,
-        1 + 100 / abs(under_odds_current),
-        1 + under_odds_current / 100
-      ),
+      # ifelse(
+      #   under_odds_current < 0,
+      #   1 + 100 / abs(under_odds_current),
+      #   1 + under_odds_current / 100
+      # ),
     odds_over_dec = total_score_over_open,
-      # if_else(
+      # ifelse(
       #   over_odds < 0,
       #   1 + 100 / abs(over_odds),
       #   1 + over_odds / 100
       # ),
     odds_under_dec = total_score_under_open,
-      # if_else(
+      # ifelse(
       #   under_odds < 0,
       #   1 + 100 / abs(under_odds),
       #   1 + under_odds / 100
@@ -11705,10 +12091,10 @@ df_totals_profit_2025 =
       p_under_current * odds_under_current_dec > p_over_current  * odds_over_current_dec  ~ "Under",
       .default = NA
     ),
-    p_total = if_else(side_total == "Over",  p_over,  p_under),
-    p_current_total = if_else(side_current_total == "Over",  p_over_current,  p_under_current),
-    dec_odds_total = if_else(side_total == "Over", odds_over_dec, odds_under_dec),
-    dec_odds_current_total = if_else(side_current_total == "Over", odds_over_current_dec, odds_under_current_dec),
+    p_total = ifelse(side_total == "Over",  p_over,  p_under),
+    p_current_total = ifelse(side_current_total == "Over",  p_over_current,  p_under_current),
+    dec_odds_total = ifelse(side_total == "Over", odds_over_dec, odds_under_dec),
+    dec_odds_current_total = ifelse(side_current_total == "Over", odds_over_current_dec, odds_under_current_dec),
     kelly_total = (p_total * dec_odds_total - 1) / (dec_odds_total - 1),
     kelly_current_total = (p_current_total * dec_odds_current_total - 1) / (dec_odds_current_total - 1),
     stake_frac_total = pmin(0.03, 0.05 * pmax(kelly_total, 0)),
@@ -11751,7 +12137,8 @@ df_totals_profit_2025 =
       case_when(
         ind_bet_hit_current == 1 ~ stake_current_total * (dec_odds_current_total - 1),
         ind_bet_hit_current == 0 ~ -stake_current_total
-      )
+      ),
+    season = 2025
   ) 
   
 df_spreads_profit_2025 =
@@ -11770,25 +12157,25 @@ df_spreads_profit_2025 =
     p_home_current = map_dbl(spread_sim_adj, ~ mean(.x > spread_line_current, na.rm = T)),
     p_away_current = 1 - p_home_current,
     odds_home_dec = home_line_odds_open,
-      # if_else(
+      # ifelse(
       #   home_odds < 0,
       #   1 + 100 / abs(home_odds),
       #   1 + home_odds / 100
       # ),
     odds_away_dec = away_line_odds_open,
-      # if_else(
+      # ifelse(
       #   away_odds < 0,
       #   1 + 100 / abs(away_odds),
       #   1 + away_odds / 100
       # ),
     odds_home_current_dec =
-      if_else(
+      ifelse(
         home_odds_current < 0,
         1 + 100 / abs(home_odds_current),
         1 + home_odds_current / 100
       ),
     odds_away_current_dec =
-      if_else(
+      ifelse(
         away_odds_current < 0,
         1 + 100 / abs(away_odds_current),
         1 + away_odds_current / 100
@@ -11821,10 +12208,10 @@ df_spreads_profit_2025 =
       p_away_current * odds_away_current_dec > p_home_current  * odds_home_current_dec  ~ "Away",
       .default = NA
     ),
-    p_spread = if_else(side_spread == "Home",  p_home,  p_away),
-    p_current_spread = if_else(side_current_spread == "Home",  p_home_current,  p_away_current),
-    dec_odds_spread = if_else(side_spread == "Home", odds_home_dec, odds_away_dec),
-    dec_odds_current_spread = if_else(side_current_spread == "Home", odds_home_current_dec, odds_away_current_dec),
+    p_spread = ifelse(side_spread == "Home",  p_home,  p_away),
+    p_current_spread = ifelse(side_current_spread == "Home",  p_home_current,  p_away_current),
+    dec_odds_spread = ifelse(side_spread == "Home", odds_home_dec, odds_away_dec),
+    dec_odds_current_spread = ifelse(side_current_spread == "Home", odds_home_current_dec, odds_away_current_dec),
     kelly_spread = (p_spread * dec_odds_spread - 1) / (dec_odds_spread - 1),
     kelly_current_spread = (p_current_spread * dec_odds_current_spread - 1) / (dec_odds_current_spread - 1),
     stake_frac_spread = pmin(0.03, 0.05 * pmax(kelly_spread, 0)),
@@ -11866,7 +12253,8 @@ df_spreads_profit_2025 =
       case_when(
         ind_bet_hit_current == 1 ~ stake_current_spread * (dec_odds_current_spread - 1),
         ind_bet_hit_current == 0 ~ -stake_current_spread
-      )
+      ),
+    season = 2025
   )
 
 df_totals_profit_2025 %>%
@@ -12297,9 +12685,9 @@ rmse_total_line_df %>%
 ```{r edge clv}
 df_edge_clv_spreads =
   df_totals_profit_2022 %>% 
-  bind_rows(df_totals_profit_2023) %>% 
-  bind_rows(df_totals_profit_2024) %>% 
-  bind_rows(df_totals_profit_2025) %>% 
+  rbind(df_totals_profit_2023) %>% 
+  rbind(df_totals_profit_2024) %>% 
+  rbind(df_totals_profit_2025) %>% 
   mutate(
     clv_raw = total_line_current - total_line,
     clv = 
@@ -12310,14 +12698,19 @@ df_edge_clv_spreads =
         .default = NA
       ),
     mod_edge = abs(total_game_adj - total_line),
+    p_bet_hit = 
+      case_when(
+        # stake_total < 0.5 ~ NA,
+        side_total == "Over" ~ p_over,
+        side_total == "Under" ~ p_under,
+      ),
     bet_type = "Total"
   ) %>% 
-  mutate() %>% 
   rename(
     bet_side = side_total,
     bet_stake = stake_total
   ) %>% 
-  select(bet_type, bet_side, bet_stake, mod_edge, clv_raw, clv, profit) %>% 
+  select(season, bet_type, bet_side, bet_stake, mod_edge, clv_raw, clv, profit, p_bet_hit) %>% 
   rbind(
     df_spreads_profit_2022 %>% 
       bind_rows(df_spreads_profit_2023) %>% 
@@ -12333,21 +12726,29 @@ df_edge_clv_spreads =
             .default = NA
           ),
         mod_edge = abs(spread_game_adj - spread_line),
+        p_bet_hit = p_spread,
+          # case_when(
+          #   # stake_spread < 0.5 ~ NA,
+          #   side_spread == "Hone" ~ p_home,
+          #   side_spread == "Away" ~ p_away,
+          # ),
         bet_type = "Spread"
       ) %>% 
       rename(
         bet_side = side_spread,
         bet_stake = stake_spread
       ) %>% 
-      select(bet_type, bet_side, bet_stake, mod_edge, clv_raw, clv, profit)
+      select(season, bet_type, bet_side, bet_stake, mod_edge, clv_raw, clv, profit, p_bet_hit)
   ) %>% 
-  mutate(profit = replace_na(profit, 0)) %>% 
-  drop_na(clv)
+  mutate(profit = replace_na(profit, 0)) %>%
+  drop_na(mod_edge)
 
 view(df_edge_clv_spreads)
 
 df_edge_clv_summary = 
-  df_edge_clv_spreads %>%
+  df_edge_clv_spreads %>% 
+  drop_na(clv) %>% 
+  filter(bet_stake >= 0.5) %>% 
   group_by(bet_type) %>%
   mutate(clv_decile = ntile(clv, 10)) %>%
   group_by(bet_type, clv_decile) %>%
@@ -12371,7 +12772,8 @@ df_edge_clv_summary %>%
   theme_minimal()
 
 df_isolate_edge = 
-  df_edge_clv_spreads %>%
+  df_edge_clv_spreads %>% 
+  drop_na(clv) %>%
   group_by(bet_type) %>%
   filter(clv <= 0) %>% 
   summarise(
@@ -12386,7 +12788,7 @@ boot_roi <- function(df, n_boot = 5000) {
  
 set.seed(37564)
 for (m in unique(df_edge_clv_spreads$bet_type)) {
-  sub <- df_edge_clv_spreads  %>% filter(bet_type == m, clv <= 0)
+  sub <- df_edge_clv_spreads %>% drop_na(clv)%>% filter(bet_type == m, clv <= 0)
   boots <- boot_roi(sub)
   ci <- quantile(boots, c(0.025, 0.975))
   cat(sprintf(
@@ -12396,7 +12798,8 @@ for (m in unique(df_edge_clv_spreads$bet_type)) {
 }
 
 df_edge_calibration = 
-  df_edge_clv_spreads %>%
+  df_edge_clv_spreads %>% 
+  drop_na(clv) %>%
   group_by(bet_type) %>%
   mutate(
     edge_bin = cut(
@@ -12616,9 +13019,9 @@ wr_stats <- player_stats %>%
   filter(position == "WR") %>%
   left_join(team_week_targets, by = c("recent_team", "season", "week")) %>%
   mutate(
-    target_share = if_else(team_targets > 0, targets / team_targets, NA_real_),
-    ypt = if_else(targets > 0, receiving_yards / targets, NA_real_),
-    aot = if_else(targets > 0, receiving_air_yards / targets, NA_real_)
+    target_share = ifelse(team_targets > 0, targets / team_targets, NA_real_),
+    ypt = ifelse(targets > 0, receiving_yards / targets, NA_real_),
+    aot = ifelse(targets > 0, receiving_air_yards / targets, NA_real_)
   ) %>%
   arrange(player_id, season, week)
  
@@ -12700,7 +13103,7 @@ wr_stats <- wr_stats %>%
   left_join(league_ypt_by_season, by = "season") %>%
   mutate(
     n_for_shrink = pmin(n_games_prior, 8),  # cap "n" at the trailing window size
-    shrunk_ypt = if_else(
+    shrunk_ypt = ifelse(
       !is.na(ypt_l8),
       (n_for_shrink / (n_for_shrink + k_shrink)) * ypt_l8 +
         (k_shrink / (n_for_shrink + k_shrink)) * league_ypt,
@@ -12856,7 +13259,7 @@ model_data <- model_data %>%
  
 devig_two_way <- function(over_odds, under_odds) {
   american_to_prob <- function(odds) {
-    if_else(odds > 0, 100 / (odds + 100), -odds / (-odds + 100))
+    ifelse(odds > 0, 100 / (odds + 100), -odds / (-odds + 100))
   }
   p_over_raw  <- american_to_prob(over_odds)
   p_under_raw <- american_to_prob(under_odds)
@@ -12946,9 +13349,9 @@ wr_stats <- player_stats %>%
   filter(position == "WR") %>%
   left_join(team_week_targets, by = c("team", "season", "week")) %>%
   mutate(
-    target_share = if_else(team_targets > 0, targets / team_targets, NA_real_),
-    ypt = if_else(targets > 0, receiving_yards / targets, NA_real_),
-    aot = if_else(targets > 0, receiving_air_yards / targets, NA_real_)
+    target_share = ifelse(team_targets > 0, targets / team_targets, NA_real_),
+    ypt = ifelse(targets > 0, receiving_yards / targets, NA_real_),
+    aot = ifelse(targets > 0, receiving_air_yards / targets, NA_real_)
   ) %>%
   arrange(player_id, season, week)
 
@@ -13030,7 +13433,7 @@ wr_stats <- wr_stats %>%
   left_join(league_ypt_by_season, by = "season") %>%
   mutate(
     n_for_shrink = pmin(n_games_prior, 8),  # cap "n" at the trailing window size
-    shrunk_ypt = if_else(
+    shrunk_ypt = ifelse(
       !is.na(ypt_l8),
       (n_for_shrink / (n_for_shrink + k_shrink)) * ypt_l8 +
         (k_shrink / (n_for_shrink + k_shrink)) * league_ypt,
@@ -13186,7 +13589,7 @@ model_data <- model_data %>%
 
 devig_two_way <- function(over_odds, under_odds) {
   american_to_prob <- function(odds) {
-    if_else(odds > 0, 100 / (odds + 100), -odds / (-odds + 100))
+    ifelse(odds > 0, 100 / (odds + 100), -odds / (-odds + 100))
   }
   p_over_raw  <- american_to_prob(over_odds)
   p_under_raw <- american_to_prob(under_odds)
@@ -13537,9 +13940,9 @@ model_projections <- model_data %>%
 # 5. Join lines + projections + actual results
 # ------------------------------------------------------------------------------
 # Vectorized directly (no rowwise/list needed — american_to_prob already
-# operates elementwise via if_else, so this runs on the whole column at once).
+# operates elementwise via ifelse, so this runs on the whole column at once).
 american_to_prob <- function(odds) {
-  if_else(odds > 0, 100 / (odds + 100), -odds / (-odds + 100))
+  ifelse(odds > 0, 100 / (odds + 100), -odds / (-odds + 100))
 }
  
 validation_df <- lines_wide %>%
@@ -13579,8 +13982,8 @@ message(sprintf(
 # raw frequency of Over.
 validation_df <- validation_df %>%
   mutate(
-    recommended_side = if_else(edge > 0, "Over", "Under"),
-    bet_won = if_else(recommended_side == "Over", actual_over, !actual_over)
+    recommended_side = ifelse(edge > 0, "Over", "Under"),
+    bet_won = ifelse(recommended_side == "Over", actual_over, !actual_over)
   )
  
 # Bucket by SIGNED edge (to sanity-check direction) — Inf bounds so no row
@@ -13670,10 +14073,10 @@ comparison_df <- etr_picks %>%
   inner_join(results_2022, by = c("name_key", "season", "week")) %>%
   inner_join(model_projections_2022, by = c("name_key", "season", "week")) %>%
   mutate(
-    your_side       = if_else(proj_yards > line, "Over", "Under"),
+    your_side       = ifelse(proj_yards > line, "Over", "Under"),
     agree_with_etr  = your_side == etr_side,
-    etr_won         = if_else(etr_side == "Over", receiving_yards > line, receiving_yards < line),
-    you_won         = if_else(your_side == "Over", receiving_yards > line, receiving_yards < line)
+    etr_won         = ifelse(etr_side == "Over", receiving_yards > line, receiving_yards < line),
+    you_won         = ifelse(your_side == "Over", receiving_yards > line, receiving_yards < line)
   )
  
 print(comparison_df %>% select(player, week, line, etr_side, your_side, agree_with_etr, etr_won, you_won))
@@ -13705,14 +14108,14 @@ comparison_df <- etr_picks %>%
   inner_join(results_2022, by = c("name_key", "season", "week")) %>%
   inner_join(model_projections_2022, by = c("name_key", "season", "week")) %>%
   mutate(
-    your_side       = if_else(proj_yards > line, "Over", "Under"),
+    your_side       = ifelse(proj_yards > line, "Over", "Under"),
     agree_with_etr  = your_side == etr_side,
-    etr_won         = if_else(etr_side == "Over", receiving_yards > line, receiving_yards < line),
-    you_won         = if_else(your_side == "Over", receiving_yards > line, receiving_yards < line)
+    etr_won         = ifelse(etr_side == "Over", receiving_yards > line, receiving_yards < line),
+    you_won         = ifelse(your_side == "Over", receiving_yards > line, receiving_yards < line)
   )
 
 american_to_prob <- function(odds) {
-  if_else(odds > 0, 100 / (odds + 100), -odds / (-odds + 100))
+  ifelse(odds > 0, 100 / (odds + 100), -odds / (-odds + 100))
 }
  
 comparison_df <- comparison_df %>%
@@ -13733,8 +14136,8 @@ min_edge_threshold <- 0.03
 comparison_df = 
   comparison_df %>% 
   mutate(
-    recommended_side = if_else(edge > 0, "Over", "Under"),
-    bet_won = if_else(recommended_side == "Over", actual_over, !actual_over)
+    recommended_side = ifelse(edge > 0, "Over", "Under"),
+    bet_won = ifelse(recommended_side == "Over", actual_over, !actual_over)
   )
 
 bets_to_place <- comparison_df %>%
@@ -37126,13 +37529,13 @@ df_win_bets =
   df_dk_probs %>% 
   mutate(
     # Convert American odds to decimal
-    decimal_over = if_else(
+    decimal_over = ifelse(
       odds_over < 0,
       1 + 100 / abs(odds_over),
       1 + odds_over / 100
     ),
     
-    decimal_under = if_else(
+    decimal_under = ifelse(
       odds_under < 0,
       1 + 100 / abs(odds_under),
       1 + odds_under / 100
@@ -37550,13 +37953,13 @@ df_dk_wins_2025 =
 #   df_dk_probs_2025 %>% 
 #   mutate(
 #     # Convert American odds to decimal
-#     decimal_over = if_else(
+#     decimal_over = ifelse(
 #       odds_over < 0,
 #       1 + 100 / abs(odds_over),
 #       1 + odds_over / 100
 #     ),
 #     
-#     decimal_under = if_else(
+#     decimal_under = ifelse(
 #       odds_under < 0,
 #       1 + 100 / abs(odds_under),
 #       1 + odds_under / 100
@@ -37641,13 +38044,13 @@ df_win_bets_2025 =
   ) %>% 
   mutate(
     # Convert American odds to decimal
-    decimal_over = if_else(
+    decimal_over = ifelse(
       odds_over < 0,
       1 + 100 / abs(odds_over),
       1 + odds_over / 100
     ),
     
-    decimal_under = if_else(
+    decimal_under = ifelse(
       odds_under < 0,
       1 + 100 / abs(odds_under),
       1 + odds_under / 100
@@ -38092,13 +38495,13 @@ df_dk_wins_2024 =
 #   df_dk_probs_2024 %>% 
 #   mutate(
 #     # Convert American odds to decimal
-#     decimal_over = if_else(
+#     decimal_over = ifelse(
 #       odds_over < 0,
 #       1 + 100 / abs(odds_over),
 #       1 + odds_over / 100
 #     ),
 #     
-#     decimal_under = if_else(
+#     decimal_under = ifelse(
 #       odds_under < 0,
 #       1 + 100 / abs(odds_under),
 #       1 + odds_under / 100
@@ -38183,13 +38586,13 @@ df_win_bets_2024 =
   ) %>% 
   mutate(
     # Convert American odds to decimal
-    decimal_over = if_else(
+    decimal_over = ifelse(
       odds_over < 0,
       1 + 100 / abs(odds_over),
       1 + odds_over / 100
     ),
     
-    decimal_under = if_else(
+    decimal_under = ifelse(
       odds_under < 0,
       1 + 100 / abs(odds_under),
       1 + odds_under / 100
@@ -38634,13 +39037,13 @@ df_dk_wins_2023 =
 #   df_dk_probs_2023 %>% 
 #   mutate(
 #     # Convert American odds to decimal
-#     decimal_over = if_else(
+#     decimal_over = ifelse(
 #       odds_over < 0,
 #       1 + 100 / abs(odds_over),
 #       1 + odds_over / 100
 #     ),
 #     
-#     decimal_under = if_else(
+#     decimal_under = ifelse(
 #       odds_under < 0,
 #       1 + 100 / abs(odds_under),
 #       1 + odds_under / 100
@@ -38725,13 +39128,13 @@ df_win_bets_2023 =
   ) %>% 
   mutate(
     # Convert American odds to decimal
-    decimal_over = if_else(
+    decimal_over = ifelse(
       odds_over < 0,
       1 + 100 / abs(odds_over),
       1 + odds_over / 100
     ),
     
-    decimal_under = if_else(
+    decimal_under = ifelse(
       odds_under < 0,
       1 + 100 / abs(odds_under),
       1 + odds_under / 100
@@ -39176,13 +39579,13 @@ df_dk_wins_2022 =
 #   df_dk_probs_2022 %>% 
 #   mutate(
 #     # Convert American odds to decimal
-#     decimal_over = if_else(
+#     decimal_over = ifelse(
 #       odds_over < 0,
 #       1 + 100 / abs(odds_over),
 #       1 + odds_over / 100
 #     ),
 #     
-#     decimal_under = if_else(
+#     decimal_under = ifelse(
 #       odds_under < 0,
 #       1 + 100 / abs(odds_under),
 #       1 + odds_under / 100
@@ -39267,13 +39670,13 @@ df_win_bets_2022 =
   ) %>% 
   mutate(
     # Convert American odds to decimal
-    decimal_over = if_else(
+    decimal_over = ifelse(
       odds_over < 0,
       1 + 100 / abs(odds_over),
       1 + odds_over / 100
     ),
     
-    decimal_under = if_else(
+    decimal_under = ifelse(
       odds_under < 0,
       1 + 100 / abs(odds_under),
       1 + odds_under / 100
