@@ -1871,7 +1871,7 @@ df_pred_total_spread_adj =
   mutate(
     enclosed_field = 
       case_when(
-        team_home %in% c("DAL", "HOU", "IND", "ARI") ~ 1,
+        team_home %in% c("DAL", "HOU", "IND", "ARI", "ATL") ~ 1,
         .default = enclosed_field
       ),
     wind = 
