@@ -1599,7 +1599,7 @@ df_qb_cont =
   ) %>% 
   rows_update(
     tibble(
-      team = c("CHI", "WAS", "TB"),
+      team = c("CHI", "WAS", "TB", "BAL"),
       qb_cont = 0
     ),
     by = "team"
