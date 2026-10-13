@@ -5941,7 +5941,7 @@ df_totals %>%
 # 
 # df_team_ranks = df_team_ranks_initial
 
-df_record = 
+df_record =
   df_szn_pbp %>% 
   distinct(week, home_team, away_team, result) %>% 
   pivot_longer(
@@ -5956,17 +5956,24 @@ df_record =
         result < 0 & home_away == "home_team" ~ 0,
         result < 0 & home_away == "away_team" ~ 1,
         result > 0 & home_away == "away_team" ~ 0,
+        # result == 0 ~ 0.5,
+        .default = NA
+      ),
+    ind_tie = 
+      case_when(
+        result == 0 ~ 1,
         .default = NA
       )
   ) %>% 
   group_by(team) %>% 
   summarise(
-    n_win = sum(ind_win),
+    n_win = sum(ind_win, na.rm = T),
+    n_tie = sum(ind_tie, na.rm = T),
     n_games = n(),
-    n_loss = n_games - n_win
+    n_loss = n_games - n_win - n_tie
   ) %>% 
   mutate(
-    record = str_c(n_win, "-", n_loss)
+    record = str_c(n_win, "-", n_loss, "-", n_tie)
   )
 
 df_team_ranks_prior =
