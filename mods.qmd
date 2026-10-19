@@ -158,7 +158,7 @@ teams_exclude =
   mutate(
     date_time = as.POSIXct(str_c(gameday, " ", gametime), format = "%Y-%m-%d %H:%M", tz = "America/New_York")
   ) %>% 
-  filter(date_time > (format(Sys.time() - 4.5 * 3600, "%Y-%m-%d %H:%M"))) %>% 
+  filter(date_time > (format(Sys.time() - 4 * 3600, "%Y-%m-%d %H:%M"))) %>% 
   select(home_team, away_team) %>% 
   pivot_longer(
     ends_with("_team"),
@@ -1599,7 +1599,7 @@ df_qb_cont =
   ) %>% 
   rows_update(
     tibble(
-      team = c("CHI", "TB"),
+      team = c("TB", "PHI", "NYG"),
       qb_cont = 0
     ),
     by = "team"
@@ -3650,6 +3650,192 @@ df_team_points_delta_szn %>%
 ### **Hit Rates**
 
 ::: panel-tabset
+
+```{r bets taken}
+#| eval: false
+
+#### **Bets Taken**
+df_bets_taken = 
+  readxl::read_xlsx("bet_tracker.xlsx", sheet = "2026") %>% 
+  janitor::clean_names() %>% 
+  mutate(
+    week_char = 
+      case_when(
+        str_length(week) == 1 ~ str_c("0", week),
+        .default = as.character(week)
+      ),
+    game_id = str_c("2026_", week_char, "_", game),
+    profit = result - wager
+  ) %>% 
+  left_join(
+    df_schedule %>% 
+      distinct(game_id, week, home_team, away_team, total_line, over_odds, under_odds, spread_line, home_spread_odds, away_spread_odds),
+    by = c("game_id", "week")
+  ) %>% 
+  left_join(
+    df_szn_pbp %>% 
+      distinct(game_id, week, home_score, away_score),
+    by = c("game_id", "week")
+  ) %>% 
+  mutate(
+    actual_total = home_score + away_score,
+    actual_spread = home_score - away_score,
+    bet_type = 
+      case_when(
+        str_detect(bet, "^[OU]\\d+") ~ "Total",
+        .default = "Spread"
+      ),
+    bet_side = 
+      case_when(
+        bet_type == "Total" & str_detect(bet, "^O") ~ "Over",
+        bet_type == "Total" & str_detect(bet, "^U") ~ "Under",
+        bet_type == "Spread" & str_extract(bet, "^[A-Z]+") == home_team ~ "Home",
+        bet_type == "Spread" & str_extract(bet, "^[A-Z]+") == away_team ~ "Away",
+        .default = NA
+      )
+  ) %>% 
+  drop_na(result)
+
+df_bets_taken %>% 
+  summarise(
+    n_weeks = n_distinct(week),
+    n_bets = n(),
+    profit_ovr = sum(profit),
+    roi = profit_ovr / sum(wager)
+  )
+
+to_dec <- \(a) if_else(a > 0, 1 + a / 100, 1 + 100 / abs(a))
+devig_mult <- \(o_side, o_opp) { q1 <- 1 / o_side; q2 <- 1 / o_opp; q1 / (q1 + q2) }
+ 
+sd_spread <- 13.5   # tune on historical data
+sd_total  <- 10
+ 
+# ---- 1. Map your columns to "my side" vs. close ---------------------------
+clv <- df_bets_taken |>
+  mutate(
+    market = str_to_lower(bet_type),    # "spread" / "total"
+    side   = str_to_lower(bet_side),    # "home" / "away" / "over" / "under"
+ 
+    # your number, parsed from the bet text ("NYJ +6.5" -> 6.5, "O42.5" -> 42.5)
+    line_bet = as.numeric(str_extract(bet, "[-+]?\\d+(\\.\\d+)?$")),
+ 
+    # closing number from YOUR side's perspective
+    # (spread: -3.5 = laying 3.5, +3 = getting 3; total: the total)
+    line_close = case_when(
+      market == "total" ~ total_line,
+      side == "home"    ~ -spread_line,
+      side == "away"    ~  spread_line
+    ),
+ 
+    # closing prices at the closing number: your side vs. the other side
+    close_side_am = case_when(
+      side == "over"  ~ over_odds,
+      side == "under" ~ under_odds,
+      side == "home"  ~ home_spread_odds,
+      side == "away"  ~ away_spread_odds
+    ),
+    close_opp_am = case_when(
+      side == "over"  ~ under_odds,
+      side == "under" ~ over_odds,
+      side == "home"  ~ away_spread_odds,
+      side == "away"  ~ home_spread_odds
+    ),
+ 
+    # points of value vs. the close (positive = you beat the close)
+    line_adv = case_when(
+      market == "spread" ~ line_bet - line_close,
+      side == "over"     ~ line_close - line_bet,
+      side == "under"    ~ line_bet - line_close
+    )
+  )
+ 
+stopifnot(!anyNA(clv$line_bet), !anyNA(clv$line_close),
+          !anyNA(clv$close_side_am), !anyNA(clv$line_adv))
+ 
+# ---- 2. Option A: normal model --------------------------------------------
+clv <- clv |>
+  mutate(
+    odds_dec = to_dec(odds),
+    p_close  = devig_mult(to_dec(close_side_am), to_dec(close_opp_am)),
+    sd_m     = if_else(market == "spread", sd_spread, sd_total),
+    p_fair   = pnorm(qnorm(p_close) + line_adv / sd_m),   # win prob at YOUR number
+    p_bet    = 1 / odds_dec,
+    clv_pts  = p_fair - p_bet,
+    clv_rel  = p_fair / p_bet - 1,
+    ev_close = p_fair * odds_dec - 1
+  )
+ 
+# sanity check a few rows by eye
+clv |> select(bet, line_bet, line_close, line_adv, odds, p_close, p_fair, ev_close)
+ 
+# ---- 3. Summary -----------------------------------------------------------
+summ <- \(d) d |>
+  summarise(
+    n         = n(),
+    pct_beat  = mean(line_adv > 0),
+    mean_pts  = mean(clv_pts),
+    mean_ev   = mean(ev_close),
+    se_ev     = sd(ev_close) / sqrt(n),
+    t_stat    = mean_ev / se_ev,
+    wtd_ev    = weighted.mean(ev_close, wager)
+  )
+ 
+summ(clv)
+clv |> group_by(market) |> summ()
+ 
+# ---- 4. Option B: empirical, conditioned on the closing line ---------------
+# Needs a larger historical table, e.g.:
+hist <- nflreadr::load_schedules(2015:2025) |>
+    filter(!is.na(result), spread_line != 0)
+# (uses result = home margin, spread_line, total, total_line)
+#
+# "Cover margin" c for a side: c > 0 wins, c == 0 pushes. Getting d extra
+# points means you win when c + d > 0. Using only games with a similar
+# closing line captures key numbers (3, 7, ...) around where you bet.
+emp_shift <- function(market, side, line_close, line_adv, hist,
+                      w_spread = 1.5, w_total = 2) {
+  c_hist <- if (market == "total") {
+    g <- filter(hist, abs(total_line - line_close) <= w_total)
+    if (side == "over") g$total - g$total_line else g$total_line - g$total
+  } else {
+    g <- filter(hist, abs(abs(spread_line) - abs(line_close)) <= w_spread)
+    c_fav <- g$result * sign(g$spread_line) - abs(g$spread_line)  # favorite's cover margin
+    if (line_close < 0) c_fav else -c_fav
+  }
+  win <- \(x) mean(c_hist + x > 0) + 0.5 * mean(c_hist + x == 0)
+  win(line_adv) - win(0)
+}
+ 
+clv <- 
+  clv |>
+  mutate(
+    shift = pmap_dbl(list(market, side, line_close, line_adv), \(m, s, lc, d) emp_shift(m, s, lc, d, hist)),
+    p_fair_emp   = pmin(pmax(p_close + shift, 0), 1),
+    ev_close_emp = p_fair_emp * odds_dec - 1
+  )
+clv |> summarise(mean_ev = mean(ev_close), mean_ev_emp = mean(ev_close_emp))
+
+clv <- clv |>
+  mutate(
+    # Beat the no-vig close: your price at your number beats the fair price
+    beat_fair = ev_close > 0,
+
+    # Beat the close as a bettor would read it: better number, or same number
+    # at a better price than the closing price on your side
+    beat_close = line_adv > 0 |
+      (line_adv == 0 & odds_dec > to_dec(close_side_am))
+  )
+
+clv |>
+  group_by(market) |>
+  summarise(n = n(), pct_beat_line = mean(line_adv > 0),
+            pct_beat_close = mean(beat_close), pct_beat_fair = mean(beat_fair))
+
+df_bets_taken |>
+  group_by(bet_type) |>
+  summarise(w = sum(result > wager), l = sum(result == 0), push = sum(result == wager),
+            staked = sum(wager), profit = sum(result - wager), roi = profit / staked)
+```
 
 #### **Opening Lines**
 
