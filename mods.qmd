@@ -6088,6 +6088,125 @@ df_spreads_hit_rate_playoffs =
 #   gtsummary::modify_caption("**Betting Spreads by Week**")
 ```
 
+#### **Past Seasons' History**
+
+```{r hit rates past}
+df_bets_open_2022 = readRDS(str_c("data/game_mod_data/", "df_bets_open_2022.rds"))
+df_bets_close_2022 = readRDS(str_c("data/game_mod_data/", "df_bets_close_2022.rds"))
+df_bets_open_2023 = readRDS(str_c("data/game_mod_data/", "df_bets_open_2023.rds"))
+df_bets_close_2023 = readRDS(str_c("data/game_mod_data/", "df_bets_close_2023.rds"))
+df_bets_open_2024 = readRDS(str_c("data/game_mod_data/", "df_bets_open_2024.rds"))
+df_bets_close_2024 = readRDS(str_c("data/game_mod_data/", "df_bets_close_2024.rds"))
+df_bets_open_2025 = readRDS(str_c("data/game_mod_data/", "df_bets_open_2025.rds"))
+df_bets_close_2025 = readRDS(str_c("data/game_mod_data/", "df_bets_close_2025.rds"))
+
+df_bets_open_2025 %>% 
+  filter(week == "Season") %>% 
+  mutate(season = "2025") %>% 
+  bind_rows(
+    df_bets_open_2024 %>% 
+      filter(week == "Season") %>% 
+      mutate(season = "2024"),
+    df_bets_open_2023 %>% 
+      filter(week == "Season") %>% 
+      mutate(season = "2023"),
+    df_bets_open_2022 %>% 
+      filter(week == "Season") %>% 
+      mutate(season = "2022")
+  ) %>% 
+  select(-week) %>% 
+  relocate(season) %>% 
+  arrange(season) %>% 
+  rows_insert(
+    tibble(
+      season = "All Time",
+      profit_tot = sum(.$profit_tot, na.rm = T),
+      profit_spread = sum(.$profit_spread, na.rm = T),
+      profit_ovr = sum(.$profit_ovr, na.rm = T),
+      n_bets = sum(.$n_bets, na.rm = T)
+    ),
+    by = "season"
+  ) %>% 
+  labelled::set_variable_labels(
+    season = "Season", 
+    n_bets = "Bets", 
+    profit_tot = "Totals",
+    profit_spread = "Spreads",
+    profit_ovr = "Overall"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  gtsummary::modify_caption("**Opening Line Betting Profit by Season (Units)**")
+
+df_bets_close_2025 %>% 
+  filter(week == "Season") %>% 
+  mutate(season = "2025") %>% 
+  bind_rows(
+    df_bets_close_2024 %>% 
+      filter(week == "Season") %>% 
+      mutate(season = "2024"),
+    df_bets_close_2023 %>% 
+      filter(week == "Season") %>% 
+      mutate(season = "2023"),
+    df_bets_close_2022 %>% 
+      filter(week == "Season") %>% 
+      mutate(season = "2022")
+  ) %>% 
+  select(-week) %>% 
+  relocate(season) %>% 
+  arrange(season) %>% 
+  rows_insert(
+    tibble(
+      season = "All Time",
+      profit_tot = sum(.$profit_tot, na.rm = T),
+      profit_spread = sum(.$profit_spread, na.rm = T),
+      profit_ovr = sum(.$profit_ovr, na.rm = T),
+      n_bets = sum(.$n_bets, na.rm = T)
+    ),
+    by = "season"
+  ) %>% 
+  labelled::set_variable_labels(
+    season = "Season", 
+    n_bets = "Bets", 
+    profit_tot = "Totals",
+    profit_spread = "Spreads",
+    profit_ovr = "Overall"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  gtsummary::modify_caption("**Closing Line Betting Profit by Season (Units)**")
+
+df_bets_open_2025 %>% 
+  gtreg::tbl_listing() %>% 
+  gtsummary::modify_caption("**2025 Opening Line Betting Profit by Week (Units)**")
+
+df_bets_close_2025 %>% 
+  gtreg::tbl_listing() %>% 
+  gtsummary::modify_caption("**2025 Closing Line Betting Profit by Week (Units)**")
+
+df_bets_open_2024 %>% 
+  gtreg::tbl_listing() %>% 
+  gtsummary::modify_caption("**2024 Opening Line Betting Profit by Week (Units)**")
+
+df_bets_close_2024 %>% 
+  gtreg::tbl_listing() %>% 
+  gtsummary::modify_caption("**2024 Closing Line Betting Profit by Week (Units)**")
+
+df_bets_open_2023 %>% 
+  gtreg::tbl_listing() %>% 
+  gtsummary::modify_caption("**2023 Opening Line Betting Profit by Week (Units)**")
+
+df_bets_close_2023 %>% 
+  gtreg::tbl_listing() %>% 
+  gtsummary::modify_caption("**2023 Closing Line Betting Profit by Week (Units)**")
+
+df_bets_open_2022 %>% 
+  gtreg::tbl_listing() %>% 
+  gtsummary::modify_caption("**2022 Opening Line Betting Profit by Week (Units)**")
+
+df_bets_close_2022 %>% 
+  gtreg::tbl_listing() %>% 
+  gtsummary::modify_caption("**2022 Closing Line Betting Profit by Week (Units)**")
+```
+
 :::
 
 :::

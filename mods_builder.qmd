@@ -9482,7 +9482,7 @@ df_total_team_train_2022 =
   mod_total_team_svm$trainingData %>%
   rename(total_team = .outcome) %>%
   left_join(df_total_team_train_id %>% select(game_id, all_of(names(df_total_team_train)))) %>%
-  filter(as.integer(str_extract(game_id, "^\\d+")) != 2022) %>%
+  filter(as.integer(str_extract(game_id, "^\\d+")) < 2022) %>%
   select(-game_id)
 
 # df_total_team_train_id = readRDS("df_total_team_train_2009_2026_id.rds")
@@ -9501,7 +9501,7 @@ min(mod_total_team_svm_2022$results$RMSE)
 
 resid_sd_2022 =
   df_total_team_train_id %>% 
-  filter(as.integer(str_extract(game_id, "^\\d+")) != 2022) %>% 
+  filter(as.integer(str_extract(game_id, "^\\d+")) < 2022) %>% 
   # filter(season != 2024) %>% 
   mutate(
     pred = predict(mod_total_team_svm_2022, .),
@@ -9534,7 +9534,7 @@ df_total_correct_train_2022 =
       rename(team = team_opp),
     by = c("game_id", "team")
   ) %>% 
-  filter(season != 2022) %>%
+  filter(season < 2022) %>%
   # left_join(field_game_df, by = "game_id") %>%
   filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
   select(game_id, total_team, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
@@ -9590,7 +9590,7 @@ df_spread_correct_train_2022 =
       rename(team = team_opp),
     by = c("game_id", "team")
   ) %>% 
-  filter(season != 2022) %>%
+  filter(season < 2022) %>%
   # left_join(field_game_df, by = "game_id") %>%
   filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
   select(game_id, result, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
@@ -10003,7 +10003,8 @@ df_spreads_profit_2022 =
     season = 2022
   )
 
-df_totals_profit_2022 %>%
+df_bets_open_2022 = 
+  df_totals_profit_2022 %>%
   filter(stake_total >= 0.5) %>%
   mutate(week = str_extract(str_remove(game_id, "^\\d+_"), "\\d+")) %>% 
   # filter(week != 18) %>% 
@@ -10056,11 +10057,16 @@ df_totals_profit_2022 %>%
     profit_tot = "Totals",
     profit_spread = "Spreads",
     profit_ovr = "Overall"
-  ) %>% 
+  )
+
+# saveRDS(df_bets_open_2022, str_c("data/game_mod_data/", "df_bets_open_2022.rds"))
+
+df_bets_open_2022 %>% 
   gtreg::tbl_listing() %>% 
   gtsummary::modify_caption("**2022 Opening Line Betting Profit by Week (Units)**")
 
-df_totals_profit_2022 %>%
+df_bets_close_2022 = 
+  df_totals_profit_2022 %>%
   filter(stake_current_total >= 0.5) %>% 
   mutate(week = str_extract(str_remove(game_id, "^\\d+_"), "\\d+")) %>% 
   # filter(week != 18) %>% 
@@ -10113,7 +10119,11 @@ df_totals_profit_2022 %>%
     profit_tot = "Totals",
     profit_spread = "Spreads",
     profit_ovr = "Overall"
-  ) %>% 
+  )
+
+# saveRDS(df_bets_close_2022, str_c("data/game_mod_data/", "df_bets_close_2022.rds"))
+
+df_bets_close_2022 %>% 
   gtreg::tbl_listing() %>% 
   gtsummary::modify_caption("**2022 Closing Line Betting Profit by Week (Units)**")
 ```
@@ -10125,7 +10135,7 @@ df_total_team_train_2023 =
   mod_total_team_svm$trainingData %>%
   rename(total_team = .outcome) %>%
   left_join(df_total_team_train_id %>% select(game_id, all_of(names(df_total_team_train)))) %>%
-  filter(as.integer(str_extract(game_id, "^\\d+")) != 2023) %>%
+  filter(as.integer(str_extract(game_id, "^\\d+")) < 2023) %>%
   select(-game_id)
 
 # df_total_team_train_id = readRDS("df_total_team_train_2009_2026_id.rds")
@@ -10144,7 +10154,7 @@ min(mod_total_team_svm_2023$results$RMSE)
 
 resid_sd_2023 =
   df_total_team_train_id %>% 
-  filter(as.integer(str_extract(game_id, "^\\d+")) != 2023) %>% 
+  filter(as.integer(str_extract(game_id, "^\\d+")) < 2023) %>% 
   # filter(season != 2024) %>% 
   mutate(
     pred = predict(mod_total_team_svm_2023, .),
@@ -10177,7 +10187,7 @@ df_total_correct_train_2023 =
       rename(team = team_opp),
     by = c("game_id", "team")
   ) %>% 
-  filter(season != 2023) %>%
+  filter(season < 2023) %>%
   # left_join(field_game_df, by = "game_id") %>%
   filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
   select(game_id, total_team, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
@@ -10233,7 +10243,7 @@ df_spread_correct_train_2023 =
       rename(team = team_opp),
     by = c("game_id", "team")
   ) %>% 
-  filter(season != 2023) %>%
+  filter(season < 2023) %>%
   # left_join(field_game_df, by = "game_id") %>%
   filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
   select(game_id, result, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
@@ -10646,7 +10656,8 @@ df_spreads_profit_2023 =
     season = 2023
   )
 
-df_totals_profit_2023 %>%
+df_bets_open_2023 = 
+  df_totals_profit_2023 %>%
   filter(stake_total >= 0.5) %>%
   mutate(week = str_extract(str_remove(game_id, "^\\d+_"), "\\d+")) %>% 
   # filter(week != 18) %>% 
@@ -10699,11 +10710,16 @@ df_totals_profit_2023 %>%
     profit_tot = "Totals",
     profit_spread = "Spreads",
     profit_ovr = "Overall"
-  ) %>% 
+  )
+
+# saveRDS(df_bets_open_2023, str_c("data/game_mod_data/", "df_bets_open_2023.rds"))
+
+df_bets_open_2023 %>% 
   gtreg::tbl_listing() %>% 
   gtsummary::modify_caption("**2023 Opening Line Betting Profit by Week (Units)**")
 
-df_totals_profit_2023 %>%
+df_bets_close_2023 = 
+  df_totals_profit_2023 %>%
   filter(stake_current_total >= 0.5) %>% 
   mutate(week = str_extract(str_remove(game_id, "^\\d+_"), "\\d+")) %>% 
   # filter(week != 18) %>% 
@@ -10756,9 +10772,14 @@ df_totals_profit_2023 %>%
     profit_tot = "Totals",
     profit_spread = "Spreads",
     profit_ovr = "Overall"
-  ) %>% 
+  )
+
+# saveRDS(df_bets_close_2023, str_c("data/game_mod_data/", "df_bets_close_2023.rds"))
+
+df_bets_close_2023 %>% 
   gtreg::tbl_listing() %>% 
   gtsummary::modify_caption("**2023 Closing Line Betting Profit by Week (Units)**")
+
 ```
 
 ### 2024
@@ -10768,7 +10789,7 @@ df_total_team_train_2024 =
   mod_total_team_svm$trainingData %>%
   rename(total_team = .outcome) %>%
   left_join(df_total_team_train_id %>% select(game_id, all_of(names(df_total_team_train)))) %>%
-  filter(as.integer(str_extract(game_id, "^\\d+")) != 2024) %>%
+  filter(as.integer(str_extract(game_id, "^\\d+")) < 2024) %>%
   select(-game_id)
 
 # df_total_team_train_id = readRDS("df_total_team_train_2009_2026_id.rds")
@@ -10787,7 +10808,7 @@ min(mod_total_team_svm_2024$results$RMSE)
 
 resid_sd_2024 =
   df_total_team_train_id %>% 
-  filter(as.integer(str_extract(game_id, "^\\d+")) != 2024) %>% 
+  filter(as.integer(str_extract(game_id, "^\\d+")) < 2024) %>% 
   # filter(season != 2024) %>% 
   mutate(
     pred = predict(mod_total_team_svm_2024, .),
@@ -10820,7 +10841,7 @@ df_total_correct_train_2024 =
       rename(team = team_opp),
     by = c("game_id", "team")
   ) %>% 
-  filter(season != 2024) %>%
+  filter(season < 2024) %>%
   # left_join(field_game_df, by = "game_id") %>%
   filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
   select(game_id, total_team, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
@@ -10876,7 +10897,7 @@ df_spread_correct_train_2024 =
       rename(team = team_opp),
     by = c("game_id", "team")
   ) %>% 
-  filter(season != 2024) %>%
+  filter(season < 2024) %>%
   # left_join(field_game_df, by = "game_id") %>%
   filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
   select(game_id, result, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
@@ -11601,7 +11622,8 @@ df_spreads_profit_2024 =
     season = 2024
   )
 
-df_totals_profit_2024 %>%
+df_bets_open_2024 = 
+  df_totals_profit_2024 %>%
   filter(stake_total >= 0.5) %>%
   mutate(week = str_extract(str_remove(game_id, "^\\d+_"), "\\d+")) %>% 
   # filter(week != 18) %>% 
@@ -11654,11 +11676,16 @@ df_totals_profit_2024 %>%
     profit_tot = "Totals",
     profit_spread = "Spreads",
     profit_ovr = "Overall"
-  ) %>% 
+  ) 
+
+# saveRDS(df_bets_open_2024, str_c("data/game_mod_data/", "df_bets_open_2024.rds"))
+
+df_bets_open_2024 %>% 
   gtreg::tbl_listing() %>% 
   gtsummary::modify_caption("**2024 Opening Line Betting Profit by Week (Units)**")
 
-df_totals_profit_2024 %>%
+df_bets_close_2024 = 
+  df_totals_profit_2024 %>%
   filter(stake_current_total >= 0.5) %>% 
   mutate(week = str_extract(str_remove(game_id, "^\\d+_"), "\\d+")) %>% 
   # filter(week != 18) %>% 
@@ -11709,7 +11736,11 @@ df_totals_profit_2024 %>%
     profit_tot = "Totals",
     profit_spread = "Spreads",
     profit_ovr = "Overall"
-  ) %>% 
+  )
+
+# saveRDS(df_bets_close_2024, str_c("data/game_mod_data/", "df_bets_close_2024.rds"))
+
+df_bets_close_2024 %>% 
   gtreg::tbl_listing() %>% 
   gtsummary::modify_caption("**2024 Closing Line Betting Profit by Week (Units)**")
 ```
@@ -11721,7 +11752,7 @@ df_total_team_train_2025 =
   mod_total_team_svm$trainingData %>%
   rename(total_team = .outcome) %>%
   left_join(df_total_team_train_id %>% select(game_id, all_of(names(df_total_team_train)))) %>%
-  filter(as.integer(str_extract(game_id, "^\\d+")) != 2025) %>%
+  filter(as.integer(str_extract(game_id, "^\\d+")) < 2025) %>%
   select(-game_id)
 
 # df_total_team_train_id = readRDS("df_total_team_train_2009_2026_id.rds")
@@ -11740,7 +11771,7 @@ min(mod_total_team_svm_2025$results$RMSE)
 
 resid_sd_2025 =
   df_total_team_train_id %>% 
-  filter(as.integer(str_extract(game_id, "^\\d+")) != 2025) %>% 
+  filter(as.integer(str_extract(game_id, "^\\d+")) < 2025) %>% 
   # filter(season != 2024) %>% 
   mutate(
     pred = predict(mod_total_team_svm_2025, .),
@@ -11773,7 +11804,7 @@ df_total_correct_train_2025 =
       rename(team = team_opp),
     by = c("game_id", "team")
   ) %>% 
-  filter(season != 2025) %>%
+  filter(season < 2025) %>%
   # left_join(field_game_df, by = "game_id") %>%
   filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
   select(game_id, total_team, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
@@ -11829,7 +11860,7 @@ df_spread_correct_train_2025 =
       rename(team = team_opp),
     by = c("game_id", "team")
   ) %>% 
-  filter(season != 2025) %>%
+  filter(season < 2025) %>%
   # left_join(field_game_df, by = "game_id") %>%
   filter(qb_cont == 1 & qb_cont_opp == 1) %>% 
   select(game_id, result, starts_with("prior_"), rest_days, rest_days_opp, travel_km, travel_km_opp) %>% 
@@ -12257,7 +12288,8 @@ df_spreads_profit_2025 =
     season = 2025
   )
 
-df_totals_profit_2025 %>%
+df_bets_open_2025 = 
+  df_totals_profit_2025 %>%
   filter(stake_total >= 0.5) %>%
   mutate(week = str_extract(str_remove(game_id, "^\\d+_"), "\\d+")) %>% 
   # filter(week != 18) %>% 
@@ -12310,11 +12342,16 @@ df_totals_profit_2025 %>%
     profit_tot = "Totals",
     profit_spread = "Spreads",
     profit_ovr = "Overall"
-  ) %>% 
+  )
+
+# saveRDS(df_bets_open_2025, str_c("data/game_mod_data/", "df_bets_open_2025.rds"))
+
+df_bets_open_2025 %>% 
   gtreg::tbl_listing() %>% 
   gtsummary::modify_caption("**2025 Opening Line Betting Profit by Week (Units)**")
 
-df_totals_profit_2025 %>%
+df_bets_close_2025 = 
+  df_totals_profit_2025 %>%
   filter(stake_current_total >= 0.5) %>% 
   mutate(week = str_extract(str_remove(game_id, "^\\d+_"), "\\d+")) %>% 
   # filter(week != 18) %>% 
@@ -12365,10 +12402,13 @@ df_totals_profit_2025 %>%
     profit_tot = "Totals",
     profit_spread = "Spreads",
     profit_ovr = "Overall"
-  ) %>% 
+  )
+
+# saveRDS(df_bets_close_2025, str_c("data/game_mod_data/", "df_bets_close_2025.rds"))
+
+df_bets_close_2025 %>% 
   gtreg::tbl_listing() %>% 
   gtsummary::modify_caption("**2025 Closing Line Betting Profit by Week (Units)**")
-
 ```
 
 ## RMSE - Model vs Vegas
