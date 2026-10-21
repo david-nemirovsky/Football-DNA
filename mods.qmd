@@ -462,6 +462,81 @@ df_lines_open =
   ) %>% 
   relocate(game_id)
 
+df_lines_open_prior =
+  readxl::read_xlsx("nfl_game_lines_aus.xlsx") %>% 
+  janitor::clean_names() %>% 
+  mutate(
+    across(
+      c(home_team, away_team),
+      ~ case_match(
+        .,
+        "Arizona Cardinals" ~ "ARI", 
+        "Atlanta Falcons" ~ "ATL", 
+        "Baltimore Ravens" ~ "BAL", 
+        "Buffalo Bills" ~ "BUF", 
+        "Carolina Panthers" ~ "CAR", 
+        "Chicago Bears" ~ "CHI", 
+        "Cincinnati Bengals" ~ "CIN", 
+        "Cleveland Browns" ~ "CLE", 
+        "Dallas Cowboys" ~ "DAL", 
+        "Denver Broncos" ~ "DEN", 
+        "Detroit Lions" ~ "DET", 
+        "Green Bay Packers" ~ "GB", 
+        "Houston Texans" ~ "HOU", 
+        "Indianapolis Colts" ~ "IND", 
+        "Jacksonville Jaguars" ~ "JAX", 
+        "Kansas City Chiefs" ~ "KC", 
+        "Las Vegas Raiders" ~ "LV", 
+        "Los Angeles Chargers" ~ "LAC", 
+        "Los Angeles Rams" ~ "LA", 
+        "Miami Dolphins" ~ "MIA", 
+        "Minnesota Vikings" ~ "MIN", 
+        "New England Patriots" ~ "NE", 
+        "New Orleans Saints" ~ "NO", 
+        "New York Giants" ~ "NYG", 
+        "New York Jets" ~ "NYJ", 
+        "Oakland Raiders" ~ "LV", 
+        "Philadelphia Eagles" ~ "PHI", 
+        "Pittsburgh Steelers" ~ "PIT", 
+        "San Diego Chargers" ~ "LAC", 
+        "San Francisco 49ers" ~ "SF", 
+        "Seattle Seahawks" ~ "SEA", 
+        "St. Louis Rams" ~ "LA", 
+        "Tampa Bay Buccaneers" ~ "TB", 
+        "Tennessee Titans" ~ "TEN", 
+        "Washington Commanders" ~ "WAS", 
+        "Washington Football Team" ~ "WAS", 
+        "Washington Redskins" ~ "WAS",
+        .default = NA
+      )
+    ),
+    team_game = str_c(away_team, "_", home_team)
+  ) %>% 
+  rename(
+    team_home = home_team, 
+    team_away = away_team,
+    total_line = total_score_open
+  ) %>% 
+  filter(between(as.Date(date), as.Date("2026-09-09"),  as.Date("2027-08-01"))) %>% 
+  mutate(
+    week = ceiling(as.integer(as.Date(date) - as.Date("2026-09-09")) / 7),
+    spread_line = -home_line_open,
+    game_id = 
+      case_when(
+        week < 10 ~ str_c("2026_", "0", week, "_", team_away, "_", team_home),
+        week >= 10 ~ str_c("2026_", week, "_", team_away, "_", team_home),
+        .default = NA
+      )
+  ) %>% 
+  # rename(
+  #   over_odds = total_score_over_open,
+  #   under_odds = total_score_under_open,
+  #   home_odds = -112,
+  #   away_odds = -112
+  # ) %>% 
+  select(game_id, week, team_home, team_away, spread_line, home_line_odds_open, away_line_odds_open, total_line, total_score_over_open, total_score_under_open) %>% 
+  filter(between(week, 2, 18))
+
 mod_total_team_svm = readRDS(str_c("data/mods/", "mod_total_team_svm_2026_09_22.rds"))
 mod_total_playoffs_team_svm = readRDS(str_c("data/mods/","mod_playoffs_total_team_svm_2026_01_04.rds"))
 mod_total_correct_enet = readRDS(str_c("data/mods/", "mod_total_correct_enet_2026_09_22.rds"))
@@ -2412,13 +2487,13 @@ df_game_sims_bets =
         1 + 100 / abs(under_odds_current),
         1 + under_odds_current / 100
       ),
-    odds_over_dec =
+    odds_over_dec = 
       if_else(
         over_odds < 0,
         1 + 100 / abs(over_odds),
         1 + over_odds / 100
       ),
-    odds_under_dec =
+    odds_under_dec = 
       if_else(
         under_odds < 0,
         1 + 100 / abs(under_odds),
@@ -2466,13 +2541,13 @@ df_game_sims_bets =
     p_away = 1 - p_home,
     p_home_current = map_dbl(spread_sim_adj, ~ mean(.x > spread_line_current)),
     p_away_current = 1 - p_home_current,
-    odds_home_dec =
+    odds_home_dec = 
       if_else(
         home_odds < 0,
         1 + 100 / abs(home_odds),
         1 + home_odds / 100
       ),
-    odds_away_dec =
+    odds_away_dec = 
       if_else(
         away_odds < 0,
         1 + 100 / abs(away_odds),
@@ -4072,7 +4147,7 @@ df_totals_profit =
       ),
     by = "game_id"
   ) %>%
-  left_join(df_lines_open %>% distinct(game_id, total_line) %>% mutate(over_odds = -112, under_odds = -112), by = "game_id") %>%
+  left_join(df_lines_open_prior %>% distinct(game_id, total_line, total_score_over_open, total_score_under_open) %>% mutate(over_odds = -112, under_odds = -112), by = "game_id") %>%
   group_by(game_id) %>%
   mutate(
     p_over = map_dbl(total_sim_adj, ~ mean(.x > total_line)),
@@ -4091,18 +4166,18 @@ df_totals_profit =
         1 + 100 / abs(under_odds_current),
         1 + under_odds_current / 100
       ),
-    odds_over_dec =
-      if_else(
-        over_odds < 0,
-        1 + 100 / abs(over_odds),
-        1 + over_odds / 100
-      ),
-    odds_under_dec =
-      if_else(
-        under_odds < 0,
-        1 + 100 / abs(under_odds),
-        1 + under_odds / 100
-      ),
+    odds_over_dec = total_score_over_open,
+      # if_else(
+      #   over_odds < 0,
+      #   1 + 100 / abs(over_odds),
+      #   1 + over_odds / 100
+      # ),
+    odds_under_dec = total_score_under_open,
+      # if_else(
+      #   under_odds < 0,
+      #   1 + 100 / abs(under_odds),
+      #   1 + under_odds / 100
+      # ),
     ev_over_current  = p_over_current  * (odds_over_current_dec  - 1) - (1 - p_over_current),
     ev_under_current = p_under_current * (odds_under_current_dec - 1) - (1 - p_under_current),
     ev_over  = p_over  * (odds_over_dec - 1) - (1 - p_over),
@@ -4215,25 +4290,25 @@ df_spreads_profit =
       ),
     by = "game_id"
   ) %>%
-  left_join(df_lines_open %>% distinct(game_id, spread_line) %>% mutate(home_odds = -112, away_odds = -112), by = "game_id") %>%
+  left_join(df_lines_open_prior %>% distinct(game_id, spread_line, home_line_odds_open, away_line_odds_open) %>% mutate(home_odds = -112, away_odds = -112), by = "game_id") %>%
   group_by(game_id) %>%
   mutate(
     p_home = map_dbl(spread_sim_adj, ~ mean(.x > spread_line)),
     p_away = 1 - p_home,
     p_home_current = map_dbl(spread_sim_adj, ~ mean(.x > spread_line_current)),
     p_away_current = 1 - p_home_current,
-    odds_home_dec =
-      if_else(
-        home_odds < 0,
-        1 + 100 / abs(home_odds),
-        1 + home_odds / 100
-      ),
-    odds_away_dec =
-      if_else(
-        away_odds < 0,
-        1 + 100 / abs(away_odds),
-        1 + away_odds / 100
-      ),
+    odds_home_dec = home_line_odds_open,
+      # if_else(
+      #   home_odds < 0,
+      #   1 + 100 / abs(home_odds),
+      #   1 + home_odds / 100
+      # ),
+    odds_away_dec = away_line_odds_open,
+      # if_else(
+      #   away_odds < 0,
+      #   1 + 100 / abs(away_odds),
+      #   1 + away_odds / 100
+      # ),
     odds_home_current_dec =
       if_else(
         home_odds_current < 0,
@@ -4353,7 +4428,7 @@ df_totals_profit %>%
   filter(stake_total >= 0.5) %>% 
   group_by(week) %>%
   summarise(
-    profit_tot = sum(profit),
+    profit_tot = sum(profit, na.rm = T),
     n_bets_tot = n()
   ) %>%
   left_join(
@@ -4361,7 +4436,7 @@ df_totals_profit %>%
       filter(stake_spread >= 0.5) %>% 
       group_by(week) %>%
       summarise(
-        profit_spread = sum(profit),
+        profit_spread = sum(profit, na.rm = T),
         n_bets_spread = n()
       ),
     by = "week"
@@ -4398,7 +4473,7 @@ df_totals_profit %>%
   filter(stake_total >= 0.5) %>% 
   group_by(week, side_total) %>%
   summarise(
-    profit_part = sum(profit),
+    profit_part = sum(profit, na.rm = T),
     n_tot = n()
   ) %>%
   pivot_wider(
@@ -4437,7 +4512,7 @@ df_spreads_profit %>%
   filter(stake_spread >= 0.5) %>% 
   group_by(week, side_spread) %>%
   summarise(
-    profit_part = sum(profit),
+    profit_part = sum(profit, na.rm = T),
     n_spread = n()
   ) %>%
   pivot_wider(
@@ -4480,7 +4555,7 @@ df_totals_profit %>%
   filter(stake_current_total >= 0.5) %>% 
   group_by(week) %>%
   summarise(
-    profit_tot = sum(profit_current),
+    profit_tot = sum(profit_current, na.rm = T),
     n_tot = n()
   ) %>%
   left_join(
@@ -4488,7 +4563,7 @@ df_totals_profit %>%
       filter(stake_current_spread >= 0.5) %>% 
       group_by(week) %>%
       summarise(
-        profit_spread = sum(profit_current),
+        profit_spread = sum(profit_current, na.rm = T),
         n_spread = n()
       ),
     by = "week"
@@ -4525,7 +4600,7 @@ df_totals_profit %>%
   filter(stake_current_total >= 0.5) %>% 
   group_by(week, side_current_total) %>%
   summarise(
-    profit_part = sum(profit_current),
+    profit_part = sum(profit_current, na.rm = T),
     n_tot = n()
   ) %>%
   pivot_wider(
@@ -4564,7 +4639,7 @@ df_spreads_profit %>%
   filter(stake_current_spread >= 0.5) %>% 
   group_by(week, side_current_spread) %>%
   summarise(
-    profit_part = sum(profit_current),
+    profit_part = sum(profit_current, na.rm = T),
     n_spread = n()
   ) %>%
   pivot_wider(
