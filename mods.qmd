@@ -3600,7 +3600,7 @@ df_team_points_delta_szn %>%
   scale_x_continuous(breaks = seq(-12, 12, by = 1)) +
   scale_fill_identity() +
   scale_color_identity() +
-  coord_cartesian(xlim = c(-7, 7)) +
+  coord_cartesian(xlim = c(-5, 5)) +
   labs(
     title = "Season-Long Model vs Vegas Projected Team Totals",
     x = "Mean \U0394 Team Points",
@@ -3629,7 +3629,7 @@ df_team_points_delta_szn %>%
   scale_x_continuous(breaks = seq(-20, 30, by = 1)) +
   scale_fill_identity() +
   scale_color_identity() +
-  coord_cartesian(xlim = c(-14.5, 23.5)) +
+  coord_cartesian(xlim = c(-10, 10)) +
   labs(
     title = "Season-Long Model vs Actual Team Totals",
     x = "Mean \U0394 Team Points",
@@ -3651,10 +3651,11 @@ df_team_points_delta_szn %>%
 
 ::: panel-tabset
 
-```{r bets taken}
-#| eval: false
-
 #### **Bets Taken**
+
+```{r bets taken}
+#| eval: true
+
 df_bets_taken = 
   readxl::read_xlsx("bet_tracker.xlsx", sheet = "2026") %>% 
   janitor::clean_names() %>% 
@@ -3696,13 +3697,13 @@ df_bets_taken =
   ) %>% 
   drop_na(result)
 
-df_bets_taken %>% 
-  summarise(
-    n_weeks = n_distinct(week),
-    n_bets = n(),
-    profit_ovr = sum(profit),
-    roi = profit_ovr / sum(wager)
-  )
+# df_bets_taken %>% 
+#   summarise(
+#     n_weeks = n_distinct(week),
+#     n_bets = n(),
+#     profit_ovr = sum(profit),
+#     roi = profit_ovr / sum(wager)
+#   )
 
 to_dec <- \(a) if_else(a > 0, 1 + a / 100, 1 + 100 / abs(a))
 devig_mult <- \(o_side, o_opp) { q1 <- 1 / o_side; q2 <- 1 / o_opp; q1 / (q1 + q2) }
@@ -3766,7 +3767,7 @@ clv <- clv |>
   )
  
 # sanity check a few rows by eye
-clv |> select(bet, line_bet, line_close, line_adv, odds, p_close, p_fair, ev_close)
+# clv |> select(bet, line_bet, line_close, line_adv, odds, p_close, p_fair, ev_close)
  
 # ---- 3. Summary -----------------------------------------------------------
 summ <- \(d) d |>
@@ -3780,8 +3781,8 @@ summ <- \(d) d |>
     wtd_ev    = weighted.mean(ev_close, wager)
   )
  
-summ(clv)
-clv |> group_by(market) |> summ()
+# summ(clv)
+# clv |> group_by(market) |> summ()
  
 # ---- 4. Option B: empirical, conditioned on the closing line ---------------
 # Needs a larger historical table, e.g.:
@@ -3813,7 +3814,7 @@ clv <-
     p_fair_emp   = pmin(pmax(p_close + shift, 0), 1),
     ev_close_emp = p_fair_emp * odds_dec - 1
   )
-clv |> summarise(mean_ev = mean(ev_close), mean_ev_emp = mean(ev_close_emp))
+# clv |> summarise(mean_ev = mean(ev_close), mean_ev_emp = mean(ev_close_emp))
 
 clv <- clv |>
   mutate(
@@ -3823,18 +3824,166 @@ clv <- clv |>
     # Beat the close as a bettor would read it: better number, or same number
     # at a better price than the closing price on your side
     beat_close = line_adv > 0 |
-      (line_adv == 0 & odds_dec > to_dec(close_side_am))
+      (line_adv == 0 & odds_dec > to_dec(close_side_am)),
+    ev_price = p_close * odds_dec - 1,
+    ev_line  = ev_close - ev_price, 
   )
 
-clv |>
-  group_by(market) |>
-  summarise(n = n(), pct_beat_line = mean(line_adv > 0),
-            pct_beat_close = mean(beat_close), pct_beat_fair = mean(beat_fair))
+# clv |>
+#   group_by(market) |>
+#   summarise(
+#     n = n(), 
+#     w = sum(result > wager), 
+#     l = sum(result == 0), 
+#     push = sum(result == wager),
+#     staked = sum(wager), 
+#     profit = sum(result - wager), 
+#     roi = profit / staked, 
+#     mean_price = mean(ev_price),
+#     mean_line = mean(ev_line),
+#     pct_beat_line = mean(line_adv > 0),
+#     pct_beat_close = mean(beat_close), 
+#     pct_beat_fair = mean(beat_fair)
+#   )
 
-df_bets_taken |>
-  group_by(bet_type) |>
-  summarise(w = sum(result > wager), l = sum(result == 0), push = sum(result == wager),
-            staked = sum(wager), profit = sum(result - wager), roi = profit / staked)
+tab <- \(d) d |>
+  mutate(
+    profit = result - wager,
+    won    = result > wager,
+    lost   = result == 0,
+    push   = result == wager
+  ) |>
+  summarise(
+    bets      = n(),
+    record    = str_glue("{sum(won)}-{sum(lost)}-{sum(push)}"),
+    hit_rate  = sum(won) / (sum(won) + sum(lost)),     # pushes excluded
+    units     = sum(profit) / 10,
+    roi       = sum(profit) / sum(wager),
+    clv_pct   = sum(wager * ev_close) / sum(wager),    # stake-weighted EV vs. fair close
+    exp_units = sum(wager * ev_close) / 10,          # CLV in units: compare to `units`
+    .groups = "drop"
+  )
+ 
+weekly <- clv |>
+  group_by(week) |>
+  tab() |>
+  mutate(
+    cum_units     = cumsum(units),
+    cum_exp_units = cumsum(exp_units),
+    week          = as.character(week)
+  )
+ 
+season <- clv |>
+  tab() |>
+  mutate(week = "Season", cum_units = units, cum_exp_units = exp_units)
+ 
+bind_rows(weekly, season) %>% 
+  select(week, bets, record, hit_rate, units, roi, clv_pct, exp_units) %>% 
+  mutate(
+    across(c(hit_rate, roi, clv_pct), ~ str_c(round(., 3) * 100, "%")),
+    across(c(units, exp_units), ~ round(., 2))
+  ) %>% 
+  labelled::set_variable_labels(
+    week = "Week",
+    bets = "Bets Taken",
+    record = "Record",
+    hit_rate = "Hit Rate",
+    units = "Units Profited",
+    roi	= "ROI",
+    clv_pct	= "CLV",
+    exp_units = "Expected Profit"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  gtreg::modify_caption("**All Bets**")
+ 
+weekly_total <- 
+  clv |>
+  filter(market == "total") %>% 
+  group_by(week) |>
+  tab() |>
+  mutate(
+    cum_units     = cumsum(units),
+    cum_exp_units = cumsum(exp_units),
+    week          = as.character(week)
+  )
+ 
+season_total <- clv |>
+  filter(market == "total") |>
+  tab() |>
+  mutate(week = "Season", cum_units = units, cum_exp_units = exp_units)
+ 
+bind_rows(weekly_total, season_total) %>% 
+  select(week, bets, record, hit_rate, units, roi, clv_pct, exp_units) %>% 
+  mutate(
+    across(c(hit_rate, roi, clv_pct), ~ str_c(round(., 3) * 100, "%")),
+    across(c(units, exp_units), ~ round(., 2))
+  ) %>% 
+  labelled::set_variable_labels(
+    week = "Week",
+    bets = "Bets Taken",
+    record = "Record",
+    hit_rate = "Hit Rate",
+    units = "Units Profited",
+    roi	= "ROI",
+    clv_pct	= "CLV",
+    exp_units = "Expected Profit"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  gtreg::modify_caption("**Total Bets**")
+
+weekly_spread <- 
+  clv |>
+  filter(market == "spread") %>% 
+  group_by(week) |>
+  tab() |>
+  mutate(
+    cum_units     = cumsum(units),
+    cum_exp_units = cumsum(exp_units),
+    week          = as.character(week)
+  )
+ 
+season_spread <- clv |>
+  filter(market == "spread") |>
+  tab() |>
+  mutate(week = "Season", cum_units = units, cum_exp_units = exp_units)
+ 
+bind_rows(weekly_spread, season_spread) %>% 
+  select(week, bets, record, hit_rate, units, roi, clv_pct, exp_units) %>% 
+  mutate(
+    across(c(hit_rate, roi, clv_pct), ~ str_c(round(., 3) * 100, "%")),
+    across(c(units, exp_units), ~ round(., 2))
+  ) %>% 
+  labelled::set_variable_labels(
+    week = "Week",
+    bets = "Bets Taken",
+    record = "Record",
+    hit_rate = "Hit Rate",
+    units = "Units Profited",
+    roi	= "ROI",
+    clv_pct	= "CLV",
+    exp_units = "Expected Profit"
+  ) %>% 
+  gtreg::tbl_listing() %>% 
+  gtreg::modify_caption("**Spread Bets**")
+
+# results_table
+ 
+# Optional: pretty output for the site (pick one)
+# results_table |> 
+#   gt::gt() |>
+#   gt::fmt_percent(c(hit_rate, roi, clv_pct), decimals = 1) |>
+#   gt::fmt_number(c(units, exp_units), decimals = 2)
+
+# Optional chart: cumulative actual vs. expected units
+# weekly |>
+#   mutate(week = as.integer(week)) |>
+#   pivot_longer(c(cum_units, cum_exp_units)) |>
+#   ggplot(aes(week, value, color = name)) + geom_line() + geom_point()
+
+# df_bets_taken |>
+#   group_by(bet_type) |>
+#   summarise(w = sum(result > wager), l = sum(result == 0), push = sum(result == wager),
+#             staked = sum(wager), profit = sum(result - wager), roi = profit / staked)
 ```
 
 #### **Opening Lines**
