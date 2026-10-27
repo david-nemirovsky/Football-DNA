@@ -1675,7 +1675,7 @@ df_qb_cont =
   rows_update(
     tibble(
       team = c("PHI"),
-      qb_cont = 0
+      qb_cont = 1
     ),
     by = "team"
   )
@@ -3704,7 +3704,7 @@ df_team_points_delta_szn %>%
   scale_x_continuous(breaks = seq(-20, 30, by = 1)) +
   scale_fill_identity() +
   scale_color_identity() +
-  coord_cartesian(xlim = c(-10, 10)) +
+  coord_cartesian(xlim = c(-9, 9)) +
   labs(
     title = "Season-Long Model vs Actual Team Totals",
     x = "Mean \U0394 Team Points",
@@ -3894,14 +3894,16 @@ clv <-
 clv <- clv |>
   mutate(
     # Beat the no-vig close: your price at your number beats the fair price
-    beat_fair = ev_close > 0,
+    beat_fair = ev_close_emp > 0,
 
     # Beat the close as a bettor would read it: better number, or same number
     # at a better price than the closing price on your side
     beat_close = line_adv > 0 |
       (line_adv == 0 & odds_dec > to_dec(close_side_am)),
     ev_price = p_close * odds_dec - 1,
-    ev_line  = ev_close - ev_price, 
+    ev_line  = ev_close_emp - ev_price, 
+    ev_baseline  = p_close * to_dec(close_side_am) - 1,   # taking the closing price at the closing number
+    clv_vs_close = ev_close_emp - ev_baseline                  # 0 = same as taking the closing price
   )
 
 # clv |>
@@ -3934,8 +3936,8 @@ tab <- \(d) d |>
     hit_rate  = sum(won) / (sum(won) + sum(lost)),     # pushes excluded
     units     = sum(profit) / 10,
     roi       = sum(profit) / sum(wager),
-    clv_pct   = sum(wager * ev_close) / sum(wager),    # stake-weighted EV vs. fair close
-    exp_units = sum(wager * ev_close) / 10,          # CLV in units: compare to `units`
+    clv_pct   = sum(wager * clv_vs_close) / sum(wager),    # stake-weighted EV vs. fair close
+    exp_units = sum(wager * ev_close_emp) / 10,          # CLV in units: compare to `units`
     .groups = "drop"
   )
  
