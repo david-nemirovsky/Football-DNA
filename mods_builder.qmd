@@ -13614,6 +13614,99 @@ print(decile10_detail, n = 40)
 
 ```
 
+## Market Anchor
+
+```{r}
+# ---- Inputs ----------------------------------------------------------------
+# preds: one row per game with OUT-OF-SAMPLE (walk-forward) predictions:
+#   game_id, pred_margin (predicted home points minus away points), pred_total
+# In-sample predictions will make every result below look better than reality.
+#
+# nflverse conventions: spread_line > 0 means the HOME team is favored, so the
+# market's expected home margin is spread_line. result = home margin,
+# total = combined points. spread_line / total_line are the CLOSING lines.
+# games <- 
+#   nflreadr::load_schedules(2015:2025) |>
+#   filter(!is.na(result)) |>
+#   select(game_id, season, spread_line, total_line, result, total) |>
+#   inner_join(preds, by = "game_id")
+ 
+df_games_anchor =
+  df_szn_all %>% 
+  distinct(game_id, season, spread_line, total_line, result, total) %>% 
+  left_join(
+    df_oof_pred_total_team %>% 
+      select(game_id, pred_total, pred_spread),
+    by = "game_id"
+  ) %>% 
+  drop_na()
+  
+# ---- The test --------------------------------------------------------------
+# actual / market / pred are columns on the same scale (margin or total).
+# "dev" = deviation from the market line.
+anchor_test <- function(d, actual, market, pred) {
+  d <- d |>
+    transmute(game_id, season,
+              actual = {{ actual }}, market = {{ market }}, pred = {{ pred }}) |>
+    mutate(dev_pred = pred - market,     # how far your model disagrees with the market
+           dev_act  = actual - market)   # how far the game actually landed from the market
+ 
+  # 1. Raw accuracy: model vs. market line
+  accuracy <- d |>
+    summarise(rmse_model  = sqrt(mean((actual - pred)^2)),
+              rmse_market = sqrt(mean((actual - market)^2)),
+              mae_model   = mean(abs(actual - pred)),
+              mae_market  = mean(abs(actual - market)))
+ 
+  # 2. Does your disagreement carry signal?  dev_act = a + b * dev_pred
+  #    b ~ 0: your disagreements are noise; b ~ 1: fully informative.
+  #    (a = average bias of the market line, e.g. home-field)
+  mz <- lm(dev_act ~ dev_pred, data = d) |> broom::tidy(conf.int = TRUE)
+ 
+  # 3. Walk-forward: fit the shrinkage on prior seasons, predict the next one
+  folds <- map_dfr(sort(unique(d$season))[-1], \(s) {
+    train <- filter(d, season < s)
+    test  <- filter(d, season == s)
+    m     <- lm(dev_act ~ dev_pred, data = train)
+    test |>
+      mutate(
+        dev_shrunk = predict(m, newdata = test),
+        # P(actual > market line): raw model vs. market-anchored model
+        p_raw  = pnorm(dev_pred   / sd(train$actual - train$pred)),
+        p_anch = pnorm(dev_shrunk / sigma(m))
+      )
+  })
+ 
+  scored <- folds |>
+    filter(actual != market) |>          # drop pushes
+    mutate(y = actual > market)
+ 
+  # Brier score: 0.25 = coin flip against the market number (lower is better)
+  scores <- scored |>
+    summarise(n = n(),
+              brier_coinflip = 0.25,
+              brier_raw      = mean((p_raw  - y)^2),
+              brier_anchored = mean((p_anch - y)^2))
+ 
+  # Calibration in quintiles of predicted probability
+  calib <- scored |>
+    pivot_longer(c(p_raw, p_anch), names_to = "model", values_to = "p") |>
+    group_by(model) |>
+    mutate(bin = ntile(p, 5)) |>
+    group_by(model, bin) |>
+    summarise(n = n(), predicted = mean(p), actual = mean(y), .groups = "drop")
+ 
+  list(accuracy = accuracy, mz = mz, scores = scores, calib = calib, folds = folds)
+}
+ 
+spread_res <- anchor_test(df_games_anchor, result, spread_line, pred_spread)
+total_res  <- anchor_test(df_games_anchor, total,  total_line,  pred_total)
+ 
+spread_res[c("accuracy", "mz", "scores", "calib")]
+total_res[c("accuracy", "mz", "scores", "calib")]
+
+```
+
 # Props
 
 ## WR
