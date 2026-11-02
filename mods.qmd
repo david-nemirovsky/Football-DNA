@@ -1674,8 +1674,8 @@ df_qb_cont =
   ) %>% 
   rows_update(
     tibble(
-      team = c("PHI"),
-      qb_cont = 1
+      team = c("PHI", "BAL", "ARI"),
+      qb_cont = 0
     ),
     by = "team"
   )
