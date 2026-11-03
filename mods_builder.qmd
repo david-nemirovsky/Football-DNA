@@ -13712,6 +13712,7 @@ df_totals_profit_2025_anch =
   left_join(df_pred_total_spread_adj_2025, by = c("team_home", "team_away")) %>% 
   left_join(df_game_sims_2025, by = "game_id") %>% 
   left_join(df_szn_all %>% distinct(game_id, total_line, spread_line) %>% rename(total_line_current = total_line), by = "game_id") %>% 
+  left_join(total_res$folds %>% distinct(game_id, p_anch), by = "game_id") %>% 
   mutate(
     # over_odds = -112, 
     # under_odds = -112,
@@ -13719,7 +13720,7 @@ df_totals_profit_2025_anch =
     under_odds_current = -112,
     p_over = map_dbl(total_sim_adj, ~ mean(.x > total_line, na.rm = T)),
     p_under = 1 - p_over,
-    p_over_current  = map_dbl(total_sim_adj, ~ mean(.x > total_line_current, na.rm = T)),
+    p_over_current  = p_anch,
     p_under_current = 1 - p_over_current,
     odds_over_current_dec = 
       ifelse(
@@ -13727,12 +13728,12 @@ df_totals_profit_2025_anch =
         1 + 100 / abs(over_odds_current),
         1 + over_odds_current / 100
       ),
-    odds_under_current_dec = total_score_under_open,
-      # ifelse(
-      #   under_odds_current < 0,
-      #   1 + 100 / abs(under_odds_current),
-      #   1 + under_odds_current / 100
-      # ),
+    odds_under_current_dec = 
+      ifelse(
+        under_odds_current < 0,
+        1 + 100 / abs(under_odds_current),
+        1 + under_odds_current / 100
+      ),
     odds_over_dec = total_score_over_open,
       # ifelse(
       #   over_odds < 0,
@@ -13751,14 +13752,14 @@ df_totals_profit_2025_anch =
     ev_under = p_under * (odds_under_dec - 1) - (1 - p_under),
     bet_total =
       case_when(
-        ev_over  > 0.03 ~ "Bet Over",
-        ev_under > 0.03 ~ "Bet Under",
+        ev_over  > 0.01 ~ "Bet Over",
+        ev_under > 0.01 ~ "Bet Under",
         .default = "No Bet"
       ),
     bet_current_total =
       case_when(
-        ev_over_current  > 0.03 ~ "Bet Over",
-        ev_under_current > 0.03 ~ "Bet Under",
+        ev_over_current  > 0.01 ~ "Bet Over",
+        ev_under_current > 0.01 ~ "Bet Under",
         .default = "No Bet"
       ),
     ev_max_total = pmax(ev_over, ev_under),
@@ -13779,9 +13780,9 @@ df_totals_profit_2025_anch =
     dec_odds_current_total = ifelse(side_current_total == "Over", odds_over_current_dec, odds_under_current_dec),
     kelly_total = (p_total * dec_odds_total - 1) / (dec_odds_total - 1),
     kelly_current_total = (p_current_total * dec_odds_current_total - 1) / (dec_odds_current_total - 1),
-    stake_frac_total = pmin(0.03, 0.05 * pmax(kelly_total, 0)),
+    stake_frac_total = pmin(0.03, 0.25 * pmax(kelly_total, 0)),
     stake_total = stake_frac_total * 100,
-    stake_frac_current_total = pmin(0.03, 0.05 * pmax(kelly_current_total, 0)),
+    stake_frac_current_total = pmin(0.03, 0.25 * pmax(kelly_current_total, 0)),
     stake_current_total = stake_frac_current_total * 100
   ) %>% 
   ungroup() %>% 
@@ -13823,12 +13824,13 @@ df_totals_profit_2025_anch =
     season = 2025
   ) 
   
-df_spreads_profit_2025 =
+df_spreads_profit_2025_anch =
   df_open_lines_2025 %>% 
   # left_join(df_pred_total_spread_adj, by = c("team_home", "team_away")) %>% 
   left_join(df_pred_total_spread_adj_2025, by = c("team_home", "team_away")) %>% 
   left_join(df_game_sims_2025, by = "game_id") %>% 
   left_join(df_szn_all %>% distinct(game_id, total_line, spread_line) %>% rename(spread_line_current = spread_line), by = "game_id") %>% 
+  left_join(spread_res$folds %>% distinct(game_id, p_anch), by = "game_id") %>% 
   mutate(
     # home_odds = -112, 
     # away_odds = -112,
@@ -13836,7 +13838,7 @@ df_spreads_profit_2025 =
     away_odds_current = -112,
     p_home = map_dbl(spread_sim_adj, ~ mean(.x > spread_line, na.rm = T)),
     p_away = 1 - p_home,
-    p_home_current = map_dbl(spread_sim_adj, ~ mean(.x > spread_line_current, na.rm = T)),
+    p_home_current = p_anch,
     p_away_current = 1 - p_home_current,
     odds_home_dec = home_line_odds_open,
       # ifelse(
@@ -13868,14 +13870,14 @@ df_spreads_profit_2025 =
     ev_away_current = p_away_current * (odds_away_current_dec - 1) - (1 - p_away_current),
     bet_spread =
       case_when(
-        ev_home  > 0.03 ~ "Bet Home",
-        ev_away > 0.03 ~ "Bet Away",
+        ev_home  > 0.01 ~ "Bet Home",
+        ev_away > 0.01 ~ "Bet Away",
         .default = "No Bet"
       ),
     bet_spread_current =
       case_when(
-        ev_home_current  > 0.03 ~ "Bet Home",
-        ev_away_current > 0.03 ~ "Bet Away",
+        ev_home_current  > 0.01 ~ "Bet Home",
+        ev_away_current > 0.01 ~ "Bet Away",
         .default = "No Bet"
       ),
     ev_max_spread = pmax(ev_home, ev_away),
@@ -13896,8 +13898,8 @@ df_spreads_profit_2025 =
     dec_odds_current_spread = ifelse(side_current_spread == "Home", odds_home_current_dec, odds_away_current_dec),
     kelly_spread = (p_spread * dec_odds_spread - 1) / (dec_odds_spread - 1),
     kelly_current_spread = (p_current_spread * dec_odds_current_spread - 1) / (dec_odds_current_spread - 1),
-    stake_frac_spread = pmin(0.03, 0.05 * pmax(kelly_spread, 0)),
-    stake_frac_current_spread = pmin(0.03, 0.05 * pmax(kelly_current_spread, 0)),
+    stake_frac_spread = pmin(0.03, 0.25 * pmax(kelly_spread, 0)),
+    stake_frac_current_spread = pmin(0.03, 0.25 * pmax(kelly_current_spread, 0)),
     stake_spread = stake_frac_spread * 100,
     stake_current_spread = stake_frac_current_spread * 100
   ) %>% 
@@ -14001,16 +14003,17 @@ df_bets_open_2025 %>%
   gtreg::tbl_listing() %>% 
   gtsummary::modify_caption("**2025 Opening Line Betting Profit by Week (Units)**")
 
-df_bets_close_2025 = 
-  df_totals_profit_2025 %>%
-  filter(stake_current_total >= 0.5) %>% 
+df_bets_close_2025_anch = 
+  df_totals_profit_2025_anch %>%
+  # filter(stake_current_total >= 0.5) %>% 
   mutate(week = str_extract(str_remove(game_id, "^\\d+_"), "\\d+")) %>% 
   # filter(week != 18) %>% 
   group_by(week) %>% 
   summarise(
-    profit_tot = sum(profit_current),
+    profit_tot = sum(profit_current, na.rm = T),
     n_bets = n()
   ) %>% 
+  drop_na(profit_tot) %>% 
   # rows_insert(
   #   tibble(
   #     week = "04",
@@ -14020,17 +14023,19 @@ df_bets_close_2025 =
   # ) %>% 
   arrange(week) %>% 
   left_join(
-    df_spreads_profit_2025 %>%
-      filter(stake_current_spread >= 0.5) %>% 
+    df_spreads_profit_2025_anch %>%
+      # filter(stake_current_spread >= 0.5) %>% 
       mutate(week = str_extract(str_remove(game_id, "^\\d+_"), "\\d+")) %>% 
       # filter(week != 18) %>%
       group_by(week) %>%
       summarise(
-        profit_spread = sum(profit_current)
-      ),
+        profit_spread = sum(profit_current, na.rm = T)
+      ) %>% 
+      drop_na(profit_spread),
     by = "week"
   ) %>%
   mutate(
+    week = as.integer(week),
     across(everything(), ~ replace_na(., 0)),
     week = as.character(week),
     profit_ovr = profit_tot + profit_spread
@@ -14057,9 +14062,33 @@ df_bets_close_2025 =
 
 # saveRDS(df_bets_close_2025, str_c("data/game_mod_data/", "df_bets_close_2025.rds"))
 
-df_bets_close_2025 %>% 
+df_bets_close_2025_anch %>% 
   gtreg::tbl_listing() %>% 
   gtsummary::modify_caption("**2025 Closing Line Betting Profit by Week (Units)**")
+
+df_totals_profit_2025_anch %>%
+  mutate(week = str_extract(str_remove(game_id, "^\\d+_"), "\\d+")) %>%
+  group_by(week) %>%
+  summarise(
+    n_games    = n(),
+    n_p_na     = sum(is.na(p_anch)),
+    n_odds_na  = sum(is.na(odds_under_current_dec)),
+    max_p      = max(pmax(p_over_current, p_under_current), na.rm = TRUE),
+    max_stake  = max(stake_current_total, na.rm = TRUE),
+    n_ge_05    = sum(stake_current_total >= 0.5, na.rm = TRUE)
+  )
+
+df_spreads_profit_2025_anch %>%
+  mutate(week = str_extract(str_remove(game_id, "^\\d+_"), "\\d+")) %>%
+  group_by(week) %>%
+  summarise(
+    n_games    = n(),
+    n_p_na     = sum(is.na(p_anch)),
+    n_odds_na  = sum(is.na(odds_home_current_dec)),
+    max_p      = max(pmax(p_home_current, p_away_current), na.rm = TRUE),
+    max_stake  = max(stake_current_spread, na.rm = TRUE),
+    n_ge_05    = sum(stake_current_spread >= 0.5, na.rm = TRUE)
+  )
 
 ```
 
