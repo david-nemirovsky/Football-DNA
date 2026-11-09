@@ -68,7 +68,7 @@ teams_colors_logos = teams_colors_logos %>% filter(team_abbr %nin% c("OAK", "SD"
 #| include: false
 
 # week_n = ceiling(as.integer(Sys.Date() - as.Date("2025-09-07")) / 7)
-week_n = ifelse(ceiling(as.integer(Sys.Date() - as.Date("2026-09-13")) / 7) + 1 > 22, 22, ceiling(as.integer(Sys.Date() - as.Date("2026-09-13")) / 7) + 1)
+week_n = 10#ifelse(ceiling(as.integer(Sys.Date() - as.Date("2026-09-13")) / 7) + 1 > 22, 22, ceiling(as.integer(Sys.Date() - as.Date("2026-09-13")) / 7) + 1)
 
 # Load 2026 data
 df_szn_pbp = 
