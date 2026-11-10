@@ -13631,6 +13631,71 @@ print(decile10_detail, n = 40)
 #   select(game_id, season, spread_line, total_line, result, total) |>
 #   inner_join(preds, by = "game_id")
  
+df_open_lines =
+  read_xlsx("nfl_game_lines_aus.xlsx") %>% 
+  janitor::clean_names() %>% 
+  mutate(
+    across(
+      c(home_team, away_team),
+      ~ case_match(
+        .,
+        "Arizona Cardinals" ~ "ARI", 
+        "Atlanta Falcons" ~ "ATL", 
+        "Baltimore Ravens" ~ "BAL", 
+        "Buffalo Bills" ~ "BUF", 
+        "Carolina Panthers" ~ "CAR", 
+        "Chicago Bears" ~ "CHI", 
+        "Cincinnati Bengals" ~ "CIN", 
+        "Cleveland Browns" ~ "CLE", 
+        "Dallas Cowboys" ~ "DAL", 
+        "Denver Broncos" ~ "DEN", 
+        "Detroit Lions" ~ "DET", 
+        "Green Bay Packers" ~ "GB", 
+        "Houston Texans" ~ "HOU", 
+        "Indianapolis Colts" ~ "IND", 
+        "Jacksonville Jaguars" ~ "JAX", 
+        "Kansas City Chiefs" ~ "KC", 
+        "Las Vegas Raiders" ~ "LV", 
+        "Los Angeles Chargers" ~ "LAC", 
+        "Los Angeles Rams" ~ "LA", 
+        "Miami Dolphins" ~ "MIA", 
+        "Minnesota Vikings" ~ "MIN", 
+        "New England Patriots" ~ "NE", 
+        "New Orleans Saints" ~ "NO", 
+        "New York Giants" ~ "NYG", 
+        "New York Jets" ~ "NYJ", 
+        "Oakland Raiders" ~ "LV", 
+        "Philadelphia Eagles" ~ "PHI", 
+        "Pittsburgh Steelers" ~ "PIT", 
+        "San Diego Chargers" ~ "LAC", 
+        "San Francisco 49ers" ~ "SF", 
+        "Seattle Seahawks" ~ "SEA", 
+        "St. Louis Rams" ~ "LA", 
+        "Tampa Bay Buccaneers" ~ "TB", 
+        "Tennessee Titans" ~ "TEN", 
+        "Washington Commanders" ~ "WAS", 
+        "Washington Football Team" ~ "WAS", 
+        "Washington Redskins" ~ "WAS",
+        .default = NA
+      )
+    ),
+    team_game = str_c(away_team, "_", home_team)
+  ) %>% 
+  rename(
+    team_home = home_team, 
+    team_away = away_team,
+    total_line = total_score_open
+  ) %>% 
+  # filter(between(as.Date(date), as.Date("2025-09-01"),  as.Date("2026-08-01"))) %>% 
+  mutate(
+    # week = ceiling(as.integer(as.Date(date) - as.Date("2025-09-03")) / 7),
+    spread_line = -home_line_open,
+    season = str_extract(date, "^\\d+"),
+    game_id_open = str_c(season, "_", team_away, "_", team_home)
+  ) %>% 
+  select(game_id_open, season, team_home, team_away, spread_line, home_line_odds_open, away_line_odds_open, total_line, total_score_over_open, total_score_under_open, home_odds_open, away_odds_open) #%>% 
+  # filter(between(week, 2, 18))
+
 df_games_anchor =
   df_szn_all %>% 
   distinct(game_id, season, spread_line, total_line, result, total) %>% 
@@ -13639,13 +13704,26 @@ df_games_anchor =
       select(game_id, pred_total, pred_spread),
     by = "game_id"
   ) %>% 
-  drop_na()
+  drop_na() %>% 
+  mutate(
+    game_id_open = str_remove(game_id, "_[0-9][0-9]")
+  ) %>% 
+  left_join(
+    df_open_lines %>% 
+      select(game_id_open, spread_line, total_line) %>% 
+      rename(
+        spread_line_open = spread_line,
+        total_line_open = total_line
+      ),
+    by = "game_id_open"
+  )
   
 # ---- The test --------------------------------------------------------------
 # actual / market / pred are columns on the same scale (margin or total).
 # "dev" = deviation from the market line.
 anchor_test <- function(d, actual, market, pred) {
   d <- d |>
+    drop_na(market) %>% 
     transmute(game_id, season,
               actual = {{ actual }}, market = {{ market }}, pred = {{ pred }}) |>
     mutate(dev_pred = pred - market,     # how far your model disagrees with the market
@@ -13705,6 +13783,11 @@ total_res  <- anchor_test(df_games_anchor, total,  total_line,  pred_total)
 spread_res[c("accuracy", "mz", "scores", "calib")]
 total_res[c("accuracy", "mz", "scores", "calib")]
 
+spread_res_open <- anchor_test(df_games_anchor, result, spread_line_open, pred_spread)
+total_res_open  <- anchor_test(df_games_anchor, total,  total_line_open,  pred_total)
+ 
+spread_res_open[c("accuracy", "mz", "scores", "calib")]
+total_res_open[c("accuracy", "mz", "scores", "calib")]
 
 df_totals_profit_2025_anch =
   df_open_lines_2025 %>% 
