@@ -102,6 +102,7 @@ df_roster = fast_scraper_roster(2026)
 # Load schedules
 df_schedule = 
   fast_scraper_schedules() %>% 
+  
   filter(season == 2026) %>% 
   # rows_insert(
   #   tibble(
@@ -1674,7 +1675,7 @@ df_qb_cont =
   ) %>% 
   rows_update(
     tibble(
-      team = c("PHI", "BAL", "ARI"),
+      team = c("BAL", "ARI", "MIA", "MIN"),
       qb_cont = 0
     ),
     by = "team"
