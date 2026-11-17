@@ -3769,6 +3769,12 @@ df_bets_taken =
         bet_type == "Spread" & str_extract(bet, "^[A-Z]+") == home_team ~ "Home",
         bet_type == "Spread" & str_extract(bet, "^[A-Z]+") == away_team ~ "Away",
         .default = NA
+      ),
+    week_day = 
+      factor(
+        weekdays(date),
+        levels = c("Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"),
+        labels = c("Sun", "Mon", "Tues", "Wed", "Thur", "Fri", "Sat")
       )
   ) %>% 
   drop_na(result)
@@ -4043,6 +4049,37 @@ bind_rows(weekly_spread, season_spread) %>%
   ) %>% 
   gtreg::tbl_listing() %>% 
   gtreg::modify_caption("**Spread Bets**")
+
+clv %>% 
+  # group_by(week_day) %>% 
+  # summarise(
+  #   # clv_day = mean(clv_vs_close),
+  #   clv_day = 100 * sum(wager * clv_vs_close) / sum(wager)
+  # ) %>% 
+  ggplot(aes(x = week_day, y = clv_vs_close)) + 
+  geom_boxplot() + 
+  geom_point() + 
+  geom_abline(intercept = 0, slope = 0, linetype = "dashed") + 
+  scale_y_continuous(labels = scales::label_percent()) +
+  facet_wrap(~ week, ncol = 4) + 
+  labs(
+    x = "Day",
+    y = "CLV (%)"
+  ) + 
+  theme_classic()
+
+clv %>% 
+  ggplot(aes(x = clv_vs_close, y = profit)) + 
+  geom_point() + 
+  geom_smooth(color = "purple3") + 
+  # geom_abline(intercept = 0, slope = 100, linetype = "dashed") + 
+  scale_x_continuous(labels = scales::label_percent()) +
+  # facet_wrap(~ week, ncol = 4) + 
+  labs(
+    x = "CLV (%)",
+    y = "Profit"
+  ) + 
+  theme_classic()
 
 # results_table
  
